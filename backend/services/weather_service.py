@@ -3,10 +3,30 @@
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
-REQUEST_TIMEOUT_SECONDS = 10
+REQUEST_TIMEOUT_SECONDS = (5, 30)
+
+
+def _http_session() -> requests.Session:
+    """Create a resilient session for occasional provider/network failures."""
+    retry = Retry(
+        total=2,
+        connect=2,
+        read=2,
+        status=2,
+        backoff_factor=0.6,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET"}),
+        raise_on_status=False,
+    )
+    session = requests.Session()
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    session.headers.update({"User-Agent": "WeatherGPT/1.0 weather-client"})
+    return session
 
 
 class WeatherServiceError(Exception):
@@ -31,7 +51,7 @@ def weather_code_description(code: int | None) -> str:
 def _request_weather(params: dict[str, Any]) -> dict[str, Any]:
     """Call Open-Meteo and validate the basic response shape."""
     try:
-        response = requests.get(OPEN_METEO_URL, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
+        response = _http_session().get(OPEN_METEO_URL, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
         response.raise_for_status()
         payload = response.json()
     except (requests.RequestException, ValueError) as exc:
