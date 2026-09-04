@@ -6,6 +6,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from backend.config import settings
+
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 REQUEST_TIMEOUT_SECONDS = (5, 30)
@@ -61,13 +63,51 @@ def _request_weather(params: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _weatherapi_request(latitude: float, longitude: float, days: int) -> dict[str, Any]:
+    """Fetch a compatible fallback response from WeatherAPI."""
+    if not settings.weatherapi_key:
+        raise WeatherServiceError("No fallback weather provider is configured")
+    try:
+        response = _http_session().get(
+            "https://api.weatherapi.com/v1/forecast.json",
+            params={"key": settings.weatherapi_key, "q": f"{latitude},{longitude}", "days": min(max(days, 1), 10), "aqi": "no", "alerts": "no"},
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise WeatherServiceError("Fallback weather provider is unavailable") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("current"), dict) or not isinstance(payload.get("forecast", {}).get("forecastday"), list):
+        raise WeatherServiceError("Fallback weather provider returned invalid data")
+    return payload
+
+
+def _weatherapi_current(latitude: float, longitude: float) -> dict[str, Any]:
+    payload = _weatherapi_request(latitude, longitude, 1)
+    current = payload["current"]
+    condition = (current.get("condition") or {}).get("text") or "Unknown weather conditions"
+    return {
+        "location": {"latitude": latitude, "longitude": longitude},
+        "current": {
+            "temperature_c": current.get("temp_c"), "apparent_temperature_c": current.get("feelslike_c"),
+            "humidity_percent": current.get("humidity"), "precipitation_mm": current.get("precip_mm"),
+            "rain_mm": current.get("precip_mm"), "wind_speed_kmh": current.get("wind_kph"),
+            "wind_direction_degrees": None, "weather_code": None, "condition": condition,
+        },
+        "source": "WeatherAPI",
+    }
+
+
 def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
     """Return current weather for the supplied coordinates."""
-    payload = _request_weather({
-        "latitude": latitude, "longitude": longitude,
-        "current": "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m",
-        "timezone": "auto",
-    })
+    try:
+        payload = _request_weather({
+            "latitude": latitude, "longitude": longitude,
+            "current": "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m",
+            "timezone": "auto",
+        })
+    except WeatherServiceError:
+        return _weatherapi_current(latitude, longitude)
     current = payload.get("current")
     if not isinstance(current, dict):
         raise WeatherServiceError("Open-Meteo returned no current weather data")
@@ -100,12 +140,20 @@ def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
 
 def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> dict[str, Any]:
     """Return daily and hourly forecast data for the supplied coordinates."""
-    payload = _request_weather({
-        "latitude": latitude, "longitude": longitude, "forecast_days": days,
-        "hourly": "temperature_2m,precipitation_probability,precipitation,rain,showers,weather_code,wind_speed_10m,wind_gusts_10m,relative_humidity_2m,visibility",
-        "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset,weather_code",
-        "timezone": "auto",
-    })
+    try:
+        payload = _request_weather({
+            "latitude": latitude, "longitude": longitude, "forecast_days": days,
+            "hourly": "temperature_2m,precipitation_probability,precipitation,rain,showers,weather_code,wind_speed_10m,wind_gusts_10m,relative_humidity_2m,visibility",
+            "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset,weather_code",
+            "timezone": "auto",
+        })
+    except WeatherServiceError:
+        fallback = _weatherapi_request(latitude, longitude, days)
+        forecast = []
+        for item in fallback["forecast"]["forecastday"]:
+            day = item["day"]
+            forecast.append({"date": item["date"], "temperature_max_c": day.get("maxtemp_c"), "temperature_min_c": day.get("mintemp_c"), "precipitation_sum_mm": day.get("totalprecip_mm"), "precipitation_probability_percent": day.get("daily_chance_of_rain"), "sunrise": item.get("astro", {}).get("sunrise"), "sunset": item.get("astro", {}).get("sunset"), "weather_code": None, "condition": (day.get("condition") or {}).get("text", "Unknown weather conditions")})
+        return {"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": [], "source": "WeatherAPI"}
     daily, hourly = payload.get("daily"), payload.get("hourly")
     daily_keys = ["time", "temperature_2m_max", "temperature_2m_min", "precipitation_sum", "precipitation_probability_max", "sunrise", "sunset", "weather_code"]
     if not isinstance(daily, dict) or not isinstance(hourly, dict) or any(not isinstance(daily.get(key), list) for key in daily_keys):
