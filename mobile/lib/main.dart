@@ -187,6 +187,7 @@ class _WeatherHomePageState extends State<WeatherHomePage> {
   final _scroll = ScrollController();
   final _messages = <ChatLine>[];
   Map<String, dynamic>? _current, _forecast;
+  Map<String, dynamic>? _routeResult;
   Position? _position;
   String _place = 'Delhi, India';
   bool _loading = true, _loadingLocation = false, _sending = false;
@@ -294,6 +295,10 @@ class _WeatherHomePageState extends State<WeatherHomePage> {
           fallback: fallback,
           decision: result['decision'] as Map<String, dynamic>?);
       chatResult = result;
+      final route = result['route'];
+      if (route is Map<String, dynamic> && route['origin'] != null && route['destination'] != null) {
+        if (mounted) setState(() => _routeResult = result);
+      }
     } catch (_) {
       _showMessage(_language == 'hi'
           ? 'WeatherGPT अभी उपलब्ध नहीं है। कृपया फिर से कोशिश करें।'
@@ -523,6 +528,10 @@ class _WeatherHomePageState extends State<WeatherHomePage> {
             _sectionTitle(_t('seven_day_forecast'), _t('view_all')),
             const SizedBox(height: 10),
             _forecastRow(),
+            if (_routeResult != null) ...[
+              const SizedBox(height: 18),
+              _nextTripCard(),
+            ],
             const SizedBox(height: 18),
             _sectionTitle(_t('weather_alerts'), _t('view_all')),
             const SizedBox(height: 10),
@@ -539,6 +548,62 @@ class _WeatherHomePageState extends State<WeatherHomePage> {
           ]);
 
   String _t(String key) => uiText(_language, key);
+
+  Widget _nextTripCard() {
+    final route = _routeResult?['route'] as Map<String, dynamic>? ?? {};
+    final origin = route['origin']?.toString() ?? 'Origin';
+    final destination = route['destination']?.toString() ?? 'Destination';
+    final score = (_routeResult?['decision'] as Map<String, dynamic>?)?['safety_score'] ??
+        route['safety_score'] ?? '--';
+    final advice = _routeResult?['response']?.toString() ?? '';
+    final rain = advice.toLowerCase().contains('rain') || advice.contains('बारिश')
+        ? 'Rain is possible on the route'
+        : 'Check live weather before leaving';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xffe2e9f4))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(_language == 'hi' ? 'आपकी अगली यात्रा' : 'YOUR NEXT TRIP', style: const TextStyle(color: navy, fontWeight: FontWeight.w800, fontSize: 13)),
+          const Spacer(),
+          TextButton(onPressed: _openMap, child: Text(_language == 'hi' ? 'मानचित्र' : 'View Map'))
+        ]),
+        Row(children: [
+          const Icon(Icons.trip_origin, color: Colors.green, size: 18),
+          const SizedBox(width: 7),
+          Expanded(child: Text(origin, style: const TextStyle(color: navy, fontWeight: FontWeight.w700))),
+          const Icon(Icons.arrow_forward, color: Color(0xff94a3b8), size: 18),
+          const SizedBox(width: 7),
+          Expanded(child: Text(destination, style: const TextStyle(color: navy, fontWeight: FontWeight.w700))),
+        ]),
+        const Divider(height: 22),
+        Text(rain, style: const TextStyle(color: navy, fontSize: 13)),
+        const SizedBox(height: 10),
+        Row(children: [
+          const Text('Weather Safety Score', style: TextStyle(color: navy, fontWeight: FontWeight.w700, fontSize: 12)),
+          const Spacer(),
+          Text('$score/100', style: const TextStyle(color: blue, fontWeight: FontWeight.w800)),
+        ]),
+        const SizedBox(height: 12),
+        SizedBox(width: double.infinity, child: FilledButton.icon(
+          onPressed: _openMap,
+          icon: const Icon(Icons.navigation_rounded),
+          label: Text(_language == 'hi' ? 'WeatherGPT Live Map में खोलें' : 'Open in WeatherGPT Live Map'),
+        )),
+      ]),
+    );
+  }
+
+  void _openMap() {
+    final latitude = _position?.latitude ?? 28.6139;
+    final longitude = _position?.longitude ?? 77.2090;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: background,
+      builder: (_) => MapPanel(api: _api, latitude: latitude, longitude: longitude, language: _language),
+    );
+  }
 
   Widget _weatherHero() {
     final current = _current?['current'] as Map<String, dynamic>?;
@@ -1061,12 +1126,16 @@ class _WeatherHomePageState extends State<WeatherHomePage> {
           border: Border(top: BorderSide(color: Color(0xffe5eaf2)))),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
         _nav(Icons.home_rounded, _language == 'hi' ? 'होम' : 'Home', true),
-        _nav(Icons.map_outlined, _language == 'hi' ? 'मानचित्र' : 'Map', false),
+        _navButton(Icons.map_outlined, _language == 'hi' ? 'मानचित्र' : 'Map', _openMap),
         _nav(Icons.chat_bubble_outline_rounded,
             _language == 'hi' ? 'चैट' : 'Chat', false),
         _nav(Icons.person_outline_rounded,
             _language == 'hi' ? 'प्रोफ़ाइल' : 'Profile', false)
       ]));
+  Widget _navButton(IconData icon, String label, VoidCallback onTap) =>
+      InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: _nav(icon, label, false)));
   Widget _nav(IconData icon, String label, bool active) =>
       Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, color: active ? blue : const Color(0xff94a3b8), size: 22),
@@ -1076,4 +1145,113 @@ class _WeatherHomePageState extends State<WeatherHomePage> {
                 fontSize: 10,
                 fontWeight: active ? FontWeight.w700 : FontWeight.normal))
       ]);
+}
+
+class MapPanel extends StatefulWidget {
+  const MapPanel({super.key, required this.api, required this.latitude, required this.longitude, required this.language});
+  final ApiService api;
+  final double latitude;
+  final double longitude;
+  final String language;
+
+  @override
+  State<MapPanel> createState() => _MapPanelState();
+}
+
+class _MapPanelState extends State<MapPanel> {
+  late Future<Map<String, dynamic>> _weather;
+
+  @override
+  void initState() {
+    super.initState();
+    _weather = widget.api.mapWeather(widget.latitude, widget.longitude);
+  }
+
+  void _refresh() => setState(() {
+        _weather = widget.api.mapWeather(widget.latitude, widget.longitude);
+      });
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * .82,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.map_rounded, color: blue),
+                const SizedBox(width: 8),
+                Text(widget.language == 'hi' ? 'WeatherGPT Live Map' : 'WeatherGPT Live Map', style: const TextStyle(color: navy, fontSize: 20, fontWeight: FontWeight.w800)),
+                const Spacer(),
+                IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh_rounded, color: blue)),
+                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, color: navy)),
+              ]),
+              Text('${widget.latitude.toStringAsFixed(4)}, ${widget.longitude.toStringAsFixed(4)}', style: const TextStyle(color: Color(0xff64748b), fontSize: 12)),
+              const SizedBox(height: 14),
+              Expanded(child: FutureBuilder<Map<String, dynamic>>(
+                future: _weather,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
+                  if (snapshot.hasError) return _mapError(snapshot.error.toString());
+                  final data = snapshot.data ?? {};
+                  final features = data['features'] as List<dynamic>? ?? [];
+                  final properties = features.isNotEmpty && features.first is Map<String, dynamic>
+                      ? ((features.first as Map<String, dynamic>)['properties'] as Map<String, dynamic>? ?? {})
+                      : <String, dynamic>{};
+                  final temp = properties['temperature_c']?.toString() ?? '--';
+                  final rain = properties['rain_probability_percent']?.toString() ?? '--';
+                  final condition = properties['condition']?.toString() ?? 'Live conditions unavailable';
+                  return ListView(children: [
+                    Container(
+                      height: 220,
+                      decoration: BoxDecoration(color: const Color(0xffdceeff), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xffb9d8f5))),
+                      child: Stack(children: [
+                        const Positioned.fill(child: CustomPaint(painter: _MapGridPainter())),
+                        Center(child: Container(width: 86, height: 86, decoration: BoxDecoration(color: blue.withOpacity(.16), shape: BoxShape.circle), child: const Icon(Icons.location_on_rounded, color: blue, size: 46))),
+                        Positioned(top: 14, left: 14, child: _mapChip(Icons.thermostat, '$temp°C')),
+                        Positioned(top: 14, right: 14, child: _mapChip(Icons.water_drop, '$rain% rain')),
+                        const Positioned(bottom: 14, left: 14, child: Text('LIVE • Weather layer', style: TextStyle(color: navy, fontWeight: FontWeight.w700, fontSize: 11))),
+                      ]),
+                    ),
+                    const SizedBox(height: 14),
+                    _mapInfo(Icons.cloud_rounded, 'Current condition', condition),
+                    _mapInfo(Icons.water_drop_rounded, 'Rain probability', '$rain%'),
+                    _mapInfo(Icons.layers_rounded, 'Layers', 'Temperature • Rainfall • Wind • Alerts'),
+                    const SizedBox(height: 8),
+                    const Text('Use this map with the trip card to check conditions before leaving. Weather data is refreshed from the backend.', style: TextStyle(color: Color(0xff64748b), fontSize: 12, height: 1.4)),
+                  ]);
+                },
+              )),
+            ]),
+          ),
+        ),
+      );
+
+  Widget _mapChip(IconData icon, String text) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 5)]),
+        child: Row(children: [Icon(icon, color: blue, size: 15), const SizedBox(width: 4), Text(text, style: const TextStyle(color: navy, fontWeight: FontWeight.w700, fontSize: 11))]),
+      );
+
+  Widget _mapInfo(IconData icon, String title, String value) => ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon, color: blue),
+        title: Text(title, style: const TextStyle(color: Color(0xff64748b), fontSize: 11)),
+        subtitle: Text(value, style: const TextStyle(color: navy, fontWeight: FontWeight.w700)),
+      );
+
+  Widget _mapError(String error) => Center(child: Text('Live map is temporarily unavailable.\nPlease check the backend and try again.', textAlign: TextAlign.center, style: const TextStyle(color: navy, height: 1.4)));
+}
+
+class _MapGridPainter extends CustomPainter {
+  const _MapGridPainter();
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = const Color(0x3370a8d8)..strokeWidth = 1;
+    for (var x = 0.0; x < size.width; x += 32) canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    for (var y = 0.0; y < size.height; y += 32) canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+  }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

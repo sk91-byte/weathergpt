@@ -18,6 +18,13 @@ class ApiService {
     return _decode(response);
   }
 
+  Future<Map<String, dynamic>> mapWeather(double latitude, double longitude,
+      {int zoom = 10}) async {
+    final response = await http.get(Uri.parse(
+        '$backendBaseUrl/map/weather?latitude=$latitude&longitude=$longitude&zoom=$zoom'));
+    return _decode(response);
+  }
+
   Future<Map<String, dynamic>> chat(String message,
       {double? latitude,
       double? longitude,
