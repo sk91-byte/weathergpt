@@ -36,6 +36,23 @@ def _weather_for_route(route: dict[str, Any], departure_time: str | None = None)
         except WeatherServiceError:
             continue
         hours = forecast.get("hourly", [])
+        # WeatherAPI fallback responses expose daily forecast data but may not
+        # expose hourly data. Preserve honest risk analysis by scoring the
+        # available daily signal rather than silently returning no score.
+        if not hours:
+            hours = [
+                {
+                    "time": item.get("date"),
+                    "temperature_c": item.get("temperature_max_c"),
+                    "precipitation_probability_percent": item.get("precipitation_probability_percent"),
+                    "precipitation_mm": item.get("precipitation_sum_mm"),
+                    "wind_speed_kmh": None,
+                    "weather_code": item.get("weather_code"),
+                    "condition": item.get("condition"),
+                }
+                for item in forecast.get("forecast", [])
+                if isinstance(item, dict)
+            ]
         if departure_time and hours:
             try:
                 start = datetime.fromisoformat(departure_time.replace("Z", "+00:00"))
