@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cross_file/cross_file.dart';
@@ -602,7 +603,8 @@ class _WeatherHomePageState extends State<WeatherHomePage> {
       isScrollControlled: true,
       backgroundColor: background,
       builder: (_) => MapPanel(api: _api, latitude: latitude, longitude: longitude, language: _language,
-          route: _routeResult?['route'] as Map<String, dynamic>?),
+          route: _routeResult?['route'] as Map<String, dynamic>?,
+          originName: _position == null ? 'Delhi' : 'Current Location'),
     );
   }
 
@@ -1149,12 +1151,13 @@ class _WeatherHomePageState extends State<WeatherHomePage> {
 }
 
 class MapPanel extends StatefulWidget {
-  const MapPanel({super.key, required this.api, required this.latitude, required this.longitude, required this.language, this.route});
+  const MapPanel({super.key, required this.api, required this.latitude, required this.longitude, required this.language, this.route, this.originName = 'Current Location'});
   final ApiService api;
   final double latitude;
   final double longitude;
   final String language;
   final Map<String, dynamic>? route;
+  final String originName;
 
   @override
   State<MapPanel> createState() => _MapPanelState();
@@ -1162,8 +1165,11 @@ class MapPanel extends StatefulWidget {
 
 class _MapPanelState extends State<MapPanel> {
   late Future<Map<String, dynamic>> _weather;
-  final _origin = TextEditingController(text: 'Current Location');
+  late final TextEditingController _origin;
   final _destination = TextEditingController();
+  Timer? _searchDebounce;
+  List<Map<String, dynamic>> _suggestions = [];
+  Map<String, dynamic>? _selectedPlace;
   Map<String, dynamic>? _route, _routeWeather;
   Map<String, dynamic>? _bestTime;
   String _travelMode = 'driving';
@@ -1176,12 +1182,14 @@ class _MapPanelState extends State<MapPanel> {
     super.initState();
     _weather = widget.api.mapWeather(widget.latitude, widget.longitude);
     _route = widget.route;
+    _origin = TextEditingController(text: widget.originName);
   }
 
   @override
   void dispose() {
     _origin.dispose();
     _destination.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -1196,7 +1204,17 @@ class _MapPanelState extends State<MapPanel> {
       final originText = _origin.text.trim().toLowerCase() == 'current location'
           ? 'Delhi'
           : _origin.text.trim();
-      final route = await widget.api.resolveRoute(originText, destination, travelMode: _travelMode);
+      final route = _selectedPlace == null || originText.toLowerCase() != 'current location'
+          ? await widget.api.resolveRoute(originText, destination, travelMode: _travelMode)
+          : await widget.api.createRoute({
+              'latitude': widget.latitude,
+              'longitude': widget.longitude,
+              'name': originText,
+            }, {
+              'latitude': _selectedPlace!['latitude'],
+              'longitude': _selectedPlace!['longitude'],
+              'name': _selectedPlace!['name'] ?? destination,
+            }, travelMode: _travelMode);
       Map<String, dynamic>? weather;
       try {
         weather = await widget.api.routeWeather(route['route_id'].toString());
@@ -1207,6 +1225,41 @@ class _MapPanelState extends State<MapPanel> {
     } finally {
       if (mounted) setState(() => _routeLoading = false);
     }
+  }
+
+  void _searchPlaces(String value) {
+    _searchDebounce?.cancel();
+    final query = value.trim();
+    if (query.length < 2) {
+      setState(() => _suggestions = []);
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 320), () async {
+      try {
+        final result = await widget.api.autocomplete(query,
+            latitude: widget.latitude, longitude: widget.longitude);
+        if (mounted) setState(() => _suggestions = result);
+      } catch (_) {
+        if (mounted) _showNotice('Place search is temporarily unavailable.');
+      }
+    });
+  }
+
+  Future<void> _selectPlace(Map<String, dynamic> place) async {
+    Map<String, dynamic> selected = place;
+    final placeId = place['place_id']?.toString();
+    if (placeId != null && placeId.isNotEmpty) {
+      try {
+        selected = await widget.api.placeDetails(placeId);
+      } catch (_) {
+        // The suggestion already contains coordinates for the default provider.
+      }
+    }
+    setState(() {
+      _selectedPlace = selected;
+      _destination.text = selected['name']?.toString() ?? selected['address']?.toString() ?? '';
+      _suggestions = [];
+    });
   }
 
   void _refresh() => setState(() {
@@ -1268,12 +1321,12 @@ class _MapPanelState extends State<MapPanel> {
   Widget _routeInputs() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('WEATHERGPT ROUTE INTELLIGENCE', style: TextStyle(color: navy, fontWeight: FontWeight.w900, fontSize: 15)),
         const SizedBox(height: 9),
-        Row(children: [Expanded(child: _routeField(_origin, 'From')), const SizedBox(width: 8), Expanded(child: _routeField(_destination, 'To • Search destination'))]),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: _routeField(_origin, 'From')), const SizedBox(width: 8), Expanded(child: Column(children: [_routeField(_destination, 'To • Search destination', onChanged: _searchPlaces), if (_suggestions.isNotEmpty) Container(constraints: const BoxConstraints(maxHeight: 150), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 5)]), child: ListView(shrinkWrap: true, children: _suggestions.map((place) => ListTile(dense: true, onTap: () => _selectPlace(place), leading: const Icon(Icons.location_on_outlined, color: blue, size: 18), title: Text(place['name']?.toString() ?? 'Place', style: const TextStyle(color: navy, fontSize: 12, fontWeight: FontWeight.w700)), subtitle: Text(place['address']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10)))).toList()))]))]),
         const SizedBox(height: 8),
         Row(children: [DropdownButton<String>(value: _travelMode, items: const [DropdownMenuItem(value: 'driving', child: Text('🚗 Driving')), DropdownMenuItem(value: 'walking', child: Text('🚶 Walking')), DropdownMenuItem(value: 'cycling', child: Text('🚲 Cycling'))], onChanged: _routeLoading ? null : (value) { if (value != null) setState(() => _travelMode = value); }), const Spacer(), FilledButton.icon(onPressed: _routeLoading ? null : _findRoute, icon: _routeLoading ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.route_rounded), label: const Text('Show Route'))]),
       ]);
 
-  Widget _routeField(TextEditingController controller, String hint) => TextField(controller: controller, style: const TextStyle(color: navy, fontSize: 12), decoration: InputDecoration(labelText: hint, labelStyle: const TextStyle(color: Color(0xff64748b), fontSize: 11), filled: true, fillColor: Colors.white, contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xffdce5f1)))));
+  Widget _routeField(TextEditingController controller, String hint, {ValueChanged<String>? onChanged}) => TextField(controller: controller, onChanged: onChanged, style: const TextStyle(color: navy, fontSize: 12), decoration: InputDecoration(labelText: hint, labelStyle: const TextStyle(color: Color(0xff64748b), fontSize: 11), filled: true, fillColor: Colors.white, contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xffdce5f1)))));
 
   Widget _routeEmpty() => Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xffdce5f1))), child: const Text('Enter your starting location and destination to calculate a route, weather along the route, and the WeatherGPT Decision Risk Score.', style: TextStyle(color: Color(0xff64748b), height: 1.4)));
 
@@ -1294,7 +1347,52 @@ class _MapPanelState extends State<MapPanel> {
 
   Widget _risk(String title, String value, Color color) => Expanded(child: Container(padding: const EdgeInsets.all(9), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xffe2e9f4))), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('$title:', style: const TextStyle(color: Color(0xff64748b), fontSize: 11)), Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 11))])));
 
-  Widget _routeOption(int index, String title, String subtitle, String score, Color dot, bool recommended) => InkWell(onTap: () => setState(() => _selectedRoute = index), child: Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: _selectedRoute == index ? const Color(0xffeef6ff) : Colors.white, borderRadius: BorderRadius.circular(15), border: Border.all(color: _selectedRoute == index ? blue : const Color(0xffdce5f1), width: _selectedRoute == index ? 1.5 : 1)), child: Row(children: [Icon(Icons.circle, color: dot, size: 15), const SizedBox(width: 9), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(color: navy, fontWeight: FontWeight.w800, fontSize: 13)), Text(subtitle, style: const TextStyle(color: Color(0xff64748b), fontSize: 11))])), Text(score, style: TextStyle(color: dot == Colors.red ? Colors.red : dot == Colors.orange ? Colors.orange[800] : const Color(0xff009b61), fontWeight: FontWeight.w900)), const Icon(Icons.chevron_right, color: Color(0xff94a3b8))]));
+  Widget _routeOption(int index, String title, String subtitle, String score,
+      Color dot, bool recommended) {
+    final selected = _selectedRoute == index;
+    final scoreColor = dot == Colors.red
+        ? Colors.red
+        : dot == Colors.orange
+            ? Colors.orange[800]!
+            : const Color(0xff009b61);
+    return InkWell(
+      onTap: () => setState(() => _selectedRoute = index),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xffeef6ff) : Colors.white,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(
+              color: selected ? blue : const Color(0xffdce5f1),
+              width: selected ? 1.5 : 1),
+        ),
+        child: Row(children: [
+          Icon(Icons.circle, color: dot, size: 15),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        color: navy,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13)),
+                Text(subtitle,
+                    style: const TextStyle(
+                        color: Color(0xff64748b), fontSize: 11)),
+              ],
+            ),
+          ),
+          Text(score,
+              style: TextStyle(
+                  color: scoreColor, fontWeight: FontWeight.w900)),
+          const Icon(Icons.chevron_right, color: Color(0xff94a3b8)),
+        ]),
+      ),
+    );
+  }
 
   String _riskValue(String key) {
     final segment = _routeWeather?['peak_segment'] as Map<String, dynamic>?;

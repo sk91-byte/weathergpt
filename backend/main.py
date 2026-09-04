@@ -18,6 +18,7 @@ from backend.api.decision import router as decision_router
 from backend.api.reports import router as reports_router
 from backend.api.languages import router as languages_router
 from backend.api.route import router as route_router
+from backend.api.places import router as places_router
 from backend.config import settings
 
 
@@ -59,3 +60,4 @@ app.include_router(decision_router)
 app.include_router(reports_router)
 app.include_router(languages_router)
 app.include_router(route_router)
+app.include_router(places_router)

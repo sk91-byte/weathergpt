@@ -29,6 +29,7 @@ class Settings:
     weatherapi_key: str | None = os.getenv("WEATHERAPI_KEY") or None
     routing_provider_url: str = os.getenv("ROUTING_PROVIDER_URL", "https://router.project-osrm.org")
     routing_provider: str = os.getenv("ROUTING_PROVIDER", "osrm")
+    serpapi_api_key: str | None = os.getenv("SERPAPI_API_KEY") or None
     database_url: str | None = os.getenv("DATABASE_URL") or None
     storage_mode: str = os.getenv("STORAGE_MODE", "postgres" if os.getenv("DATABASE_URL") else "json")
     json_data_file: str = os.getenv("JSON_DATA_FILE", str(Path(__file__).resolve().parent / "data" / "weathergpt.json"))

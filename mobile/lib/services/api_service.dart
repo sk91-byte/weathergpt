@@ -36,6 +36,30 @@ class ApiService {
     return _decode(response);
   }
 
+  Future<Map<String, dynamic>> createRoute(Map<String, dynamic> origin,
+      Map<String, dynamic> destination, {String travelMode = 'driving'}) async {
+    final response = await http.post(Uri.parse('$backendBaseUrl/route'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'origin': origin, 'destination': destination, 'travel_mode': travelMode}));
+    return _decode(response);
+  }
+
+  Future<List<Map<String, dynamic>>> autocomplete(String input,
+      {double? latitude, double? longitude, String? sessionId}) async {
+    final params = <String, String>{'input': input};
+    if (latitude != null) params['latitude'] = latitude.toString();
+    if (longitude != null) params['longitude'] = longitude.toString();
+    if (sessionId != null) params['session_id'] = sessionId;
+    final response = await http.get(Uri.parse('$backendBaseUrl/places/autocomplete').replace(queryParameters: params));
+    final value = _decode(response)['suggestions'];
+    return value is List ? value.whereType<Map<String, dynamic>>().toList() : <Map<String, dynamic>>[];
+  }
+
+  Future<Map<String, dynamic>> placeDetails(String placeId) async {
+    final response = await http.get(Uri.parse('$backendBaseUrl/places/$placeId'));
+    return _decode(response);
+  }
+
   Future<Map<String, dynamic>> routeWeather(String routeId,
       {String? departureTime}) async {
     final response = await http.post(Uri.parse('$backendBaseUrl/route/weather'),
