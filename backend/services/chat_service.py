@@ -148,31 +148,41 @@ def _route_response(message: str, origin: dict[str, Any], destination: dict[str,
         if isinstance(probability, (int, float)):
             probabilities.append(probability)
     max_rain = max(probabilities) if probabilities else None
+    # This is a transparent point-forecast score, not an official road-safety rating.
+    safety_score = max(0, round(100 - (max_rain * 0.35 if isinstance(max_rain, (int, float)) else 0)))
     if decision_question:
-        if max_rain is not None and max_rain >= 60:
-            advice = "I’d avoid the wettest period if you can. Keep rain protection handy, allow extra travel time, and drive carefully on slippery or waterlogged roads."
+        if safety_score < 80:
+            advice_key = "wettest"
+            advice = f"The point-forecast safety score is {safety_score}/100, so I’d avoid the wettest period if you can. Try leaving after the rain risk reduces, keep rain protection handy, allow extra travel time, and drive carefully on slippery or waterlogged roads."
         elif max_rain is not None and max_rain >= 40:
+            advice_key = "possible_rain"
             advice = "The trip is possible, but keep an umbrella or raincoat with you and allow some extra time for wet roads."
         else:
+            advice_key = "reasonable"
             advice = "The available point forecasts look reasonable for travel, with normal care on the road."
     else:
+        advice_key = "check_again"
         advice = "Keep checking close to departure because weather can change along the route."
     route_limit = "I can compare the origin and destination, but I do not have road-by-road observations for every intermediate kilometre."
     if language == "hi":
         advice_hi = {
-            "I’d avoid the wettest period if you can. Keep rain protection handy, allow extra travel time, and drive carefully on slippery or waterlogged roads.": "अगर संभव हो तो सबसे ज्यादा बारिश वाले समय से बचें। बारिश से बचने का सामान रखें, अतिरिक्त समय दें और फिसलन या जलभराव वाली सड़कों पर सावधानी से चलाएं।",
-            "The trip is possible, but keep an umbrella or raincoat with you and allow some extra time for wet roads.": "यात्रा हो सकती है, लेकिन छाता या रेनकोट साथ रखें और गीली सड़कों के लिए थोड़ा अतिरिक्त समय दें।",
-            "The available point forecasts look reasonable for travel, with normal care on the road.": "मौजूदा जगहों के पूर्वानुमान के आधार पर सामान्य सावधानी के साथ यात्रा ठीक लगती है।",
-            "Keep checking close to departure because weather can change along the route.": "निकलने से ठीक पहले फिर से मौसम देख लें, क्योंकि रास्ते में मौसम बदल सकता है।",
-        }[advice]
+            "wettest": "अगर संभव हो तो सबसे ज्यादा बारिश वाले समय से बचें। बारिश से बचने का सामान रखें, अतिरिक्त समय दें और फिसलन या जलभराव वाली सड़कों पर सावधानी से चलाएं।",
+            "possible_rain": "यात्रा हो सकती है, लेकिन छाता या रेनकोट साथ रखें और गीली सड़कों के लिए थोड़ा अतिरिक्त समय दें।",
+            "reasonable": "मौजूदा जगहों के पूर्वानुमान के आधार पर सामान्य सावधानी के साथ यात्रा ठीक लगती है।",
+            "check_again": "निकलने से ठीक पहले फिर से मौसम देख लें, क्योंकि रास्ते में मौसम बदल सकता है।",
+        }[advice_key]
+        if safety_score < 80:
+            advice_hi = f"मौसम के आधार पर सुरक्षा स्कोर {safety_score}/100 है, इसलिए अगर संभव हो तो कम बारिश वाले समय पर निकलें। " + advice_hi
         return f"आपकी यात्रा का अपडेट: {origin_summary}। {destination_summary}। {advice_hi} {route_limit.replace('I can compare the origin and destination, but I do not have road-by-road observations for every intermediate kilometre.', 'मैं शुरुआत और मंजिल की जगहों का मौसम देख सकता हूँ, लेकिन रास्ते के हर हिस्से का अलग सड़क-स्तर डेटा उपलब्ध नहीं है।')}"
     if language == "hinglish":
         advice_hinglish = {
-            "I’d avoid the wettest period if you can. Keep rain protection handy, allow extra travel time, and drive carefully on slippery or waterlogged roads.": "Agar possible ho to sabse zyada baarish wale time se bachna. Rain protection saath rakhna, extra travel time dena aur slippery ya waterlogged roads par carefully drive karna.",
-            "The trip is possible, but keep an umbrella or raincoat with you and allow some extra time for wet roads.": "Trip possible hai, bas chhata ya raincoat saath rakhna aur geeli sadkon ke liye thoda extra time rakhna.",
-            "The available point forecasts look reasonable for travel, with normal care on the road.": "Available point forecasts ke hisaab se normal road care ke saath trip theek lag rahi hai.",
-            "Keep checking close to departure because weather can change along the route.": "Nikalne se thodi der pehle weather phir check kar lena, kyunki route mein weather badal sakta hai.",
-        }[advice]
+            "wettest": "Agar possible ho to sabse zyada baarish wale time se bachna. Rain protection saath rakhna, extra travel time dena aur slippery ya waterlogged roads par carefully drive karna.",
+            "possible_rain": "Trip possible hai, bas chhata ya raincoat saath rakhna aur geeli sadkon ke liye thoda extra time rakhna.",
+            "reasonable": "Available point forecasts ke hisaab se normal road care ke saath trip theek lag rahi hai.",
+            "check_again": "Nikalne se thodi der pehle weather phir check kar lena, kyunki route mein weather badal sakta hai.",
+        }[advice_key]
+        if safety_score < 80:
+            advice_hinglish = f"Point forecast ke hisaab se safety score {safety_score}/100 hai, isliye possible ho to baarish kam hone ke baad nikalna better rahega. " + advice_hinglish
         limit_hinglish = "Main origin aur destination ka weather compare kar sakta hoon, lekin beech ke har kilometre ka road-level data available nahi hai."
         return f"Trip update: {origin_summary}. {destination_summary}. {advice_hinglish} {limit_hinglish}"
     return f"Trip update: {origin_summary}. {destination_summary}. {advice} {route_limit}"
