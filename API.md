@@ -4,6 +4,14 @@ Core endpoints: `GET /`, `GET /health`, `GET /weather/current`, `GET /weather/fo
 
 Platform endpoints: `GET /alerts`, `GET /alerts/nearby`, `GET /alerts/{alert_id}`, `POST /alerts/test`, `GET /climate/history`, `GET /climate/summary`, `GET /climate/temperature-trend`, `GET /climate/rainfall-trend`, `GET /map/weather`, `POST /voice/transcribe`, `POST /voice/synthesize`, `POST /voice/chat`, `GET /voice/health`, and `GET /nwp/status`.
 
+## Weather-aware route intelligence
+
+`POST /route` accepts normalized `origin` and `destination` objects plus `travel_mode` (`driving`, `walking`, `cycling`; `transit` is rejected unless a transit provider is added). `POST /route/resolve` accepts place names and resolves them with the existing location service before routing. Route responses contain a `route_id`, distance, duration, GeoJSON geometry, and normalized steps.
+
+`POST /route/weather` samples no more than six evenly spaced route geometry points and calculates weather/risk summaries for those points. `POST /route/best-time` compares the requested departure candidates, and `GET /route/{route_id}/explanation` returns evidence from the highest-risk sampled segment. Routes are cached in-process for one hour; precise GPS history is not stored. If the routing or weather provider is unavailable, the API reports that limitation rather than fabricating data.
+
+Required routing configuration: `ROUTING_PROVIDER=osrm` (default) and optional `ROUTING_PROVIDER_URL` (default `https://router.project-osrm.org`). Weather uses Open-Meteo with the configured `WEATHERAPI_KEY` fallback.
+
 Decision Intelligence endpoints: `POST /decision/analyze`, `POST /decision/advice`, `GET /decision/risk`, `GET /decision/timeline`, `POST /decision/changes`, `GET /decision/{decision_id}`, and `GET /decision/{decision_id}/explanation`. Citizen-report foundation endpoints: `POST /reports`, `GET /reports/nearby`, and `GET /reports/nearby/summary`.
 
 Language endpoints: `GET /languages`, `GET /profile`, `PUT /profile`, and `PATCH /profile`. WeatherGPT offers English plus the 22 Scheduled Languages in the Eighth Schedule. Language is a user choice separate from location; GPS may provide local weather but never silently selects a response language.

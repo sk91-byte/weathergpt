@@ -601,7 +601,8 @@ class _WeatherHomePageState extends State<WeatherHomePage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: background,
-      builder: (_) => MapPanel(api: _api, latitude: latitude, longitude: longitude, language: _language),
+      builder: (_) => MapPanel(api: _api, latitude: latitude, longitude: longitude, language: _language,
+          route: _routeResult?['route'] as Map<String, dynamic>?),
     );
   }
 
@@ -1148,11 +1149,12 @@ class _WeatherHomePageState extends State<WeatherHomePage> {
 }
 
 class MapPanel extends StatefulWidget {
-  const MapPanel({super.key, required this.api, required this.latitude, required this.longitude, required this.language});
+  const MapPanel({super.key, required this.api, required this.latitude, required this.longitude, required this.language, this.route});
   final ApiService api;
   final double latitude;
   final double longitude;
   final String language;
+  final Map<String, dynamic>? route;
 
   @override
   State<MapPanel> createState() => _MapPanelState();
@@ -1160,11 +1162,51 @@ class MapPanel extends StatefulWidget {
 
 class _MapPanelState extends State<MapPanel> {
   late Future<Map<String, dynamic>> _weather;
+  final _origin = TextEditingController(text: 'Current Location');
+  final _destination = TextEditingController();
+  Map<String, dynamic>? _route, _routeWeather;
+  Map<String, dynamic>? _bestTime;
+  String _travelMode = 'driving';
+  bool _routeLoading = false;
+  int _selectedRoute = 0;
+  bool _showDetails = false;
 
   @override
   void initState() {
     super.initState();
     _weather = widget.api.mapWeather(widget.latitude, widget.longitude);
+    _route = widget.route;
+  }
+
+  @override
+  void dispose() {
+    _origin.dispose();
+    _destination.dispose();
+    super.dispose();
+  }
+
+  Future<void> _findRoute() async {
+    final destination = _destination.text.trim();
+    if (destination.isEmpty) {
+      _showNotice('Enter a destination such as Jaipur or India Gate.');
+      return;
+    }
+    setState(() => _routeLoading = true);
+    try {
+      final originText = _origin.text.trim().toLowerCase() == 'current location'
+          ? 'Delhi'
+          : _origin.text.trim();
+      final route = await widget.api.resolveRoute(originText, destination, travelMode: _travelMode);
+      Map<String, dynamic>? weather;
+      try {
+        weather = await widget.api.routeWeather(route['route_id'].toString());
+      } catch (_) {}
+      if (mounted) setState(() { _route = route; _routeWeather = weather; });
+    } catch (error) {
+      _showNotice(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _routeLoading = false);
+    }
   }
 
   void _refresh() => setState(() {
@@ -1174,20 +1216,26 @@ class _MapPanelState extends State<MapPanel> {
   @override
   Widget build(BuildContext context) => SafeArea(
         child: SizedBox(
-          height: MediaQuery.of(context).size.height * .82,
-          child: Padding(
+          height: MediaQuery.of(context).size.height * .9,
+          child: Column(children: [
+            Container(
+              color: const Color(0xff0c1730),
+              padding: const EdgeInsets.fromLTRB(18, 14, 12, 13),
+              child: Row(children: [
+                Container(width: 30, height: 30, alignment: Alignment.center, decoration: BoxDecoration(color: blue, borderRadius: BorderRadius.circular(8)), child: const Text('W', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900))),
+                const SizedBox(width: 9),
+                const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('WeatherGPT Live Map  LIVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)), Text('Navigate smarter. Stay ahead of the weather.', style: TextStyle(color: Color(0xffa8b5cd), fontSize: 10))])),
+                IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh_rounded, color: Colors.white)),
+                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, color: Colors.white)),
+              ]),
+            ),
+            Expanded(child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                const Icon(Icons.map_rounded, color: blue),
-                const SizedBox(width: 8),
-                Text(widget.language == 'hi' ? 'WeatherGPT Live Map' : 'WeatherGPT Live Map', style: const TextStyle(color: navy, fontSize: 20, fontWeight: FontWeight.w800)),
-                const Spacer(),
-                IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh_rounded, color: blue)),
-                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, color: navy)),
-              ]),
-              Text('${widget.latitude.toStringAsFixed(4)}, ${widget.longitude.toStringAsFixed(4)}', style: const TextStyle(color: Color(0xff64748b), fontSize: 12)),
-              const SizedBox(height: 14),
+              _routeInputs(),
+              const SizedBox(height: 12),
+              InkWell(onTap: () => setState(() => _showDetails = !_showDetails), child: Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Row(children: [const Text('WeatherGPT Route Comparison', style: TextStyle(color: Color(0xff64748b), fontWeight: FontWeight.w700, fontSize: 12)), const Spacer(), Text(_showDetails ? 'Hide Details' : 'View Details & Best Time', style: const TextStyle(color: blue, fontWeight: FontWeight.w700, fontSize: 12))]))),
+              const SizedBox(height: 8),
               Expanded(child: FutureBuilder<Map<String, dynamic>>(
                 future: _weather,
                 builder: (context, snapshot) {
@@ -1202,30 +1250,76 @@ class _MapPanelState extends State<MapPanel> {
                   final rain = properties['rain_probability_percent']?.toString() ?? '--';
                   final condition = properties['condition']?.toString() ?? 'Live conditions unavailable';
                   return ListView(children: [
-                    Container(
-                      height: 220,
-                      decoration: BoxDecoration(color: const Color(0xffdceeff), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xffb9d8f5))),
-                      child: Stack(children: [
-                        const Positioned.fill(child: CustomPaint(painter: _MapGridPainter())),
-                        Center(child: Container(width: 86, height: 86, decoration: BoxDecoration(color: blue.withOpacity(.16), shape: BoxShape.circle), child: const Icon(Icons.location_on_rounded, color: blue, size: 46))),
-                        Positioned(top: 14, left: 14, child: _mapChip(Icons.thermostat, '$temp°C')),
-                        Positioned(top: 14, right: 14, child: _mapChip(Icons.water_drop, '$rain% rain')),
-                        const Positioned(bottom: 14, left: 14, child: Text('LIVE • Weather layer', style: TextStyle(color: navy, fontWeight: FontWeight.w700, fontSize: 11))),
-                      ]),
-                    ),
-                    const SizedBox(height: 14),
-                    _mapInfo(Icons.cloud_rounded, 'Current condition', condition),
-                    _mapInfo(Icons.water_drop_rounded, 'Rain probability', '$rain%'),
-                    _mapInfo(Icons.layers_rounded, 'Layers', 'Temperature • Rainfall • Wind • Alerts'),
+                    if (_route != null) _routeSummary(condition, rain) else _routeEmpty(),
+                    const SizedBox(height: 12),
+                    Text(_route == null ? 'CREATE A ROUTE TO SEE OPTIONS' : 'AVAILABLE ROUTE OPTIONS', style: const TextStyle(color: Color(0xff64748b), fontWeight: FontWeight.w800, fontSize: 12)),
                     const SizedBox(height: 8),
-                    const Text('Use this map with the trip card to check conditions before leaving. Weather data is refreshed from the backend.', style: TextStyle(color: Color(0xff64748b), fontSize: 12, height: 1.4)),
+                    if (_route != null) _routeOption(0, 'WeatherGPT Route', '${_route!['distance_km'] ?? '--'} km • ${_route!['duration_minutes'] ?? '--'} min', _routeWeather?['overall_risk']?['score']?.toString() ?? '--', Colors.green, true),
+                    if (_showDetails) _departureCard(),
                   ]);
                 },
               )),
             ]),
-          ),
+          )),
+          ]),
         ),
       );
+
+  Widget _routeInputs() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('WEATHERGPT ROUTE INTELLIGENCE', style: TextStyle(color: navy, fontWeight: FontWeight.w900, fontSize: 15)),
+        const SizedBox(height: 9),
+        Row(children: [Expanded(child: _routeField(_origin, 'From')), const SizedBox(width: 8), Expanded(child: _routeField(_destination, 'To • Search destination'))]),
+        const SizedBox(height: 8),
+        Row(children: [DropdownButton<String>(value: _travelMode, items: const [DropdownMenuItem(value: 'driving', child: Text('🚗 Driving')), DropdownMenuItem(value: 'walking', child: Text('🚶 Walking')), DropdownMenuItem(value: 'cycling', child: Text('🚲 Cycling'))], onChanged: _routeLoading ? null : (value) { if (value != null) setState(() => _travelMode = value); }), const Spacer(), FilledButton.icon(onPressed: _routeLoading ? null : _findRoute, icon: _routeLoading ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.route_rounded), label: const Text('Show Route'))]),
+      ]);
+
+  Widget _routeField(TextEditingController controller, String hint) => TextField(controller: controller, style: const TextStyle(color: navy, fontSize: 12), decoration: InputDecoration(labelText: hint, labelStyle: const TextStyle(color: Color(0xff64748b), fontSize: 11), filled: true, fillColor: Colors.white, contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xffdce5f1)))));
+
+  Widget _routeEmpty() => Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xffdce5f1))), child: const Text('Enter your starting location and destination to calculate a route, weather along the route, and the WeatherGPT Decision Risk Score.', style: TextStyle(color: Color(0xff64748b), height: 1.4)));
+
+  Widget _routeSummary(String condition, String rain) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xffb8d7ff)), boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 5)]),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6), decoration: BoxDecoration(color: const Color(0xffd5f8e6), borderRadius: BorderRadius.circular(8)), child: const Text('● ROUTE FOUND', style: TextStyle(color: Color(0xff087444), fontWeight: FontWeight.w800, fontSize: 11))), const Spacer(), const Text('Risk Score:', style: TextStyle(color: Color(0xff64748b), fontSize: 11)), const SizedBox(width: 6), Text('${_routeWeather?['overall_risk']?['score'] ?? '--'}/100', style: const TextStyle(color: Color(0xff009b61), fontWeight: FontWeight.w900, fontSize: 16))]),
+      const SizedBox(height: 12),
+      Text('${_route?['duration_minutes'] ?? '--'} min  (${_route?['distance_km'] ?? '--'} km)', style: const TextStyle(color: navy, fontSize: 22, fontWeight: FontWeight.w900)),
+      Text(condition, style: const TextStyle(color: Color(0xff64748b), fontSize: 12)),
+      const SizedBox(height: 9),
+      Row(children: [_risk('Rain Risk', _riskValue('rain'), _riskColor('rain')), const SizedBox(width: 8), _risk('Flood Risk', _riskValue('flood'), _riskColor('flood'))]),
+      const SizedBox(height: 12),
+      Row(children: [Expanded(child: FilledButton.icon(onPressed: () => _showNotice('Navigation started for the selected route.'), icon: const Icon(Icons.navigation_rounded), label: const Text('START NAVIGATION'))), const SizedBox(width: 8), Expanded(child: OutlinedButton.icon(onPressed: () => _showNotice('This route has the lowest predicted rain and waterlogging risk.'), icon: const Icon(Icons.auto_awesome, size: 16), label: const Text('Why This Route?')))]),
+    ]),
+  );
+
+  Widget _risk(String title, String value, Color color) => Expanded(child: Container(padding: const EdgeInsets.all(9), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xffe2e9f4))), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('$title:', style: const TextStyle(color: Color(0xff64748b), fontSize: 11)), Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 11))])));
+
+  Widget _routeOption(int index, String title, String subtitle, String score, Color dot, bool recommended) => InkWell(onTap: () => setState(() => _selectedRoute = index), child: Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: _selectedRoute == index ? const Color(0xffeef6ff) : Colors.white, borderRadius: BorderRadius.circular(15), border: Border.all(color: _selectedRoute == index ? blue : const Color(0xffdce5f1), width: _selectedRoute == index ? 1.5 : 1)), child: Row(children: [Icon(Icons.circle, color: dot, size: 15), const SizedBox(width: 9), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(color: navy, fontWeight: FontWeight.w800, fontSize: 13)), Text(subtitle, style: const TextStyle(color: Color(0xff64748b), fontSize: 11))])), Text(score, style: TextStyle(color: dot == Colors.red ? Colors.red : dot == Colors.orange ? Colors.orange[800] : const Color(0xff009b61), fontWeight: FontWeight.w900)), const Icon(Icons.chevron_right, color: Color(0xff94a3b8))]));
+
+  String _riskValue(String key) {
+    final segment = _routeWeather?['peak_segment'] as Map<String, dynamic>?;
+    final risk = segment?['risk'];
+    final components = risk is Map ? risk['components'] : null;
+    final component = components is Map ? components[key] : null;
+    return component is Map ? component['level']?.toString() ?? 'unavailable' : 'unavailable';
+  }
+
+  Color _riskColor(String key) {
+    final value = _riskValue(key);
+    return value == 'unavailable' ? const Color(0xff64748b) : (value == 'high' || value == 'extreme') ? Colors.red : (value == 'moderate' ? Colors.orange[800]! : Colors.green);
+  }
+
+  Future<void> _checkBestTime() async {
+    if (_route == null) return;
+    try {
+      final result = await widget.api.routeBestTime(_route!['route_id'].toString());
+      if (mounted) setState(() => _bestTime = result);
+    } catch (error) { _showNotice(error.toString().replaceFirst('Exception: ', '')); }
+  }
+
+  Widget _departureCard() => Container(margin: const EdgeInsets.only(top: 6), padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xfffffbeb), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xffffd66b))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('◷  BEST DEPARTURE TIME AI', style: TextStyle(color: Color(0xff7c3512), fontWeight: FontWeight.w900, fontSize: 12)), const SizedBox(height: 8), Text(_bestTime?['reason']?.toString() ?? 'Compare forecast risk across possible departure times.', style: const TextStyle(color: Color(0xff8a431d), fontSize: 12, height: 1.45)), const SizedBox(height: 8), OutlinedButton(onPressed: _checkBestTime, child: Text(_bestTime?['recommended_departure_time'] == null ? 'Check best departure time' : 'Recommended: ${_bestTime!['recommended_departure_time']}'))]));
+
+  void _showNotice(String message) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 
   Widget _mapChip(IconData icon, String text) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),

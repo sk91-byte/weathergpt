@@ -25,6 +25,37 @@ class ApiService {
     return _decode(response);
   }
 
+  Future<Map<String, dynamic>> resolveRoute(String origin, String destination,
+      {String travelMode = 'driving'}) async {
+    final uri = Uri.parse('$backendBaseUrl/route/resolve').replace(queryParameters: {
+      'origin': origin,
+      'destination': destination,
+      'travel_mode': travelMode,
+    });
+    final response = await http.post(uri);
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> routeWeather(String routeId,
+      {String? departureTime}) async {
+    final response = await http.post(Uri.parse('$backendBaseUrl/route/weather'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'route_id': routeId, 'departure_time': departureTime}));
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> routeExplanation(String routeId) async {
+    final response = await http.get(Uri.parse('$backendBaseUrl/route/$routeId/explanation'));
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> routeBestTime(String routeId) async {
+    final response = await http.post(Uri.parse('$backendBaseUrl/route/best-time'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'route_id': routeId}));
+    return _decode(response);
+  }
+
   Future<Map<String, dynamic>> chat(String message,
       {double? latitude,
       double? longitude,
