@@ -1,0 +1,92 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+import '../config/api_config.dart';
+
+class ApiService {
+  Future<Map<String, dynamic>> currentWeather(
+      double latitude, double longitude) async {
+    final response = await http.get(Uri.parse(
+        '$backendBaseUrl/weather/current?latitude=$latitude&longitude=$longitude'));
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> forecast(double latitude, double longitude,
+      {int days = 7}) async {
+    final response = await http.get(Uri.parse(
+        '$backendBaseUrl/weather/forecast?latitude=$latitude&longitude=$longitude&days=$days'));
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> chat(String message,
+      {double? latitude,
+      double? longitude,
+      String? conversationId,
+      String profile = 'general_public',
+      String? language}) async {
+    final body = <String, dynamic>{'message': message};
+    if (latitude != null && longitude != null) {
+      body['latitude'] = latitude;
+      body['longitude'] = longitude;
+    }
+    if (conversationId != null) body['conversation_id'] = conversationId;
+    body['profile'] = profile;
+    if (language != null) body['language'] = language;
+    final response = await http.post(Uri.parse('$backendBaseUrl/chat'),
+        headers: {'Content-Type': 'application/json'}, body: jsonEncode(body));
+    return _decode(response);
+  }
+
+  Future<void> saveLanguage(String language) async {
+    final response = await http.put(Uri.parse('$backendBaseUrl/profile'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'language': language}));
+    _decode(response);
+  }
+
+  Future<Map<String, dynamic>> voiceChat(List<int> audio,
+      {String filename = 'voice.wav',
+      double? latitude,
+      double? longitude,
+      String? conversationId,
+      String language = 'en',
+      String profile = 'general_public'}) async {
+    final request =
+        http.MultipartRequest('POST', Uri.parse('$backendBaseUrl/voice/chat'));
+    final extension = filename.toLowerCase().split('.').last;
+    final mime = extension == 'webm'
+        ? 'webm'
+        : extension == 'ogg'
+            ? 'ogg'
+            : extension == 'mp3'
+                ? 'mpeg'
+                : extension == 'm4a'
+                    ? 'mp4'
+                    : 'wav';
+    request.files.add(http.MultipartFile.fromBytes('file', audio,
+        filename: filename, contentType: MediaType('audio', mime)));
+    request.fields['language'] = language;
+    request.fields['profile_type'] = profile;
+    if (latitude != null && longitude != null) {
+      request.fields['latitude'] = latitude.toString();
+      request.fields['longitude'] = longitude.toString();
+    }
+    if (conversationId != null)
+      request.fields['conversation_id'] = conversationId;
+    final response = await request.send();
+    return _decode(await http.Response.fromStream(response));
+  }
+
+  Map<String, dynamic> _decode(http.Response response) {
+    if (response.statusCode >= 400) {
+      var detail = 'Server error (${response.statusCode})';
+      try {
+        detail = (jsonDecode(response.body) as Map<String, dynamic>)['detail']
+                ?.toString() ??
+            detail;
+      } catch (_) {}
+      throw Exception(detail);
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+}

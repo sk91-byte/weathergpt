@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[cod]
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+
+# Local environment variables and secrets
+.env
+backend/data/*.json
+
+# Test and tooling caches
+.pytest_cache/
+.mypy_cache/
+
+# Flutter build output
+mobile/.dart_tool/
+mobile/build/
+mobile/.packages
+

@@ -1,0 +1,20 @@
+name: weathergpt_mobile
+description: WeatherGPT mobile client scaffold
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  geolocator: ^13.0.0
+  record: ^6.1.2
+  audioplayers: ^6.5.0
+  cross_file: ^0.3.4+2
+  http_parser: ^4.1.2
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+flutter:
+  uses-material-design: true

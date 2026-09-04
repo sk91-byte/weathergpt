@@ -1,0 +1,7 @@
+backend/.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+.git/
+mobile/
