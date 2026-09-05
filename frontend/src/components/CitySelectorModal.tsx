@@ -21,9 +21,9 @@ export const CitySelectorModal: React.FC<CitySelectorModalProps> = ({
   isLocating = false,
   locationError = null
 }) => {
-  if (!isOpen) return null;
-
   const [query, setQuery] = useState('');
+
+  if (!isOpen) return null;
 
   const filtered = INDIAN_CITIES.filter((c) =>
     c.toLowerCase().includes(query.toLowerCase())

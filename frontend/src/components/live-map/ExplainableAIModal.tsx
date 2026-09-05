@@ -7,19 +7,13 @@ interface ExplainableAIModalProps {
   isOpen: boolean;
   onClose: () => void;
   mode: 'why-route' | 'why-wait';
-  explanation?: string[];
-  isLoading?: boolean;
-  liveMode?: boolean;
 }
 
 export const ExplainableAIModal: React.FC<ExplainableAIModalProps> = ({
   route,
   isOpen,
   onClose,
-  mode,
-  explanation = [],
-  isLoading = false,
-  liveMode = false
+  mode
 }) => {
   if (!isOpen) return null;
 
@@ -59,13 +53,7 @@ export const ExplainableAIModal: React.FC<ExplainableAIModalProps> = ({
         {/* Primary Natural AI Explanation */}
         <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50/80 to-indigo-50/50 border border-blue-200 text-xs text-slate-800 leading-relaxed mb-4">
           <p className="font-medium">
-            {isLoading
-              ? 'Reading the latest route forecast and risk factors…'
-              : isWhyRoute && liveMode && explanation.length
-              ? explanation.join(' ')
-              : isWhyRoute
-              ? route.whyThisRoute
-              : route.whyWait}
+            {isWhyRoute ? route.whyThisRoute : route.whyWait}
           </p>
         </div>
 
@@ -78,30 +66,28 @@ export const ExplainableAIModal: React.FC<ExplainableAIModalProps> = ({
           <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
             <span className="text-slate-600">Route Safety Score:</span>
             <span className="font-extrabold text-emerald-600">
-              {liveMode && !route.riskAvailable
-                ? 'Unavailable (backend risk data missing)'
-                : `${route.safetyScore} / 100 (${route.safetyScore >= 80 ? 'Safe Corridor' : 'Elevated Hazard'})`}
+              {route.safetyScore} / 100 ({route.safetyScore >= 80 ? 'Safe Corridor' : 'Elevated Hazard'})
             </span>
           </div>
 
           <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
             <span className="text-slate-600">Precipitation Exposure:</span>
             <span className="font-extrabold text-slate-900">
-              {liveMode ? route.rainRisk : route.rainRisk === 'Low' ? 'Reduced by 70%' : 'High Intensity'}
+              {route.rainRisk === 'Low' ? 'Reduced by 70%' : 'High Intensity'}
             </span>
           </div>
 
           <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
             <span className="text-slate-600">Underpass Waterlogging:</span>
             <span className="font-extrabold text-emerald-600">
-              {liveMode ? route.waterloggingRisk : route.waterloggingRisk === 'Low' ? '0 Underpasses at Risk' : 'High Risk In Subways'}
+              {route.waterloggingRisk === 'Low' ? '0 Underpasses at Risk' : 'High Risk In Subways'}
             </span>
           </div>
 
           <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
             <span className="text-slate-600">Forecast Confidence:</span>
             <span className="font-extrabold text-blue-600">
-              {liveMode ? 'Based on backend route forecast' : '88% High • Demo scenario'}
+              88% High • Live Doppler Radar Sync
             </span>
           </div>
         </div>

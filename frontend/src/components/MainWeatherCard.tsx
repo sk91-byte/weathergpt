@@ -2,6 +2,7 @@ import React from 'react';
 import { MapPin, Wind, Droplets, ChevronRight, Navigation, Loader2 } from './Icons';
 import { WeatherIllustration } from './WeatherIllustration';
 import { WeatherData } from '../types';
+import { getWeatherTheme } from '../utils/weatherGradients';
 
 interface MainWeatherCardProps {
   weather: WeatherData;
@@ -18,19 +19,22 @@ export const MainWeatherCard: React.FC<MainWeatherCardProps> = ({
   onUseLiveLocation,
   isLocating = false
 }) => {
+  const theme = getWeatherTheme(weather);
+
   return (
     <div className="px-5 select-none">
       <div
         id="card-main-weather"
         className="relative overflow-hidden rounded-3xl p-5 text-white shadow-xl cursor-pointer transition transform hover:scale-[1.01] active:scale-[0.99]"
         style={{
-          background: 'linear-gradient(135deg, #1976D2 0%, #1565C0 55%, #0D47A1 100%)',
-          boxShadow: '0 12px 30px -4px rgba(25, 118, 210, 0.38)'
+          background: theme.cardGradient,
+          boxShadow: theme.cardShadow,
+          transition: 'background 0.7s ease, box-shadow 0.7s ease'
         }}
         onClick={onOpenDetails}
       >
-        {/* Subtle background glow effect */}
-        <div className="absolute -top-10 -right-10 w-44 h-44 rounded-full bg-sky-400/20 blur-2xl pointer-events-none" />
+        {/* Dynamic background glow effect */}
+        <div className={`absolute -top-10 -right-10 w-44 h-44 rounded-full ${theme.cardGlowColor} blur-2xl pointer-events-none transition-colors duration-700`} />
 
         {/* Location pill and Live GPS trigger */}
         <div className="flex items-center justify-between">
@@ -96,11 +100,11 @@ export const MainWeatherCard: React.FC<MainWeatherCardProps> = ({
               </span>
             </div>
 
-            <p className="text-xs text-blue-100/90 font-medium mt-1">
+            <p className="text-xs text-white/90 font-medium mt-1">
               Feels like {Math.round(weather.feelsLike)}°C <span className="opacity-60">|</span> Humidity {weather.humidity}%
             </p>
 
-            <p className="text-xs text-blue-100/90 font-medium flex items-center space-x-1 mt-0.5">
+            <p className="text-xs text-white/90 font-medium flex items-center space-x-1 mt-0.5">
               <span>Wind {weather.windSpeed} km/h</span>
               <span className="opacity-60">•</span>
               <span>{weather.windDirection}</span>

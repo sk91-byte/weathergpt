@@ -15,8 +15,6 @@ export const FarmerModeModal: React.FC<FarmerModeModalProps> = ({
   isOpen,
   onClose
 }) => {
-  if (!isOpen) return null;
-
   const [advisory, setAdvisory] = useState<FarmerAdvisory>(initialAdvisory);
   const [selectedCrop, setSelectedCrop] = useState('Wheat');
   const [growthStage, setGrowthStage] = useState('Tillering / Crown Root');
@@ -67,6 +65,8 @@ export const FarmerModeModal: React.FC<FarmerModeModalProps> = ({
       }
     }, 400);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">

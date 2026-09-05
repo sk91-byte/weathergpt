@@ -19,9 +19,9 @@ export const ForecastDetailsModal: React.FC<ForecastDetailsModalProps> = ({
   isOpen,
   onClose
 }) => {
-  if (!isOpen) return null;
-
   const [activeTab, setActiveTab] = useState<'hourly' | '7day' | 'aqi'>(initialTab);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200 select-none">

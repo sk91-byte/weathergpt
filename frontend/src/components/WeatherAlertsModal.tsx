@@ -13,9 +13,9 @@ export const WeatherAlertsModal: React.FC<WeatherAlertsModalProps> = ({
   isOpen,
   onClose
 }) => {
-  if (!isOpen) return null;
-
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'high' | 'nearby'>('all');
+
+  if (!isOpen) return null;
 
   const filteredAlerts = alerts.filter((alert) => {
     if (activeFilter === 'active') return alert.isActive;

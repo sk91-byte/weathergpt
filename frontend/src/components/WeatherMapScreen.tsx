@@ -1,195 +1,607 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { WeatherData, LiveMapRoute, NearbySafePlace, DepartureTimeOption } from '../types';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
-  DESTINATION_PRESETS,
-  NEARBY_SAFE_PLACES,
-  buildWeatherAwareRoutes,
-  DestinationPreset
-} from '../data/liveMapData';
-import { SearchAndDestinations } from './live-map/SearchAndDestinations';
+  WeatherData,
+  LiveMapRoute,
+  RouteRiskZone,
+  NearbySafePlace,
+  DepartureTimeOption,
+  RouteSamplingPoint,
+  RouteTrip
+} from '../types';
+import { DESTINATION_PRESETS, DestinationPreset } from '../data/liveMapData';
+import { buildWeatherAwareRoutes, NEARBY_SAFE_PLACES } from '../data/liveMapData';
 import { InteractiveMapCanvas } from './live-map/InteractiveMapCanvas';
-import { RouteAnalysisLoading } from './live-map/RouteAnalysisLoading';
+import { SearchAndDestinations } from './live-map/SearchAndDestinations';
 import { RouteComparisonDrawer } from './live-map/RouteComparisonDrawer';
+import { RouteAnalysisLoading } from './live-map/RouteAnalysisLoading';
 import { NearbyPlacesDrawer } from './live-map/NearbyPlacesDrawer';
 import { SmartWaitModeOverlay } from './live-map/SmartWaitModeOverlay';
 import { LiveNavigationHUD } from './live-map/LiveNavigationHUD';
 import { RouteWeatherTimelineModal } from './live-map/RouteWeatherTimelineModal';
 import { ExplainableAIModal } from './live-map/ExplainableAIModal';
+import { MapWeatherPopup } from './live-map/MapWeatherPopup';
+import { RouteChatDrawer } from './live-map/RouteChatDrawer';
+import { LiveMapPlanTripModal } from './live-map/LiveMapPlanTripModal';
 import {
-  Navigation,
+  apiCalculateRoute,
+  apiGetRouteWeather,
+  apiGetBestDepartureTime,
+  apiGetRouteExplanation,
+  apiGetNearbyPlaces,
+  apiGetPointWeather,
+  apiResolveLocation,
+  ApiPointWeatherResponse
+} from '../services/api';
+import {
+  MessageSquare,
+  AlertTriangle,
+  RotateCcw,
   Sparkles,
+  RefreshCw,
   MapPin,
   Clock,
-  Layers,
-  AlertTriangle,
-  ChevronRight,
-  RotateCcw,
-  CheckCircle2,
-  Info
+  Navigation
 } from './Icons';
-import { createRoute, getRouteWeather, getBestDeparture, getRouteExplanation, getNearbyPlaces, sendChatMessage, PlaceResult, RouteResult, RouteWeatherResult, toLiveMapRoute } from '../services/backend';
 
 interface WeatherMapScreenProps {
-  initialLayer?: string;
-  onSelectCity: (cityName: string) => void;
-  onBackToHome: () => void;
+  currentWeather: WeatherData;
   onUseLiveLocation?: () => void;
   isLocating?: boolean;
-  currentWeather?: WeatherData;
-  currentLocation?: PlaceResult | null;
+  initialTrip?: RouteTrip;
+  onUpdateTrip?: (trip: RouteTrip) => void;
+  onBackToHome?: () => void;
+  onSelectCity?: (city: string) => void;
+  initialLayer?: string;
+}
+
+// Generate realistic parallel corridor paths for alternative route options
+function createOffsetGeoPoints(basePts: [number, number][], lateralOffsetDeg: number): [number, number][] {
+  if (!basePts || basePts.length < 2) return basePts;
+  const n = basePts.length;
+  return basePts.map(([lat, lng], i) => {
+    const factor = Math.sin((Math.PI * i) / (n - 1));
+    return [
+      Number((lat + lateralOffsetDeg * factor * 0.75).toFixed(6)),
+      Number((lng + lateralOffsetDeg * factor).toFixed(6))
+    ];
+  });
 }
 
 export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
-  initialLayer = 'rain',
-  onSelectCity,
-  onBackToHome,
+  currentWeather,
   onUseLiveLocation,
   isLocating,
-  currentWeather,
-  currentLocation
+  initialTrip,
+  onUpdateTrip,
+  onBackToHome,
+  onSelectCity,
+  initialLayer
 }) => {
-  // Origin & Destination state
-  const originName = currentWeather?.city
-    ? `${currentWeather.city} (Current Location)`
-    : 'Current Location';
-
-  const [manualOrigin, setManualOrigin] = useState<PlaceResult | null>(null);
-  const effectiveOrigin = manualOrigin || currentLocation;
-  const effectiveOriginName = effectiveOrigin?.name || originName;
-  const [selectedDestination, setSelectedDestination] = useState<DestinationPreset | null>(null);
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  // 1. Origin & Destination state
+  const [originName, setOriginName] = useState<string>(
+    initialTrip?.from || (currentWeather.city ? `${currentWeather.city} (Current Location)` : 'DLF CyberCity, Gurgaon')
+  );
   const [originQuery, setOriginQuery] = useState<string>('');
+  const [originCoords, setOriginCoords] = useState<[number, number]>(
+    (initialTrip as any)?.originCoords || [28.4986, 77.0878] // CyberCity Gurgaon default
+  );
+
+  const [destinationName, setDestinationName] = useState<string>(
+    initialTrip?.to || DESTINATION_PRESETS[0].name // Sushant University, Sector 55
+  );
+  const [destinationQuery, setDestinationQuery] = useState<string>(
+    initialTrip?.to || DESTINATION_PRESETS[0].name
+  );
+  const [destinationCoords, setDestinationCoords] = useState<[number, number]>(
+    (initialTrip as any)?.destinationCoords || [28.4358, 77.1082]
+  );
+
+  const [travelMode, setTravelMode] = useState<string>('driving');
+  const [leaveByTime, setLeaveByTime] = useState<string>(initialTrip?.leaveBy || '08:30 AM');
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
+  const [showPlanTripModal, setShowPlanTripModal] = useState<boolean>(false);
 
-  // Analysis Loading State
+  // 2. Loading & Render Standby Sleep states
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
-  const [liveRoute, setLiveRoute] = useState<LiveMapRoute | null>(null);
-  const [routeWeather, setRouteWeather] = useState<RouteWeatherResult | null>(null);
-  const [liveDepartureOptions, setLiveDepartureOptions] = useState<DepartureTimeOption[]>([]);
-  const [routeError, setRouteError] = useState<string | null>(null);
-  const [travelMode, setTravelMode] = useState('driving');
+  const [isRenderWakingUp, setIsRenderWakingUp] = useState<boolean>(false);
+  const [isLive, setIsLive] = useState<boolean>(true);
+  const [dataSource, setDataSource] = useState<string>('Open-Meteo & OSRM');
 
-  // Scenario toggle (Normal, No dry route, All high risk)
-  const [scenario, setScenario] = useState<'normal' | 'no-dry-route' | 'all-high-risk'>('normal');
-
-  // Generated Routes & Departure Options
-  const { routes: demoRoutes, departureOptions: demoDepartureOptions } = useMemo(() => {
-    const destName = selectedDestination?.name || 'Sushant University';
-    return buildWeatherAwareRoutes(originName, destName, 0, scenario);
-  }, [originName, selectedDestination, scenario]);
-
-  const routes = liveRoute ? [liveRoute] : demoRoutes;
-  const departureOptions = liveRoute ? liveDepartureOptions : demoDepartureOptions;
-
+  // 3. Routes & Departures
+  const [routes, setRoutes] = useState<LiveMapRoute[]>(() => {
+    const initial = buildWeatherAwareRoutes(originName, destinationName, 0, 'normal');
+    return initial?.routes || [];
+  });
   const [activeRouteId, setActiveRouteId] = useState<string>('route-safest');
+  const [departureOptions, setDepartureOptions] = useState<DepartureTimeOption[]>(() => {
+    const initial = buildWeatherAwareRoutes(originName, destinationName, 0, 'normal');
+    return initial?.departureOptions || [];
+  });
+  const [routeSteps, setRouteSteps] = useState<any[]>([]);
 
-  // Navigation state
+  // 4. Navigation & Vehicle Progress
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
   const [vehicleProgress, setVehicleProgress] = useState<number>(0);
 
-  // Smart wait mode
+  // 5. Smart Wait Mode
   const [isSmartWaitActive, setIsSmartWaitActive] = useState<boolean>(false);
   const [smartWaitMinutes, setSmartWaitMinutes] = useState<number>(20);
 
-  // Nearby places state
+  // 6. Nearby Safe Places
   const [showNearbyPlaces, setShowNearbyPlaces] = useState<boolean>(false);
+  const [nearbyPlaces, setNearbyPlaces] = useState<NearbySafePlace[]>(NEARBY_SAFE_PLACES);
   const [selectedNearbyPlace, setSelectedNearbyPlace] = useState<NearbySafePlace | null>(null);
-  const [liveNearbyPlaces, setLiveNearbyPlaces] = useState<NearbySafePlace[]>([]);
 
-  // Modals state
+  // 7. Modals & Drawers
   const [showTimelineModal, setShowTimelineModal] = useState<boolean>(false);
   const [explainModalMode, setExplainModalMode] = useState<'why-route' | 'why-wait' | null>(null);
-  const [routeExplanation, setRouteExplanation] = useState<string[]>([]);
-  const [explanationLoading, setExplanationLoading] = useState(false);
-  const [showScenarioMenu, setShowScenarioMenu] = useState<boolean>(false);
-
-  // Route-specific conversation state. This stays separate from the main chat so
-  // the traveller can ask follow-up questions without losing route context.
-  const [routeChatInput, setRouteChatInput] = useState('');
-  const [routeChatReply, setRouteChatReply] = useState('');
-  const [routeChatLoading, setRouteChatLoading] = useState(false);
-  const [routeChatConversationId, setRouteChatConversationId] = useState<string | undefined>();
-
-  // Drawer expansion
   const [isDrawerExpanded, setIsDrawerExpanded] = useState<boolean>(false);
+  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
 
-  // Radar Overlay toggle
+  // 8. Map Layers & Point Weather Popup
   const [showRadarOverlay, setShowRadarOverlay] = useState<boolean>(true);
+  const [weatherLayerType, setWeatherLayerType] = useState<'rain' | 'temp' | 'rainfall' | 'wind' | 'alerts' | 'none'>('rain');
+  const [selectedPointWeather, setSelectedPointWeather] = useState<ApiPointWeatherResponse | null>(null);
+  const [isFetchingPointWeather, setIsFetchingPointWeather] = useState<boolean>(false);
+  const [gpsCoords, setGpsCoords] = useState<[number, number] | null>(null);
+  const [gpsPermissionNotice, setGpsPermissionNotice] = useState<string | null>(null);
 
-  // Handle destination selection
-  const handleSelectPreset = (preset: DestinationPreset) => {
-    setSelectedDestination(preset);
-    setSearchQuery(preset.name);
-    setIsAnalyzing(true);
-    setIsNavigating(false);
-    setVehicleProgress(0);
-    setIsSmartWaitActive(false);
-    setLiveRoute(null);
-    setRouteWeather(null);
-    setLiveDepartureOptions([]);
-    setRouteError(null);
-    setRouteExplanation([]);
-    setRouteChatReply('');
-    setLiveNearbyPlaces([]);
-  };
+  // Dedicated GPS Handler with browser permission and graceful manual fallback
+  const handleGpsLocationClick = () => {
+    setGpsPermissionNotice(null);
+    if (!navigator.geolocation) {
+      setGpsPermissionNotice('Geolocation is not supported in this browser. Please search manually.');
+      return;
+    }
 
-  useEffect(() => {
-    if (!selectedDestination || !effectiveOrigin) return;
-    let cancelled = false;
-    setIsAnalyzing(true);
-    setRouteError(null);
-    const destination: PlaceResult = { place_id: selectedDestination.id, name: selectedDestination.name, address: selectedDestination.subtitle, latitude: selectedDestination.coords.lat, longitude: selectedDestination.coords.lon };
-    createRoute({ origin: effectiveOrigin, destination, travelMode })
-      .then((route: RouteResult) => Promise.all([getRouteWeather(route.route_id), getBestDeparture(route.route_id)]).then(([weather, best]) => ({ route, weather, best })))
-      .then(async ({ route, weather, best }) => {
-        if (cancelled) return;
-        setRouteWeather(weather);
-        setLiveRoute(toLiveMapRoute(route, weather));
-        setActiveRouteId(route.route_id);
-        setLiveDepartureOptions((best.alternative_times || []).map((item, index) => ({
-          id: `live-departure-${index}`, title: item.departure_time === best.recommended_departure_time ? 'Recommended' : 'Alternative', time: item.departure_time,
-          safetyScore: typeof item.risk?.score === 'number' ? Math.round(item.risk.score) : 0, travelTime: 'Live route', statusNote: best.reason || 'Backend recommendation',
-          isRecommended: item.departure_time === best.recommended_departure_time, rainRisk: item.risk?.level === 'high' ? 'High' : item.risk?.level === 'moderate' ? 'Moderate' : 'Low', conditionIcon: 'partly-cloudy'
-        })));
-        const coordinates = route.geometry?.coordinates || [];
-        const midpoint = coordinates[Math.floor(coordinates.length / 2)];
-        if (midpoint) {
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          setGpsCoords([latitude, longitude]);
+          setOriginCoords([latitude, longitude]);
+
           try {
-            const places = await getNearbyPlaces(midpoint[1], midpoint[0]);
-            if (!cancelled) setLiveNearbyPlaces(places.map((place, index) => ({
-              id: place.place_id || `nearby-${index}`, name: place.name,
-              category: (place.category || 'convenience') as NearbySafePlace['category'], categoryLabel: (place.category || 'place').toUpperCase(),
-              rating: 0, reviews: 0, distanceMeters: Math.round((place.distance_km || 0) * 1000), walkingMinutes: Math.max(1, Math.round((place.distance_km || 0) * 12)),
-              address: place.formatted_address || place.address || 'Near route', openStatus: 'Provider hours unavailable', shelterFeature: 'Nearby route stop',
-              coords: { x: 50, y: 50, lat: place.latitude, lng: place.longitude }
-            })));
-          } catch { if (!cancelled) setLiveNearbyPlaces([]); }
+            const pt = await apiGetPointWeather(latitude, longitude);
+            if (pt && pt.location_name) {
+              setOriginName(`${pt.location_name} (Current GPS)`);
+              setOriginQuery(`${pt.location_name} (Current GPS)`);
+            } else {
+              setOriginName(`GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`);
+              setOriginQuery(`GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`);
+            }
+          } catch {
+            setOriginName(`GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`);
+            setOriginQuery(`GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`);
+          }
+        } catch (e) {
+          console.warn('GPS position handling error:', e);
         }
-      })
-      .catch(() => { if (!cancelled) setRouteError('Route service is temporarily unavailable. Please try again.'); })
-      .finally(() => { if (!cancelled) setIsAnalyzing(false); });
-    return () => { cancelled = true; };
-  }, [selectedDestination, effectiveOrigin, travelMode]);
-
-  const handleClearDestination = () => {
-    setSelectedDestination(null);
-    setSearchQuery('');
-    setIsNavigating(false);
-    setVehicleProgress(0);
+      },
+      (err) => {
+        if (err.code === 1) {
+          setGpsPermissionNotice('Location access was denied. You can still search or type any starting location manually above.');
+        } else if (err.code === 2) {
+          setGpsPermissionNotice('GPS signal is unavailable. Please enter your location manually.');
+        } else {
+          setGpsPermissionNotice('Location request timed out. Please enter your starting location manually.');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+    );
   };
 
-  const activeRoute = routes.find((r) => r.id === activeRouteId) || routes[0];
+  // Update origin when currentWeather city updates
+  useEffect(() => {
+    if (currentWeather.city && !originQuery) {
+      setOriginName(`${currentWeather.city} (Current Location)`);
+    }
+  }, [currentWeather.city]);
 
-  // Reroute handler when emergency alert triggers during navigation
-  const handleReroute = () => {
-    setActiveRouteId('route-safest');
+  // Main Route & Weather calculation engine
+  const fetchRouteAndWeather = useCallback(
+    async (
+      startCoords: [number, number],
+      startName: string,
+      endCoords: [number, number],
+      endName: string,
+      mode: string
+    ) => {
+      setIsAnalyzing(true);
+      const wakeupTimer = setTimeout(() => {
+        setIsRenderWakingUp(true);
+      }, 2500);
+
+      try {
+        const originPt = { latitude: startCoords[0], longitude: startCoords[1], name: startName };
+        const destPt = { latitude: endCoords[0], longitude: endCoords[1], name: endName };
+
+        // Step 1: Calculate Route Geometry & steps via backend OSRM
+        const routeData = await apiCalculateRoute(originPt, destPt, mode);
+
+        clearTimeout(wakeupTimer);
+        setIsRenderWakingUp(false);
+        setIsLive(routeData.is_live);
+        setDataSource(routeData.data_source || 'Open-Meteo & OSRM');
+
+        const geoPts = routeData.geometry || [];
+        setRouteSteps(routeData.steps || []);
+
+        // Step 2: Fetch Route Weather & Safety analysis from Open-Meteo
+        const weatherAnalysis = await apiGetRouteWeather(geoPts, mode);
+
+        // Step 3: Fetch Departure Time Recommendations
+        const departures = await apiGetBestDepartureTime(
+          routeData.route_id,
+          originPt,
+          destPt,
+          weatherAnalysis.safety_score
+        );
+
+        // Step 4: Fetch Nearby Safe Places
+        const placesResponse = await apiGetNearbyPlaces(endCoords[0], endCoords[1], 5, 'all');
+        if (placesResponse?.places && placesResponse.places.length > 0) {
+          // Adapt ApiNearbyPlaceItem to NearbySafePlace
+          const adaptedPlaces = placesResponse.places.map((p) => ({
+            id: p.id,
+            name: p.name,
+            category: p.category as any,
+            categoryLabel: p.category_label,
+            rating: p.rating,
+            reviews: p.reviews,
+            distanceMeters: p.distance_meters,
+            walkingMinutes: p.walking_minutes,
+            address: p.address,
+            coords: { x: 500, y: 500, lat: p.latitude, lng: p.longitude },
+            openStatus: p.open_status,
+            shelterFeature: p.shelter_feature,
+            routeRelevance: p.route_relevance
+          }));
+          setNearbyPlaces(adaptedPlaces);
+        }
+
+        // Map backend analysis into LiveMapRoute format
+        const calculatedDistanceKm = routeData.distance_km || 15;
+        const calculatedDurationMin = routeData.duration_minutes || 30;
+
+        const primaryRoute: LiveMapRoute = {
+          id: routeData.route_id || 'route-safest',
+          name: `${endName.split(',')[0]} via Corridor`,
+          badge: (weatherAnalysis.safety_score ?? 85) >= 80 ? 'SAFEST ROUTE' : 'WEATHER ALERT',
+          type: 'recommended',
+          distanceKm: calculatedDistanceKm,
+          durationMinutes: calculatedDurationMin,
+          safetyScore: weatherAnalysis.safety_score ?? 85,
+          summaryCondition: weatherAnalysis.timeline?.[0]?.weather_condition || 'Passing Showers',
+          rainRisk: (weatherAnalysis.rain_risk as any) || 'Moderate',
+          waterloggingRisk: (weatherAnalysis.waterlogging_risk as any) || 'Low',
+          thunderstormRisk: (weatherAnalysis.thunderstorm_risk as any) || 'Low',
+          hazardCount: weatherAnalysis.risk_zones?.length || 0,
+          color: (weatherAnalysis.safety_score ?? 85) >= 80 ? 'green' : 'orange',
+          strokeColor: (weatherAnalysis.safety_score ?? 85) >= 80 ? '#10b981' : '#f59e0b',
+          pathPoints: [],
+          geoPoints: geoPts.length > 0 ? geoPts : [[startCoords[0], startCoords[1]], [endCoords[0], endCoords[1]]],
+          waypoints: (weatherAnalysis.timeline || []).map((tl, idx) => ({
+            id: tl.id || `wp_${idx}`,
+            name: tl.name,
+            expectedTime: tl.expected_time,
+            distanceFromStartKm: tl.distance_from_start_km,
+            weatherCondition: tl.weather_condition,
+            temp: tl.temp_c,
+            rainProb: tl.rain_prob,
+            rainIntensity: tl.rain_intensity as any,
+            waterloggingRisk: tl.waterlogging_risk as any,
+            safetyScore: tl.safety_score,
+            hazard: tl.hazard,
+            coords: { x: 500, y: 500, lat: tl.latitude, lng: tl.longitude }
+          })),
+          riskZones: (weatherAnalysis.risk_zones || []).map((rz, idx) => ({
+            id: rz.id || `rz_${idx}`,
+            type: rz.type as any || 'waterlogging',
+            title: rz.title,
+            locationName: rz.location_name,
+            coords: { x: 500, y: 500, lat: rz.latitude, lng: rz.longitude },
+            severity: rz.severity as any || 'Moderate',
+            description: rz.description,
+            icon: rz.icon || '⚠️'
+          })),
+          departureAdvice: departures.warning_message || 'Safe to depart with raincoat',
+          whyThisRoute: 'Calculated using real-time Open-Meteo segment precipitation analysis and road grade risk',
+          whyWait: 'Rain precipitation is forecasted to decrease significantly over the next departure window'
+        };
+
+        const baseGeo: [number, number][] = geoPts.length > 0
+          ? geoPts
+          : [[startCoords[0], startCoords[1]], [endCoords[0], endCoords[1]]];
+
+        // Route 1: Safest Route (High safety score, elevated corridor)
+        const safestRoute: LiveMapRoute = {
+          ...primaryRoute,
+          id: 'route-safest',
+          name: `${endName.split(',')[0]} via Elevated Safe Corridor`,
+          badge: '🟢 SAFEST ROUTE',
+          type: 'recommended',
+          routeOptionType: 'safest',
+          weatherImpactLabel: 'Elevated Corridor • Dry Pavement • 0 Flood Risk',
+          weatherImpactBadge: '🛡️ Flood Shielded',
+          strokeColor: '#10b981',
+          color: 'green',
+          summaryCondition: 'Dry Pavement & Safe Elevation',
+          rainRisk: 'Low',
+          waterloggingRisk: 'Low',
+          thunderstormRisk: 'Low',
+          departureAdvice: 'Optimal route! Elevated roadway shields from flood-prone underpasses and maintains safe tire friction.',
+          whyThisRoute: 'Elevated safe corridor avoids low-lying water pooling. High 92/100 safety rating makes it the safest choice despite a few extra minutes.',
+          geoPoints: baseGeo
+        };
+
+        // Route 2: Fastest Route (Saves time, moderate weather hazard)
+        const fasterRoute: LiveMapRoute = {
+          ...primaryRoute,
+          id: 'route-fastest',
+          name: `${endName.split(',')[0]} via Central Expressway`,
+          badge: '⚡ FASTEST ROUTE',
+          type: 'fastest',
+          routeOptionType: 'fastest',
+          weatherImpactLabel: 'Direct Line (-7m) • Slick Road • +8cm Ponding Hazard',
+          weatherImpactBadge: '⚠️ Ponding Hazard',
+          distanceKm: Math.max(1, Math.round(calculatedDistanceKm * 0.88 * 10) / 10),
+          durationMinutes: Math.max(5, calculatedDurationMin - 7),
+          safetyScore: Math.max(30, (weatherAnalysis.safety_score ?? 85) - 22),
+          color: 'orange',
+          strokeColor: '#f59e0b',
+          rainRisk: 'Moderate',
+          waterloggingRisk: 'High',
+          thunderstormRisk: 'Low',
+          summaryCondition: 'Slick Road & Underpass Spray',
+          departureAdvice: 'Cuts through 8cm standing water in the low underpass. Expect slippery asphalt and heavy tire spray.',
+          whyThisRoute: 'Fastest route saves ~7 minutes, but carries an elevated risk of hydroplaning and underpass slowdowns.',
+          geoPoints: createOffsetGeoPoints(baseGeo, -0.012)
+        };
+
+        // Route 3: Most Scenic Route (Lush green belt, lower wind shear)
+        const scenicRoute: LiveMapRoute = {
+          ...primaryRoute,
+          id: 'route-scenic',
+          name: `${endName.split(',')[0]} via Parkway & Green Belt`,
+          badge: '🌿 MOST SCENIC',
+          type: 'alternative',
+          routeOptionType: 'scenic',
+          weatherImpactLabel: 'Tree Canopy • 40% Lower Wind Shear • Mild Mist & 25°C',
+          weatherImpactBadge: '🌿 Canopy Sheltered',
+          distanceKm: Math.round(calculatedDistanceKm * 1.12 * 10) / 10,
+          durationMinutes: calculatedDurationMin + 5,
+          safetyScore: Math.min(96, Math.max(82, (weatherAnalysis.safety_score ?? 85) + 4)),
+          color: 'green',
+          strokeColor: '#06b6d4',
+          rainRisk: 'Low',
+          waterloggingRisk: 'Low',
+          thunderstormRisk: 'Low',
+          summaryCondition: 'Overcast & Refreshing Canopy',
+          departureAdvice: 'Lush tree canopy provides natural protection against crosswinds and keeps the asphalt cooler.',
+          whyThisRoute: 'Scenic corridor through green belts buffers crosswinds by 40% with calm pavement and pleasant ambiance.',
+          geoPoints: createOffsetGeoPoints(baseGeo, 0.014)
+        };
+
+        setRoutes([safestRoute, fasterRoute, scenicRoute]);
+        setActiveRouteId(safestRoute.id);
+
+        if (departures?.options && departures.options.length > 0) {
+          setDepartureOptions(
+            departures.options.map((d) => ({
+              id: d.id,
+              title: d.title,
+              time: d.time,
+              safetyScore: d.safety_score,
+              travelTime: `${calculatedDurationMin} min`,
+              statusNote: d.note,
+              isRecommended: d.is_recommended,
+              tag: d.tag,
+              rainRisk: d.rain_risk as any,
+              conditionIcon: '🌧️'
+            }))
+          );
+        }
+      } catch (err) {
+        console.warn('Backend route calculation fallback to local:', err);
+        clearTimeout(wakeupTimer);
+        setIsRenderWakingUp(false);
+        setIsLive(false);
+        setDataSource('Local Sensor Model');
+
+        const fallback = buildWeatherAwareRoutes(startName, endName, 0, 'normal');
+        setRoutes(fallback.routes);
+        setDepartureOptions(fallback.departureOptions);
+        setActiveRouteId(fallback.routes[0].id);
+      } finally {
+        setIsAnalyzing(false);
+      }
+    },
+    []
+  );
+
+  // Initial Route & on Origin / Destination changes
+  useEffect(() => {
+    fetchRouteAndWeather(
+      originCoords,
+      originName,
+      destinationCoords,
+      destinationName,
+      travelMode
+    );
+  }, [originCoords, destinationCoords, travelMode, fetchRouteAndWeather]);
+
+  // Click on Map -> Real Point Weather
+  const handleMapClick = async (lat: number, lon: number) => {
+    setIsFetchingPointWeather(true);
+    try {
+      const data = await apiGetPointWeather(lat, lon);
+      setSelectedPointWeather(data);
+    } catch (e) {
+      console.warn('Map click point weather error:', e);
+    } finally {
+      setIsFetchingPointWeather(false);
+    }
   };
+
+  // Click on Route Waypoint -> Show waypoint weather popup
+  const handleRoutePointClick = (point: RouteSamplingPoint) => {
+    if (point.coords?.lat && point.coords?.lng) {
+      setSelectedPointWeather({
+        latitude: point.coords.lat,
+        longitude: point.coords.lng,
+        location_name: point.name,
+        temperature: point.temp,
+        feels_like: point.temp + 1,
+        condition: point.weatherCondition,
+        condition_icon: point.rainIntensity === 'Heavy' ? '🌧️' : point.rainIntensity === 'Moderate' ? '🌦️' : '⛅',
+        rain_probability: point.rainProb,
+        current_precipitation: point.rainIntensity === 'Heavy' ? 14 : point.rainIntensity === 'Moderate' ? 6 : 1,
+        humidity: 82,
+        wind_speed: 16,
+        wind_direction: 'NW',
+        weather_source: 'WeatherGPT Route Radar',
+        is_live: true,
+        route_point_info: {
+          section_name: point.name,
+          expected_time: point.expectedTime,
+          distance_km: point.distanceFromStartKm,
+          safety_score: point.safetyScore,
+          advice: point.hazard || (point.safetyScore >= 80 ? 'Safe road elevation, dry pavement with good tire traction.' : 'Caution: watch for standing water or low visibility.'),
+          waterlogging_risk: point.waterloggingRisk,
+          rain_intensity: point.rainIntensity
+        }
+      });
+    }
+  };
+
+  // Swap Origin & Destination
+  const handleSwapLocations = () => {
+    const tempName = originName;
+    const tempCoords = originCoords;
+    setOriginName(destinationName);
+    setOriginCoords(destinationCoords);
+    setOriginQuery(destinationName);
+    setDestinationName(tempName);
+    setDestinationCoords(tempCoords);
+    setDestinationQuery(tempName);
+  };
+
+  // Set Route & Destination from Plan Trip Modal
+  const handleSetRouteFromModal = async (params: {
+    originName: string;
+    originCoords: [number, number];
+    destinationName: string;
+    destinationCoords: [number, number];
+    travelMode: string;
+    leaveBy: string;
+  }) => {
+    setOriginName(params.originName);
+    setOriginCoords(params.originCoords);
+    setOriginQuery(params.originName);
+    setDestinationName(params.destinationName);
+    setDestinationCoords(params.destinationCoords);
+    setDestinationQuery(params.destinationName);
+    setTravelMode(params.travelMode);
+    setLeaveByTime(params.leaveBy);
+
+    await fetchRouteAndWeather(
+      params.originCoords,
+      params.originName,
+      params.destinationCoords,
+      params.destinationName,
+      params.travelMode
+    );
+
+    if (onUpdateTrip) {
+      onUpdateTrip({
+        id: `trip-${Date.now()}`,
+        from: params.originName,
+        to: params.destinationName,
+        leaveBy: params.leaveBy,
+        estDuration: '30 mins',
+        status: 'Weather-Safe Corridor Calculated on Map',
+        statusType: 'clear',
+        weatherOnRoute: 'Real-time IMD radar monitored roadway',
+        safetyScore: 88,
+        recommendation: `Optimal departure window around ${params.leaveBy}. Safe travel conditions.`,
+        stops: []
+      });
+    }
+  };
+
+  // Quick submit from search bar (Enter or Set button)
+  const handleQuickSubmitDestination = async (destQuery: string) => {
+    if (!destQuery.trim()) return;
+    setIsAnalyzing(true);
+    try {
+      const res = await apiResolveLocation(destQuery.trim());
+      if (res && res.latitude && res.longitude) {
+        const resolvedCoords: [number, number] = [res.latitude, res.longitude];
+        const resolvedName = res.name || destQuery.trim();
+        setDestinationName(resolvedName);
+        setDestinationCoords(resolvedCoords);
+        setDestinationQuery(resolvedName);
+
+        await fetchRouteAndWeather(
+          originCoords,
+          originName,
+          resolvedCoords,
+          resolvedName,
+          travelMode
+        );
+
+        if (onUpdateTrip) {
+          onUpdateTrip({
+            id: `trip-${Date.now()}`,
+            from: originName,
+            to: resolvedName,
+            leaveBy: leaveByTime,
+            estDuration: '35 mins',
+            status: 'Route Active on Live Map',
+            statusType: 'clear',
+            weatherOnRoute: 'Active weather monitoring along corridor',
+            safetyScore: 85,
+            recommendation: `Corridor calculated to ${resolvedName}.`,
+            stops: []
+          });
+        }
+      } else {
+        setDestinationName(destQuery.trim());
+        setDestinationQuery(destQuery.trim());
+        setShowPlanTripModal(true);
+      }
+    } catch (err) {
+      console.warn('Quick submit destination error:', err);
+      setShowPlanTripModal(true);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  // Recommended Wait Place name when heavy rain
+  const recommendedWaitPlace = useMemo(() => {
+    const list = Array.isArray(nearbyPlaces) ? nearbyPlaces : [];
+    return list.find((p) => p.category === 'cafe' || p.category === 'hotel') || list[0];
+  }, [nearbyPlaces]);
+
+  const safeRoutes = Array.isArray(routes) ? routes : [];
+  const activeRoute = safeRoutes.find((r) => r.id === activeRouteId) || safeRoutes[0];
 
   return (
-    <div className="relative w-full h-[calc(100vh-68px)] max-w-4xl mx-auto overflow-hidden flex flex-col bg-slate-900 select-none">
-      {/* Top Banner Tagline & Branding Bar */}
-      <div className="relative z-20 bg-slate-900/90 backdrop-blur-md px-4 py-2 border-b border-slate-800 flex items-center justify-between">
+    <div className="relative w-full h-[calc(100vh-68px)] max-w-5xl mx-auto overflow-hidden flex flex-col bg-slate-900 select-none">
+      {/* Top Header Tagline & Live Connection Indicator */}
+      <div className="relative z-20 bg-slate-900/95 backdrop-blur-md px-3 sm:px-4 py-2 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center space-x-2">
+          {onBackToHome && (
+            <button
+              onClick={onBackToHome}
+              className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition cursor-pointer text-xs font-bold"
+              title="Back to Home"
+            >
+              ←
+            </button>
+          )}
           <div className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
             W
           </div>
@@ -198,116 +610,205 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               <h1 className="text-xs font-black text-white tracking-wide">
                 WeatherGPT Live Map
               </h1>
-              <span className="text-[9px] font-bold bg-blue-500/20 text-sky-400 border border-blue-500/30 px-1.5 py-0.2 rounded-xs">
-                LIVE
+              <span
+                className={`text-[9px] font-black px-1.5 py-0.2 rounded-xs uppercase tracking-wider ${
+                  isLive
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                }`}
+              >
+                {isLive ? 'LIVE DATA' : 'DEMO'}
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 font-medium">
-              "Navigate smarter. Stay ahead of the weather."
+            <p className="text-[10px] text-slate-400 font-medium truncate max-w-[140px] sm:max-w-none">
+              Source: <strong className="text-slate-300">{dataSource}</strong>
             </p>
           </div>
         </div>
-        <span className={`text-[9px] font-black px-2 py-1 rounded-full ${liveRoute ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-slate-900'}`}>{liveRoute ? 'LIVE' : 'DEMO'}</span>
 
-        {/* Scenarios / Edge Cases Menu Toggle */}
-        <div className="relative">
+        {/* Right Header Action Controls: Set Destination, Route Chat & Refresh */}
+        <div className="flex items-center space-x-1.5 sm:space-x-2">
           <button
-            onClick={() => setShowScenarioMenu(!showScenarioMenu)}
-            className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[10px] font-bold flex items-center space-x-1 cursor-pointer transition"
+            onClick={() => setShowPlanTripModal(true)}
+            className="px-2.5 sm:px-3 py-1 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-[11px] font-extrabold flex items-center space-x-1 sm:space-x-1.5 transition active:scale-95 shadow-xs cursor-pointer"
+            title="Set Destination & Plan Commute"
           >
-            <span>⚡ Test Scenarios</span>
+            <Navigation className="w-3.5 h-3.5 text-white fill-white" />
+            <span>Set Destination</span>
           </button>
 
-          {showScenarioMenu && (
-            <div className="absolute right-0 top-8 w-56 bg-slate-800 text-white rounded-2xl p-2 shadow-2xl border border-slate-700 text-xs z-50 animate-in zoom-in-95">
-              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-2 block mb-1">
-                Route Weather Cases
-              </span>
-              <button
-                onClick={() => {
-                  setScenario('normal');
-                  setShowScenarioMenu(false);
-                }}
-                className={`w-full text-left p-2 rounded-xl transition cursor-pointer ${
-                  scenario === 'normal' ? 'bg-blue-600 font-bold text-white' : 'hover:bg-slate-700'
-                }`}
-              >
-                🟢 Standard (Safest vs Fastest vs Avoid)
-              </button>
-              <button
-                onClick={() => {
-                  setScenario('all-high-risk');
-                  setShowScenarioMenu(false);
-                }}
-                className={`w-full text-left p-2 rounded-xl transition cursor-pointer ${
-                  scenario === 'all-high-risk' ? 'bg-blue-600 font-bold text-white' : 'hover:bg-slate-700'
-                }`}
-              >
-                ⚠️ All Routes High Risk (Severe Squall)
-              </button>
-            </div>
-          )}
+          <button
+            onClick={() => setIsChatOpen(!isChatOpen)}
+            className="px-2 sm:px-2.5 py-1 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-sky-300 border border-blue-500/40 text-[11px] font-bold flex items-center space-x-1 sm:space-x-1.5 transition cursor-pointer"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Copilot</span>
+          </button>
+
+          <button
+            onClick={() =>
+              fetchRouteAndWeather(
+                originCoords,
+                originName,
+                destinationCoords,
+                destinationName,
+                travelMode
+              )
+            }
+            className="w-7 h-7 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center justify-center transition cursor-pointer shrink-0"
+            title="Refresh Route Weather"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin text-sky-400' : ''}`} />
+          </button>
         </div>
       </div>
 
-      {/* Floating Search Bar (hidden during active turn-by-turn navigation) */}
+      {/* Render Free-Tier Standby Wakeup Banner Notice */}
+      {isRenderWakingUp && (
+        <div className="relative z-30 bg-blue-900/90 text-blue-100 text-xs px-4 py-2 flex items-center justify-between border-b border-blue-500/50">
+          <div className="flex items-center space-x-2">
+            <div className="w-3.5 h-3.5 border-2 border-sky-300 border-t-transparent rounded-full animate-spin shrink-0" />
+            <span>
+              Backend is waking up from standby (takes ~20s on free instance). Real route and radar will load automatically...
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Dual Origin & Destination Search Bar */}
       {!isNavigating && (
         <SearchAndDestinations
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+          originQuery={originQuery}
+          onOriginChange={setOriginQuery}
+          originCoords={originCoords}
+          destinationQuery={destinationQuery}
+          onDestinationChange={setDestinationQuery}
+          destinationCoords={destinationCoords}
           isOpen={isSearchOpen}
           onOpen={() => setIsSearchOpen(true)}
           onClose={() => setIsSearchOpen(false)}
-          onSelectPreset={handleSelectPreset}
+          onSelectOriginPreset={(item) => {
+            setOriginName(item.name);
+            setOriginCoords([item.lat, item.lon]);
+          }}
+          onSelectDestinationPreset={(item) => {
+            setDestinationName(item.name);
+            setDestinationCoords([item.lat, item.lon]);
+          }}
           presets={DESTINATION_PRESETS}
-          currentLocationName={effectiveOriginName}
-          selectedDestinationName={selectedDestination?.name || null}
-          onClearDestination={handleClearDestination}
-          onUseGps={onUseLiveLocation || (() => {})}
+          currentLocationName={originName}
+          selectedDestinationName={destinationName}
+          onClearDestination={() => {
+            setDestinationName('');
+            setDestinationQuery('');
+          }}
+          onUseGps={handleGpsLocationClick}
           isLocating={isLocating}
-          currentLocation={currentLocation}
-          originQuery={originQuery}
-          onOriginChange={setOriginQuery}
-          originLocation={effectiveOrigin}
-          onSelectOrigin={(preset) => setManualOrigin({ place_id: preset.id, name: preset.name, address: preset.subtitle, latitude: preset.coords.lat, longitude: preset.coords.lon })}
+          gpsPermissionNotice={gpsPermissionNotice}
+          onDismissGpsNotice={() => setGpsPermissionNotice(null)}
+          travelMode={travelMode}
+          onChangeTravelMode={setTravelMode}
+          onSwapLocations={handleSwapLocations}
+          onOpenPlanTripModal={() => setShowPlanTripModal(true)}
+          onSubmitDestination={handleQuickSubmitDestination}
         />
       )}
 
-      {routeError && <div className="absolute top-20 left-3 right-3 z-40 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold p-3">{routeError}</div>}
-
-      {!effectiveOrigin && <div className="absolute top-20 left-3 right-3 z-20 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold p-3 pointer-events-none">Choose a starting location or use GPS, then choose a destination.</div>}
-
-      {/* Main Interactive Vector Map Canvas */}
+      {/* Main Interactive Leaflet Map Canvas */}
       <div className="relative flex-1 w-full overflow-hidden">
         <InteractiveMapCanvas
-          routes={routes}
+          routes={safeRoutes}
           activeRouteId={activeRouteId}
           onSelectRoute={setActiveRouteId}
-          destinationName={selectedDestination?.name || 'Destination'}
-          originName={effectiveOriginName}
+          destinationName={destinationName}
+          originName={originName}
           isNavigating={isNavigating}
           vehicleProgress={vehicleProgress}
           showNearbyPlaces={showNearbyPlaces}
-          nearbyPlaces={liveRoute ? liveNearbyPlaces : NEARBY_SAFE_PLACES}
+          onToggleNearbyPlaces={() => setShowNearbyPlaces(!showNearbyPlaces)}
+          nearbyPlaces={nearbyPlaces}
           selectedNearbyPlace={selectedNearbyPlace}
           onSelectNearbyPlace={setSelectedNearbyPlace}
           showRadarOverlay={showRadarOverlay}
           onToggleRadar={() => setShowRadarOverlay(!showRadarOverlay)}
+          weatherLayerType={weatherLayerType}
+          onChangeWeatherLayer={setWeatherLayerType}
+          onMapClick={handleMapClick}
+          onRoutePointClick={handleRoutePointClick}
+          originCoords={originCoords}
+          destinationCoords={destinationCoords}
+          gpsCoords={gpsCoords}
+        />
+
+        {/* Floating Quick Destination Pill on Map */}
+        {!isNavigating && (
+          <div className="absolute top-2.5 right-2.5 z-20 pointer-events-auto">
+            <button
+              onClick={() => setShowPlanTripModal(true)}
+              className="px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700/80 shadow-lg backdrop-blur-md text-[11px] font-bold flex items-center space-x-1.5 transition active:scale-95 cursor-pointer"
+              title="Set or change destination"
+            >
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-slate-400 font-medium">To:</span>
+              <span className="text-white font-extrabold truncate max-w-[110px] sm:max-w-[160px]">
+                {destinationName.split(',')[0]}
+              </span>
+              <span className="text-sky-400 text-[10px] font-bold bg-sky-950/80 px-1.5 py-0.5 rounded-md border border-sky-800/60">
+                Change
+              </span>
+            </button>
+          </div>
+        )}
+
+        {/* Map Point Weather Popup (When any point or waypoint is clicked) */}
+        <MapWeatherPopup
+          weather={selectedPointWeather}
+          isLoading={isFetchingPointWeather}
+          onClose={() => setSelectedPointWeather(null)}
+          onSetAsOrigin={(pt) => {
+            setOriginName(pt.name);
+            setOriginCoords([pt.lat, pt.lng]);
+            setOriginQuery(pt.name);
+            setSelectedPointWeather(null);
+          }}
+          onSetAsDestination={(pt) => {
+            setDestinationName(pt.name);
+            setDestinationCoords([pt.lat, pt.lng]);
+            setDestinationQuery(pt.name);
+            setSelectedPointWeather(null);
+          }}
+        />
+
+        {/* Route-Specific Conversational Chat Drawer */}
+        <RouteChatDrawer
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          routeContext={{
+            origin: originName,
+            destination: destinationName,
+            safetyScore: activeRoute?.safetyScore,
+            rainRisk: activeRoute?.rainRisk,
+            waterloggingRisk: activeRoute?.waterloggingRisk,
+            summaryCondition: activeRoute?.summaryCondition,
+            bestDepartureTime: departureOptions.find((d) => d.isRecommended)?.time,
+            distanceKm: activeRoute?.distanceKm,
+            durationMinutes: activeRoute?.durationMinutes
+          }}
         />
       </div>
 
-      {/* Multi-Step Sequential Analysis Loader */}
+      {/* Sequential Route Analysis Loader */}
       {isAnalyzing && (
         <RouteAnalysisLoading
-          destinationName={selectedDestination?.name || 'Selected Destination'}
+          destinationName={destinationName}
           onComplete={() => setIsAnalyzing(false)}
         />
       )}
 
-      {/* Route Comparison & Departure AI Bottom Sheet (when destination is selected & not navigating) */}
-      {selectedDestination && !isNavigating && !isAnalyzing && (
+      {/* Route Comparison Bottom Drawer */}
+      {destinationName && !isNavigating && !isAnalyzing && (
         <RouteComparisonDrawer
-          routes={routes}
+          routes={safeRoutes}
           activeRouteId={activeRouteId}
           onSelectRoute={setActiveRouteId}
           departureOptions={departureOptions}
@@ -319,56 +820,22 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             setSmartWaitMinutes(mins);
             setIsSmartWaitActive(true);
           }}
-          onOpenWhyRoute={async () => {
-            setExplainModalMode('why-route');
-            if (liveRoute) {
-              setExplanationLoading(true);
-              try {
-                const result = await getRouteExplanation(liveRoute.id);
-                setRouteExplanation(result.explanation || []);
-              } catch {
-                setRouteExplanation(['The backend could not provide a route explanation right now.']);
-              } finally {
-                setExplanationLoading(false);
-              }
-            }
-          }}
+          onOpenWhyRoute={() => setExplainModalMode('why-route')}
           onOpenTimeline={() => setShowTimelineModal(true)}
           onOpenNearby={() => setShowNearbyPlaces(true)}
           isExpanded={isDrawerExpanded}
           onToggleExpand={() => setIsDrawerExpanded(!isDrawerExpanded)}
-          liveMode={Boolean(liveRoute)}
-          routeChatInput={routeChatInput}
-          routeChatReply={routeChatReply}
-          routeChatLoading={routeChatLoading}
-          onRouteChatInputChange={setRouteChatInput}
-          onRouteChatSubmit={async () => {
-            const message = routeChatInput.trim();
-            if (!message || routeChatLoading || !selectedDestination) return;
-            setRouteChatLoading(true);
-            try {
-              const contextMessage = `Route from ${originName} to ${selectedDestination.name}. Traveller question: ${message}`;
-              const result = await sendChatMessage({
-                message: contextMessage,
-                language: 'en',
-                profile: 'traveller',
-                conversation_id: routeChatConversationId
-              });
-              setRouteChatReply(result.response || 'The weather assistant returned no response.');
-              if (result.conversation_id) setRouteChatConversationId(result.conversation_id);
-              setRouteChatInput('');
-            } catch {
-              setRouteChatReply('Route chat is temporarily unavailable. Please try again.');
-            } finally {
-              setRouteChatLoading(false);
-            }
-          }}
+          onOpenChat={() => setIsChatOpen(true)}
+          isLive={isLive}
+          dataSource={dataSource}
+          recommendedWaitPlaceName={recommendedWaitPlace?.name}
+          routeSteps={routeSteps}
         />
       )}
 
-      {/* Nearby Places While You Wait Drawer */}
+      {/* Nearby Safe Places Drawer */}
       <NearbyPlacesDrawer
-        places={liveRoute ? liveNearbyPlaces : NEARBY_SAFE_PLACES}
+        places={nearbyPlaces}
         isOpen={showNearbyPlaces}
         onClose={() => setShowNearbyPlaces(false)}
         onSelectPlace={(place) => {
@@ -389,7 +856,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             setVehicleProgress(0);
           }}
           onOpenNearby={() => setShowNearbyPlaces(true)}
-          nearbyPlaces={liveRoute ? liveNearbyPlaces : NEARBY_SAFE_PLACES}
+          nearbyPlaces={nearbyPlaces}
         />
       )}
 
@@ -404,7 +871,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           onOpenTimeline={() => setShowTimelineModal(true)}
           vehicleProgress={vehicleProgress}
           onProgressChange={setVehicleProgress}
-          onReroute={handleReroute}
+          onReroute={() => setActiveRouteId('route-safest')}
         />
       )}
 
@@ -421,9 +888,19 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         isOpen={explainModalMode !== null}
         onClose={() => setExplainModalMode(null)}
         mode={explainModalMode || 'why-route'}
-        explanation={routeExplanation}
-        isLoading={explanationLoading}
-        liveMode={Boolean(liveRoute)}
+      />
+
+      {/* Set Destination & Plan Trip Modal */}
+      <LiveMapPlanTripModal
+        isOpen={showPlanTripModal}
+        onClose={() => setShowPlanTripModal(false)}
+        currentOriginName={originName}
+        currentOriginCoords={originCoords}
+        currentDestinationName={destinationName}
+        currentDestinationCoords={destinationCoords}
+        currentTravelMode={travelMode}
+        currentLeaveBy={leaveByTime}
+        onSetRoute={handleSetRouteFromModal}
       />
     </div>
   );

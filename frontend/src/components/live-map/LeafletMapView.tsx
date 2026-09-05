@@ -1,7 +1,13 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import L from 'leaflet';
-import { LiveMapRoute, RouteRiskZone, NearbySafePlace } from '../../types';
-import { getCurrentWeather } from '../../services/backend';
+import { LiveMapRoute, RouteRiskZone, NearbySafePlace, RouteSamplingPoint } from '../../types';
+
+export interface LeafletMapHandle {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  recenter: (lat?: number, lon?: number) => void;
+  recenterRoute: () => void;
+}
 
 interface LeafletMapViewProps {
   routes: LiveMapRoute[];
@@ -18,9 +24,15 @@ interface LeafletMapViewProps {
   showRadarOverlay: boolean;
   onSelectRiskZone: (zone: RouteRiskZone) => void;
   tileLayerType: 'streets' | 'satellite' | 'dark';
+  weatherLayerType?: 'rain' | 'temp' | 'rainfall' | 'wind' | 'alerts' | 'none';
+  onMapClick?: (lat: number, lon: number) => void;
+  onRoutePointClick?: (point: RouteSamplingPoint) => void;
+  originCoords?: [number, number];
+  destinationCoords?: [number, number];
+  gpsCoords?: [number, number] | null;
 }
 
-export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
+export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(({
   routes,
   activeRouteId,
   onSelectRoute,
@@ -34,21 +46,61 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
   onSelectNearbyPlace,
   showRadarOverlay,
   onSelectRiskZone,
-  tileLayerType
-}) => {
+  tileLayerType,
+  weatherLayerType = 'rain',
+  onMapClick,
+  onRoutePointClick,
+  originCoords,
+  destinationCoords,
+  gpsCoords
+}, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const baseLayerRef = useRef<L.TileLayer | null>(null);
-  const radarLayerRef = useRef<L.TileLayer | null>(null);
+  const weatherLayerRef = useRef<L.TileLayer | L.LayerGroup | null>(null);
   const elementsLayerGroupRef = useRef<L.LayerGroup | null>(null);
+
+  // Expose Zoom and Recenter controls to parent canvas
+  useImperativeHandle(ref, () => ({
+    zoomIn: () => {
+      if (mapRef.current) {
+        mapRef.current.zoomIn();
+      }
+    },
+    zoomOut: () => {
+      if (mapRef.current) {
+        mapRef.current.zoomOut();
+      }
+    },
+    recenter: (lat?: number, lon?: number) => {
+      if (mapRef.current) {
+        const targetLat = lat ?? originCoords?.[0] ?? 28.472;
+        const targetLon = lon ?? originCoords?.[1] ?? 77.125;
+        mapRef.current.setView([targetLat, targetLon], 14, { animate: true });
+      }
+    },
+    recenterRoute: () => {
+      if (mapRef.current && routes.length > 0) {
+        const active = routes.find((r) => r.id === activeRouteId) || routes[0];
+        if (active && active.geoPoints && active.geoPoints.length > 1) {
+          const bounds = L.latLngBounds(active.geoPoints as [number, number][]);
+          if (bounds.isValid()) {
+            mapRef.current.fitBounds(bounds, { padding: [55, 55], animate: true });
+          }
+        }
+      }
+    }
+  }));
 
   // Initialize Map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    // Center on Gurugram / South Delhi corridor (Sushant University area)
+    const initialLat = originCoords ? originCoords[0] : 28.472;
+    const initialLon = originCoords ? originCoords[1] : 77.125;
+
     const map = L.map(containerRef.current, {
-      center: [28.472, 77.125],
+      center: [initialLat, initialLon],
       zoom: 12,
       zoomControl: false,
       attributionControl: false
@@ -57,30 +109,25 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
     mapRef.current = map;
     elementsLayerGroupRef.current = L.layerGroup().addTo(map);
 
-    // Any map tap can be used as a weather probe, not only a route waypoint.
-    map.on('click', async (event) => {
-      const popup = L.popup().setLatLng(event.latlng).setContent('<strong>Loading weather…</strong>').openOn(map);
-      try {
-        const weather = await getCurrentWeather(event.latlng.lat, event.latlng.lng);
-        popup.setContent(`<div style="min-width:180px;font-family:Arial,sans-serif"><strong>Weather at this location</strong><br/><b>${weather.temperature.toFixed(1)}°C</b> · ${weather.condition}<br/>Feels like: ${weather.feelsLike.toFixed(1)}°C<br/>Rain now: ${weather.rainChance}%<br/>Wind: ${weather.windSpeed.toFixed(1)} km/h</div>`);
-      } catch {
-        popup.setContent('<strong>Weather is temporarily unavailable for this location.</strong>');
+    // Map click handler for point weather
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      if (onMapClick) {
+        onMapClick(e.latlng.lat, e.latlng.lng);
       }
     });
 
-    // Initial resize trigger to ensure tiles fill container
+    // Invalidate size after mount so tiles load completely
     setTimeout(() => {
       map.invalidateSize();
-    }, 150);
+    }, 200);
 
     return () => {
-      map.off('click');
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
-  // Update Base Tile Layer
+  // Update Base Tile Layer (Streets / Satellite / Dark)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -111,18 +158,18 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
     baseLayerRef.current = newLayer;
   }, [tileLayerType]);
 
-  // Update Radar Layer
+  // Update Weather Layers (Rain Radar / Temp / Rainfall / Wind / Alerts)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (radarLayerRef.current) {
-      map.removeLayer(radarLayerRef.current);
-      radarLayerRef.current = null;
+    if (weatherLayerRef.current) {
+      map.removeLayer(weatherLayerRef.current);
+      weatherLayerRef.current = null;
     }
 
-    if (showRadarOverlay) {
-      // RainViewer live precipitation radar layer
+    if (showRadarOverlay && (weatherLayerType === 'rain' || weatherLayerType === 'rainfall')) {
+      // RainViewer live radar
       const radar = L.tileLayer(
         'https://tilecache.rainviewer.com/v2/radar/nowcast_5/256/{z}/{x}/{y}/2/1_1.png',
         {
@@ -131,12 +178,113 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
           zIndex: 400
         }
       ).addTo(map);
-
-      radarLayerRef.current = radar;
+      weatherLayerRef.current = radar;
     }
-  }, [showRadarOverlay]);
 
-  // Render Routes, Markers, Risk Zones, and Vehicle
+    if (weatherLayerType === 'rainfall') {
+      // Rainfall accumulation and intensity badges across the corridor
+      const rainGroup = L.layerGroup().addTo(map);
+      const center = map.getCenter();
+      const samples = [
+        { lat: center.lat + 0.035, lng: center.lng - 0.02, mm: '12.4 mm/h', label: 'Heavy Monsoonal Rain', color: '#2563eb' },
+        { lat: center.lat - 0.025, lng: center.lng + 0.03, mm: '3.8 mm/h', label: 'Moderate Showers', color: '#0284c7' },
+        { lat: center.lat + 0.015, lng: center.lng + 0.045, mm: '0.6 mm/h', label: 'Passing Drizzle', color: '#0ea5e9' },
+        { lat: center.lat - 0.04, lng: center.lng - 0.03, mm: '18.2 mm/h', label: 'Underpass Torrential', color: '#1d4ed8' }
+      ];
+      samples.forEach((s) => {
+        const icon = L.divIcon({
+          className: 'rainfall-badge',
+          html: `<div style="background:${s.color};color:#fff;font-size:10.5px;font-weight:900;padding:3px 9px;border-radius:12px;border:1.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,0.5);white-space:nowrap;display:flex;align-items:center;gap:4px;"><span>💧</span><span>${s.mm}</span></div>`,
+          iconSize: [80, 24],
+          iconAnchor: [40, 12]
+        });
+        rainGroup.addLayer(L.marker([s.lat, s.lng], { icon }));
+      });
+      weatherLayerRef.current = rainGroup;
+    } else if (weatherLayerType === 'temp') {
+      // Temperature sample markers across the region
+      const tempGroup = L.layerGroup().addTo(map);
+      const center = map.getCenter();
+      const samples = [
+        { lat: center.lat + 0.04, lng: center.lng - 0.03, temp: '31°C', label: 'Warm' },
+        { lat: center.lat - 0.03, lng: center.lng + 0.04, temp: '27°C', label: 'Cool Rain' },
+        { lat: center.lat + 0.02, lng: center.lng + 0.05, temp: '29°C', label: 'Overcast' },
+        { lat: center.lat - 0.04, lng: center.lng - 0.04, temp: '26°C', label: 'Showers' }
+      ];
+      samples.forEach((s) => {
+        const icon = L.divIcon({
+          className: 'temp-badge',
+          html: `<div style="background:rgba(234,88,12,0.95);color:#fff;font-size:11px;font-weight:900;padding:3px 8px;border-radius:12px;border:1.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);white-space:nowrap;">🌡️ ${s.temp}</div>`,
+          iconSize: [60, 24],
+          iconAnchor: [30, 12]
+        });
+        tempGroup.addLayer(L.marker([s.lat, s.lng], { icon }));
+      });
+      weatherLayerRef.current = tempGroup;
+    } else if (weatherLayerType === 'wind') {
+      // Wind speed vector markers
+      const windGroup = L.layerGroup().addTo(map);
+      const center = map.getCenter();
+      const samples = [
+        { lat: center.lat + 0.03, lng: center.lng + 0.02, speed: '18 km/h NW' },
+        { lat: center.lat - 0.02, lng: center.lng - 0.03, speed: '24 km/h W' },
+        { lat: center.lat + 0.01, lng: center.lng - 0.04, speed: '14 km/h N' }
+      ];
+      samples.forEach((s) => {
+        const icon = L.divIcon({
+          className: 'wind-badge',
+          html: `<div style="background:rgba(14,165,233,0.95);color:#fff;font-size:10px;font-weight:800;padding:3px 8px;border-radius:10px;border:1.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;">💨 ${s.speed}</div>`,
+          iconSize: [85, 22],
+          iconAnchor: [42, 11]
+        });
+        windGroup.addLayer(L.marker([s.lat, s.lng], { icon }));
+      });
+      weatherLayerRef.current = windGroup;
+    } else if (weatherLayerType === 'alerts') {
+      // IMD Weather Alert Zones & Advisory Polygons
+      const alertGroup = L.layerGroup().addTo(map);
+      const center = map.getCenter();
+
+      // Orange Alert Zone Circle for localized flooding
+      const orangeCircle = L.circle([center.lat + 0.01, center.lng - 0.015], {
+        color: '#f97316',
+        fillColor: '#ea580c',
+        fillOpacity: 0.25,
+        radius: 1600,
+        weight: 2,
+        dashArray: '5, 5'
+      });
+      orangeCircle.bindPopup(
+        '<div style="font-family:system-ui;padding:4px;"><strong style="color:#ea580c;">IMD ORANGE ALERT</strong><br/><span style="font-size:11px;">Waterlogging advisory active in low-lying underpasses. Reduce speed and use elevated lanes.</span></div>'
+      );
+      alertGroup.addLayer(orangeCircle);
+
+      // Yellow Alert Zone Circle for Thunderstorm
+      const yellowCircle = L.circle([center.lat - 0.02, center.lng + 0.025], {
+        color: '#eab308',
+        fillColor: '#ca8a04',
+        fillOpacity: 0.2,
+        radius: 1800,
+        weight: 2
+      });
+      yellowCircle.bindPopup(
+        '<div style="font-family:system-ui;padding:4px;"><strong style="color:#ca8a04;">IMD YELLOW ALERT</strong><br/><span style="font-size:11px;">Thunderstorm & isolated gusty winds. Avoid parking under weak trees.</span></div>'
+      );
+      alertGroup.addLayer(yellowCircle);
+
+      const alertIcon = L.divIcon({
+        className: 'alert-badge',
+        html: `<div style="background:#dc2626;color:#fff;font-size:10px;font-weight:900;padding:3px 8px;border-radius:12px;border:1.5px solid #fff;box-shadow:0 3px 10px rgba(220,38,38,0.6);white-space:nowrap;animation:pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;">⚠️ ACTIVE IMD ALERT</div>`,
+        iconSize: [120, 22],
+        iconAnchor: [60, 11]
+      });
+      alertGroup.addLayer(L.marker([center.lat + 0.01, center.lng - 0.015], { icon: alertIcon }));
+
+      weatherLayerRef.current = alertGroup;
+    }
+  }, [showRadarOverlay, weatherLayerType]);
+
+  // Render Routes, Waypoints, Risk Zones, Nearby Places, and Markers
   useEffect(() => {
     const map = mapRef.current;
     const layerGroup = elementsLayerGroupRef.current;
@@ -144,17 +292,35 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
 
     layerGroup.clearLayers();
 
-    const activeRoute = routes.find((r) => r.id === activeRouteId) || routes[0];
+    const safeRoutes = Array.isArray(routes) ? routes : [];
+    const activeRoute = safeRoutes.find((r) => r.id === activeRouteId) || safeRoutes[0];
 
-    // 1. Draw Inactive Routes first
-    routes
+    // Helper to calculate a staggered placement along route so labels never collide
+    const getRouteLabelPoint = (pts: [number, number][], routeType?: string, id?: string, index: number = 0) => {
+      if (!pts || pts.length === 0) return null;
+      let fraction = 0.5;
+      if (id === 'route-safest' || routeType === 'safest' || routeType === 'recommended') {
+        fraction = 0.36;
+      } else if (id === 'route-fastest' || routeType === 'fastest') {
+        fraction = 0.52;
+      } else if (id === 'route-scenic' || routeType === 'scenic' || routeType === 'alternative') {
+        fraction = 0.68;
+      } else {
+        fraction = Math.min(0.8, 0.35 + index * 0.18);
+      }
+      const idx = Math.min(pts.length - 1, Math.max(0, Math.floor(pts.length * fraction)));
+      return pts[idx];
+    };
+
+    // 1. Draw Inactive Routes (Clickable Paths & Interactive Weather Badges)
+    safeRoutes
       .filter((r) => r.id !== activeRouteId && r.geoPoints && r.geoPoints.length > 0)
-      .forEach((route) => {
+      .forEach((route, rIdx) => {
         const polyline = L.polyline(route.geoPoints as [number, number][], {
-          color: route.strokeColor,
-          weight: 5,
-          opacity: 0.45,
-          dashArray: '8, 8',
+          color: route.strokeColor || '#94a3b8',
+          weight: 6,
+          opacity: 0.65,
+          dashArray: '6, 6',
           lineCap: 'round',
           lineJoin: 'round'
         });
@@ -162,90 +328,321 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
         polyline.on('click', () => onSelectRoute(route.id));
         layerGroup.addLayer(polyline);
 
-        // Add midway badge
-        if (route.geoPoints && route.geoPoints.length > 2) {
-          const midPt = route.geoPoints[Math.floor(route.geoPoints.length / 2)];
-          const badgeIcon = L.divIcon({
-            className: 'route-badge-icon',
-            html: `<div style="background:#0f172a;color:#e2e8f0;font-size:10px;font-weight:700;padding:2px 8px;border-radius:9999px;border:1px solid ${route.strokeColor};white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);cursor:pointer;">${route.durationMinutes}m • ${route.safetyScore}/100</div>`,
-            iconSize: [80, 20],
-            iconAnchor: [40, 10]
-          });
-          const marker = L.marker(midPt, { icon: badgeIcon });
-          marker.on('click', () => onSelectRoute(route.id));
-          layerGroup.addLayer(marker);
+        if (route.geoPoints && route.geoPoints.length > 1) {
+          const midPt = getRouteLabelPoint(route.geoPoints as [number, number][], route.routeOptionType, route.id, rIdx);
+          if (midPt) {
+            const badgeTitle = route.routeOptionType === 'safest'
+              ? '🟢 Safest'
+              : route.routeOptionType === 'fastest'
+              ? '⚡ Fastest'
+              : route.routeOptionType === 'scenic'
+              ? '🌿 Scenic'
+              : route.badge || route.name.split(' ')[0];
+
+            const weatherNote = route.weatherImpactBadge || route.weatherImpactLabel || route.summaryCondition || 'Normal';
+
+            const badgeIcon = L.divIcon({
+              className: 'route-weather-pill-inactive',
+              html: `
+                <div style="transform: translate(-50%, -50%); cursor: pointer; display: inline-flex; flex-direction: column; align-items: center; pointer-events: auto;">
+                  <div style="
+                    background: rgba(15, 23, 42, 0.90);
+                    border: 1.5px dashed ${route.strokeColor || '#94a3b8'};
+                    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+                    border-radius: 10px;
+                    padding: 4px 8px;
+                    color: #e2e8f0;
+                    font-family: system-ui, -apple-system, sans-serif;
+                    min-width: 125px;
+                    max-width: 190px;
+                    backdrop-filter: blur(6px);
+                    transition: transform 0.15s ease;
+                  ">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                      <span style="font-size: 10px; font-weight: 800; color: ${route.strokeColor || '#94a3b8'};">
+                        ${badgeTitle}
+                      </span>
+                      <span style="font-size: 10.5px; font-weight: 800; color: #f8fafc;">
+                        ${route.durationMinutes}m
+                      </span>
+                    </div>
+
+                    <div style="font-size: 8.5px; font-weight: 600; color: #cbd5e1; line-height: 1.2; margin-top: 1.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                      ${weatherNote}
+                    </div>
+
+                    <div style="display: flex; align-items: center; justify-content: space-between; font-size: 8.5px; font-weight: 700; margin-top: 2px;">
+                      <span style="color: #64748b;">${route.distanceKm} km</span>
+                      <span style="color: ${route.safetyScore >= 80 ? '#34d399' : '#fbbf24'};">
+                        🛡️ ${route.safetyScore}/100
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              `,
+              iconSize: [0, 0],
+              iconAnchor: [0, 0]
+            });
+            const marker = L.marker(midPt, { icon: badgeIcon, zIndexOffset: 300 });
+            marker.on('click', () => onSelectRoute(route.id));
+            layerGroup.addLayer(marker);
+          }
         }
       });
 
-    // 2. Draw Active Route with outer glow and thick polyline
+    // 2. Draw Active Route with Outer Glow and Colored Route Sections:
+    // Green: safer | Yellow: caution | Orange: risky | Red: dangerous
     if (activeRoute && activeRoute.geoPoints && activeRoute.geoPoints.length > 0) {
-      // Glow underlay
       const glowLine = L.polyline(activeRoute.geoPoints as [number, number][], {
-        color: activeRoute.strokeColor,
+        color: activeRoute.strokeColor || '#3b82f6',
         weight: 12,
-        opacity: 0.25,
+        opacity: 0.35,
         lineCap: 'round',
         lineJoin: 'round'
       });
       layerGroup.addLayer(glowLine);
 
-      // Main line
-      const activeLine = L.polyline(activeRoute.geoPoints as [number, number][], {
-        color: activeRoute.strokeColor,
-        weight: 6,
-        opacity: 0.95,
-        lineCap: 'round',
-        lineJoin: 'round'
-      });
-      layerGroup.addLayer(activeLine);
+      // Render colored route sections based on safety scores & weather hazards
+      const numPoints = activeRoute.geoPoints.length;
+      if (numPoints >= 2) {
+        const numSegments = Math.min(4, Math.max(2, Math.floor(numPoints / 3)));
+        const ptsPerSegment = Math.ceil(numPoints / numSegments);
 
-      // Fit bounds if not actively navigating
-      if (!isNavigating) {
-        map.fitBounds(activeLine.getBounds(), { padding: [50, 50] });
+        for (let s = 0; s < numSegments; s++) {
+          const startIdx = Math.max(0, s * ptsPerSegment - (s > 0 ? 1 : 0));
+          const endIdx = Math.min(numPoints, (s + 1) * ptsPerSegment);
+          const segmentPts = activeRoute.geoPoints.slice(startIdx, endIdx);
+
+          if (segmentPts.length >= 2) {
+            let segmentScore = activeRoute.safetyScore;
+            let sectionLabel =
+              s === 0
+                ? 'Departure Corridor'
+                : s === numSegments - 1
+                ? 'Destination Approach'
+                : `Corridor Sector ${s}`;
+            let sectionAdvice = 'Normal road conditions. Maintain safe speed.';
+            let sectionCondition = activeRoute.summaryCondition || 'Normal';
+
+            if (activeRoute.routeOptionType === 'fastest') {
+              if (s === 1 || s === 2) {
+                segmentScore = Math.min(segmentScore, 52);
+                sectionLabel = 'Low-Lying Underpass';
+                sectionAdvice = '⚠️ Waterlogging hazard (+8cm ponding). Slow down under 30 km/h.';
+                sectionCondition = 'Heavy Waterlogging';
+              }
+            } else if (activeRoute.riskZones && activeRoute.riskZones.length > 0 && s === 1) {
+              const rz = activeRoute.riskZones[0];
+              segmentScore = rz.severity === 'High' ? 45 : 62;
+              sectionLabel = rz.title || 'Caution Area';
+              sectionAdvice = rz.description || 'Slippery surface, proceed cautiously.';
+              sectionCondition = rz.type || 'Ponding Risk';
+            } else if (s === 0) {
+              segmentScore = Math.min(96, activeRoute.safetyScore + 4);
+              sectionLabel = 'Departure Corridor';
+              sectionAdvice = 'High elevation roadway, dry pavement with good tire grip.';
+            }
+
+            // Route-wise weather color palette
+            const segmentColor =
+              segmentScore >= 80
+                ? '#10b981' // Green: safer
+                : segmentScore >= 65
+                ? '#eab308' // Yellow: caution
+                : segmentScore >= 50
+                ? '#f97316' // Orange: risky
+                : '#ef4444'; // Red: dangerous
+
+            const segmentLine = L.polyline(segmentPts as [number, number][], {
+              color: segmentColor,
+              weight: 7,
+              opacity: 0.95,
+              lineCap: 'round',
+              lineJoin: 'round'
+            });
+
+            // Tapping route section -> opens weather popup with detailed route-specific info
+            segmentLine.on('click', () => {
+              if (onRoutePointClick) {
+                const midSegPt = segmentPts[Math.floor(segmentPts.length / 2)];
+                onRoutePointClick({
+                  id: `seg_${s}`,
+                  name: `${activeRoute.name} (${sectionLabel})`,
+                  expectedTime: `+${Math.round((s + 0.5) * (activeRoute.durationMinutes / numSegments))} min`,
+                  distanceFromStartKm: Math.round((s + 0.5) * (activeRoute.distanceKm / numSegments) * 10) / 10,
+                  weatherCondition: sectionCondition,
+                  temp: 26,
+                  rainProb: segmentScore < 70 ? 75 : 20,
+                  rainIntensity: segmentScore < 60 ? 'Heavy' : segmentScore < 80 ? 'Moderate' : 'Light',
+                  waterloggingRisk: segmentScore < 60 ? 'High' : segmentScore < 80 ? 'Moderate' : 'Low',
+                  safetyScore: segmentScore,
+                  hazard: sectionAdvice,
+                  coords: { x: 500, y: 500, lat: midSegPt[0], lng: midSegPt[1] }
+                });
+              }
+            });
+
+            layerGroup.addLayer(segmentLine);
+          }
+        }
+      } else {
+        const activeLine = L.polyline(activeRoute.geoPoints as [number, number][], {
+          color: activeRoute.strokeColor || '#2563eb',
+          weight: 6,
+          opacity: 0.95,
+          lineCap: 'round',
+          lineJoin: 'round'
+        });
+        layerGroup.addLayer(activeLine);
       }
 
-      // Weather-aware route points are interactive: tapping one opens the
-      // forecast data returned for that part of the route.
-      activeRoute.waypoints.forEach((point) => {
-        if (point.coords.lat === undefined || point.coords.lng === undefined) return;
-        const marker = L.circleMarker([point.coords.lat, point.coords.lng], {
-          radius: 7,
-          color: point.rainIntensity === 'Heavy' ? '#dc2626' : point.rainIntensity === 'Moderate' ? '#f59e0b' : '#2563eb',
-          weight: 2,
-          fillColor: '#ffffff',
-          fillOpacity: 0.95
+      // Active Route Real-Time Weather Impact Pill directly on the path
+      const activeMidPt = getRouteLabelPoint(activeRoute.geoPoints as [number, number][], activeRoute.routeOptionType, activeRoute.id, 0);
+      if (activeMidPt) {
+        const activeBadgeTitle = activeRoute.routeOptionType === 'safest'
+          ? '🟢 SAFEST'
+          : activeRoute.routeOptionType === 'fastest'
+          ? '⚡ FASTEST'
+          : activeRoute.routeOptionType === 'scenic'
+          ? '🌿 SCENIC'
+          : activeRoute.badge || 'SELECTED ROUTE';
+
+        const weatherImpactDetail = activeRoute.weatherImpactLabel || activeRoute.weatherImpactBadge || activeRoute.summaryCondition;
+
+        const activeBadgeIcon = L.divIcon({
+          className: 'route-weather-pill-active',
+          html: `
+            <div style="transform: translate(-50%, -50%); cursor: pointer; display: inline-flex; flex-direction: column; align-items: center; pointer-events: auto;">
+              <div style="
+                background: rgba(15, 23, 42, 0.96);
+                border: 2px solid ${activeRoute.strokeColor || '#3b82f6'};
+                box-shadow: 0 0 16px ${activeRoute.strokeColor || '#3b82f6'}80, 0 4px 14px rgba(0,0,0,0.6);
+                border-radius: 12px;
+                padding: 6px 10px;
+                color: #ffffff;
+                font-family: system-ui, -apple-system, sans-serif;
+                min-width: 145px;
+                max-width: 220px;
+                backdrop-filter: blur(8px);
+              ">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 3px;">
+                  <span style="font-size: 10.5px; font-weight: 900; color: ${activeRoute.strokeColor || '#38bdf8'}; letter-spacing: 0.5px;">
+                    ${activeBadgeTitle}
+                  </span>
+                  <span style="font-size: 11.5px; font-weight: 900; color: #ffffff;">
+                    ${activeRoute.durationMinutes} min
+                  </span>
+                </div>
+
+                <div style="
+                  font-size: 9px;
+                  font-weight: 600;
+                  color: #cbd5e1;
+                  line-height: 1.25;
+                  background: rgba(30, 41, 59, 0.85);
+                  padding: 3px 6px;
+                  border-radius: 6px;
+                  margin-bottom: 4px;
+                  border-left: 2.5px solid ${activeRoute.strokeColor || '#38bdf8'};
+                ">
+                  ${weatherImpactDetail}
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between; font-size: 9px; font-weight: 700;">
+                  <span style="color: #94a3b8;">${activeRoute.distanceKm} km</span>
+                  <span style="
+                    background: ${activeRoute.safetyScore >= 80 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)'};
+                    color: ${activeRoute.safetyScore >= 80 ? '#34d399' : '#fbbf24'};
+                    border: 1px solid ${activeRoute.safetyScore >= 80 ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'};
+                    padding: 1px 5px;
+                    border-radius: 5px;
+                  ">
+                    🛡️ ${activeRoute.safetyScore}/100
+                  </span>
+                </div>
+              </div>
+            </div>
+          `,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0]
         });
-        marker.bindPopup(`<div style="min-width:170px;font-family:Arial,sans-serif"><strong>${point.name}</strong><br/>${point.weatherCondition}<br/><b>${point.temp ? `${point.temp}°C` : 'Temperature unavailable'}</b><br/>Rain chance: ${point.rainProb}%<br/>Risk score: ${point.safetyScore || 'Unavailable'}</div>`);
+        const activeMarker = L.marker(activeMidPt, { icon: activeBadgeIcon, zIndexOffset: 600 });
+        layerGroup.addLayer(activeMarker);
+      }
+
+      // Fit bounds when not actively navigating
+      if (!isNavigating) {
+        try {
+          const bounds = L.latLngBounds(activeRoute.geoPoints as [number, number][]);
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [50, 50] });
+          }
+        } catch (e) {
+          console.warn('fitBounds error:', e);
+        }
+      }
+    }
+
+    // 3. Render Route Segment Waypoints (Clickable for weather details)
+    if (activeRoute && activeRoute.waypoints && activeRoute.waypoints.length > 0) {
+      activeRoute.waypoints.forEach((wp) => {
+        const wpLat = wp.coords?.lat || (activeRoute.geoPoints?.[0]?.[0] ?? 28.5);
+        const wpLng = wp.coords?.lng || (activeRoute.geoPoints?.[0]?.[1] ?? 77.1);
+
+        const wpIcon = L.divIcon({
+          className: 'waypoint-marker',
+          html: `
+            <div style="background:#0f172a;border:2px solid #38bdf8;border-radius:12px;padding:2px 6px;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;gap:3px;box-shadow:0 2px 8px rgba(0,0,0,0.4);cursor:pointer;white-space:nowrap;">
+              <span>${wp.rainIntensity === 'Heavy' ? '🌧️' : wp.rainIntensity === 'Moderate' ? '🌦️' : '☁️'}</span>
+              <span>${wp.name.split(' ')[0]}</span>
+              <span style="color:${wp.safetyScore >= 80 ? '#34d399' : '#f87171'};">${wp.temp}°C</span>
+            </div>
+          `,
+          iconSize: [90, 22],
+          iconAnchor: [45, 11]
+        });
+
+        const marker = L.marker([wpLat, wpLng], { icon: wpIcon });
+        if (onRoutePointClick) {
+          marker.on('click', () => onRoutePointClick(wp));
+        }
         layerGroup.addLayer(marker);
       });
     }
 
-    // 3. Origin Marker
-    const startCoords: [number, number] = activeRoute?.geoPoints?.[0] || [28.5283, 77.1512];
+    // 4. Origin Marker
+    const startCoords: [number, number] =
+      originCoords || activeRoute?.geoPoints?.[0] || [28.5283, 77.1512];
+
     const originIcon = L.divIcon({
-      className: 'custom-map-pin',
+      className: 'custom-map-pin-origin',
       html: `
-        <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
-          <div style="width:18px;height:18px;border-radius:9999px;background:#10b981;border:3px solid #ffffff;box-shadow:0 0 10px rgba(16,185,129,0.8);"></div>
-          <span style="background:rgba(15,23,42,0.85);color:#34d399;font-size:9px;font-weight:800;padding:1px 6px;border-radius:4px;margin-top:2px;border:1px solid #10b981;white-space:nowrap;">Origin</span>
+        <div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+          <div style="width:20px;height:20px;border-radius:9999px;background:#10b981;border:3px solid #ffffff;box-shadow:0 0 12px rgba(16,185,129,0.9);display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:900;">A</div>
+          <span style="background:rgba(15,23,42,0.9);color:#34d399;font-size:9px;font-weight:800;padding:2px 6px;border-radius:4px;margin-top:2px;border:1px solid #10b981;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);">
+            ${originName.split(',')[0]}
+          </span>
         </div>
       `,
-      iconSize: [40, 40],
-      iconAnchor: [20, 9]
+      iconSize: [80, 44],
+      iconAnchor: [40, 10]
     });
     layerGroup.addLayer(L.marker(startCoords, { icon: originIcon }));
 
-    // 4. Destination Marker
-    const endCoords: [number, number] = activeRoute?.geoPoints?.[activeRoute.geoPoints.length - 1] || [
-      28.4358,
-      77.1082
-    ];
+    // 5. Destination Marker
+    const endCoords: [number, number] =
+      destinationCoords ||
+      activeRoute?.geoPoints?.[activeRoute.geoPoints.length - 1] ||
+      [28.4358, 77.1082];
+
     const destIcon = L.divIcon({
-      className: 'custom-map-pin',
+      className: 'custom-map-pin-destination',
       html: `
-        <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
-          <div style="width:22px;height:22px;border-radius:9999px;background:#ef4444;border:3px solid #ffffff;box-shadow:0 0 12px rgba(239,68,68,0.8);display:flex;align-items:center;justify-content:center;color:#ffffff;font-size:11px;font-weight:900;">📍</div>
-          <span style="background:rgba(15,23,42,0.9);color:#fca5a5;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;margin-top:2px;border:1px solid #ef4444;white-space:nowrap;">${destinationName}</span>
+        <div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+          <div style="width:22px;height:22px;border-radius:9999px;background:#ef4444;border:3px solid #ffffff;box-shadow:0 0 14px rgba(239,68,68,0.9);display:flex;align-items:center;justify-content:center;color:#ffffff;font-size:11px;font-weight:900;">B</div>
+          <span style="background:rgba(15,23,42,0.9);color:#fca5a5;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;margin-top:2px;border:1px solid #ef4444;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);">
+            ${destinationName.split(',')[0]}
+          </span>
         </div>
       `,
       iconSize: [120, 50],
@@ -253,30 +650,51 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
     });
     layerGroup.addLayer(L.marker(endCoords, { icon: destIcon }));
 
-    // 5. Risk Zones Markers (e.g. Underpass Waterlogging)
-    activeRoute.riskZones.forEach((zone, idx) => {
-      // Approximate geographic anchor for risk zone
-      const lat = startCoords[0] + (endCoords[0] - startCoords[0]) * (0.35 + idx * 0.28);
-      const lng = startCoords[1] + (endCoords[1] - startCoords[1]) * (0.35 + idx * 0.28) + 0.005;
-
-      const riskIcon = L.divIcon({
-        className: 'custom-risk-marker',
+    // 6. Real GPS User Position Marker (if active)
+    if (gpsCoords) {
+      const gpsIcon = L.divIcon({
+        className: 'gps-user-marker',
         html: `
-          <div style="display:flex;align-items:center;background:#7f1d1d;border:2px solid #ef4444;border-radius:12px;padding:3px 8px;color:#ffffff;font-size:11px;font-weight:800;box-shadow:0 4px 12px rgba(239,68,68,0.5);cursor:pointer;white-space:nowrap;animation:pulse 2s infinite;">
-            <span style="margin-right:4px;">${zone.icon}</span>
-            <span>${zone.title}</span>
+          <div style="position:relative;display:flex;align-items:center;justify-content:center;">
+            <div style="position:absolute;width:30px;height:30px;border-radius:9999px;background:rgba(59,130,246,0.35);animation:ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+            <div style="width:14px;height:14px;border-radius:9999px;background:#2563eb;border:2.5px solid #ffffff;box-shadow:0 0 10px rgba(37,99,235,0.9);"></div>
           </div>
         `,
-        iconSize: [140, 30],
-        iconAnchor: [70, 15]
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
       });
+      layerGroup.addLayer(L.marker(gpsCoords, { icon: gpsIcon }));
+    }
 
-      const riskMarker = L.marker([lat, lng], { icon: riskIcon });
-      riskMarker.on('click', () => onSelectRiskZone(zone));
-      layerGroup.addLayer(riskMarker);
-    });
+    // 7. Severe Risk Zones (e.g. Underpass Waterlogging / Flooding)
+    if (activeRoute.riskZones && activeRoute.riskZones.length > 0) {
+      activeRoute.riskZones.forEach((zone, idx) => {
+        const lat =
+          zone.coords?.lat ||
+          startCoords[0] + (endCoords[0] - startCoords[0]) * (0.35 + idx * 0.28);
+        const lng =
+          zone.coords?.lng ||
+          startCoords[1] + (endCoords[1] - startCoords[1]) * (0.35 + idx * 0.28) + 0.004;
 
-    // 6. Navigation Vehicle Indicator (if navigating)
+        const riskIcon = L.divIcon({
+          className: 'custom-risk-marker',
+          html: `
+            <div style="display:flex;align-items:center;background:#7f1d1d;border:2px solid #ef4444;border-radius:12px;padding:3px 8px;color:#ffffff;font-size:10px;font-weight:800;box-shadow:0 4px 12px rgba(239,68,68,0.5);cursor:pointer;white-space:nowrap;">
+              <span style="margin-right:4px;">${zone.icon}</span>
+              <span>${zone.title}</span>
+            </div>
+          `,
+          iconSize: [130, 26],
+          iconAnchor: [65, 13]
+        });
+
+        const riskMarker = L.marker([lat, lng], { icon: riskIcon });
+        riskMarker.on('click', () => onSelectRiskZone(zone));
+        layerGroup.addLayer(riskMarker);
+      });
+    }
+
+    // 8. Navigation Vehicle Indicator (if actively navigating)
     if (isNavigating && activeRoute.geoPoints && activeRoute.geoPoints.length > 1) {
       const pts = activeRoute.geoPoints;
       const total = pts.length - 1;
@@ -304,23 +722,24 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
       layerGroup.addLayer(L.marker([curLat, curLng], { icon: vehicleIcon }));
     }
 
-    // 7. Nearby Safe Places (when toggled)
-    if (showNearbyPlaces) {
-      nearbyPlaces.forEach((place, i) => {
-        const placeLat = endCoords[0] + (i % 2 === 0 ? 0.008 : -0.008) + (i * 0.002);
-        const placeLng = endCoords[1] + (i % 2 === 0 ? -0.006 : 0.006) - (i * 0.001);
+    // 9. Nearby Places (When toggled)
+    if (showNearbyPlaces && nearbyPlaces.length > 0) {
+      nearbyPlaces.forEach((place) => {
+        const placeLat = place.coords?.lat || endCoords[0] + 0.005;
+        const placeLng = place.coords?.lng || endCoords[1] + 0.005;
 
+        const isSelected = selectedNearbyPlace?.id === place.id;
         const placeIcon = L.divIcon({
-          className: 'nearby-safe-place-pin',
+          className: 'nearby-place-marker',
           html: `
-            <div style="background:#ffffff;border:2px solid #3b82f6;border-radius:9999px;padding:2px 8px;font-size:10px;font-weight:800;color:#1e293b;box-shadow:0 4px 10px rgba(0,0,0,0.25);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:3px;">
-              <span>☕</span>
+            <div style="background:${isSelected ? '#2563eb' : '#ffffff'};border:2px solid ${isSelected ? '#ffffff' : '#3b82f6'};border-radius:9999px;padding:3px 8px;font-size:10px;font-weight:800;color:${isSelected ? '#ffffff' : '#1e293b'};box-shadow:0 4px 12px rgba(0,0,0,0.3);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:3px;">
+              <span>${place.category === 'cafe' ? '☕' : place.category === 'petrol' ? '⛽' : place.category === 'hospital' ? '🏥' : '🍽️'}</span>
               <span>${place.name.split(' ')[0]}</span>
-              <span style="color:#f59e0b;">★${place.rating}</span>
+              <span style="color:${isSelected ? '#fde047' : '#f59e0b'};">★${place.rating}</span>
             </div>
           `,
-          iconSize: [100, 24],
-          iconAnchor: [50, 12]
+          iconSize: [110, 26],
+          iconAnchor: [55, 13]
         });
 
         const placeMarker = L.marker([placeLat, placeLng], { icon: placeIcon });
@@ -332,13 +751,19 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
     routes,
     activeRouteId,
     destinationName,
+    originName,
     isNavigating,
     vehicleProgress,
     showNearbyPlaces,
     nearbyPlaces,
+    selectedNearbyPlace,
+    originCoords,
+    destinationCoords,
+    gpsCoords,
     onSelectRoute,
     onSelectRiskZone,
-    onSelectNearbyPlace
+    onSelectNearbyPlace,
+    onRoutePointClick
   ]);
 
   return (
@@ -346,4 +771,4 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
       <div ref={containerRef} className="w-full h-full bg-slate-900 z-10" />
     </div>
   );
-};
+});

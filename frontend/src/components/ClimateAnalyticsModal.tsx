@@ -13,8 +13,6 @@ export const ClimateAnalyticsModal: React.FC<ClimateAnalyticsModalProps> = ({
   onClose,
   currentCity
 }) => {
-  if (!isOpen) return null;
-
   const [selectedCityKey, setSelectedCityKey] = useState(
     currentCity.toLowerCase().includes('delhi') ? 'Delhi' : 'Dehradun'
   );
@@ -39,6 +37,8 @@ export const ClimateAnalyticsModal: React.FC<ClimateAnalyticsModalProps> = ({
       );
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">

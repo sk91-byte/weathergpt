@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Mic, MicOff, Sparkles, Volume2, VolumeX, ArrowRight, Umbrella, CloudRain, RotateCcw, ChevronLeft, Bot, Loader2, AlertTriangle } from './Icons';
 import { ChatMessage, Language, WeatherData, RouteTrip } from '../types';
-import { sendChatMessage } from '../services/backend';
 
 interface AIChatScreenProps {
   weather: WeatherData;
@@ -38,7 +37,6 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [isListeningVoice, setIsListeningVoice] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -158,13 +156,27 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
     setLoading(true);
 
     try {
-      const data = await sendChatMessage({
-        message: textToSend,
-        language: currentLanguage,
-        profile: 'general_public',
-        conversation_id: conversationId
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: textToSend,
+          language: currentLanguage,
+          city: weather.city,
+          role: 'citizen',
+          savedTrip: {
+            from: trip.from,
+            to: trip.to,
+            leaveBy: trip.leaveBy
+          }
+        })
       });
-      if (data.conversation_id) setConversationId(data.conversation_id);
+
+      if (!res.ok) {
+        throw new Error('API response failed');
+      }
+
+      const data = await res.json();
       const botMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         sender: 'weathergpt',

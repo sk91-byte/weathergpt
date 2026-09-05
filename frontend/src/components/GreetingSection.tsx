@@ -2,6 +2,7 @@ import React from 'react';
 import { Volume2, Sparkles } from './Icons';
 
 interface GreetingSectionProps {
+  name?: string;
   userName?: string;
   greetingText?: string;
   subtitleText?: string;
@@ -9,16 +10,19 @@ interface GreetingSectionProps {
 }
 
 export const GreetingSection: React.FC<GreetingSectionProps> = ({
+  name,
   userName = 'Anmol',
   greetingText,
   subtitleText,
   onOpenBriefing
 }) => {
+  const displayName = name || userName;
+
   return (
     <div className="px-5 pt-1 pb-3 flex items-center justify-between">
       <div>
         <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-1.5 font-heading">
-          {greetingText || `Good Morning, ${userName}!`} <span>👋</span>
+          {greetingText || `Good Morning, ${displayName}!`} <span>👋</span>
         </h2>
         <p className="text-xs font-medium text-slate-500 mt-0.5">
           {subtitleText || "Here's your weather overview"}

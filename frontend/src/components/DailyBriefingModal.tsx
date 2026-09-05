@@ -13,8 +13,6 @@ export const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
   isOpen,
   onClose
 }) => {
-  if (!isOpen) return null;
-
   const [isPlaying, setIsPlaying] = useState(false);
 
   const speechScript = `Good morning Anmol! Here is your WeatherGPT morning intelligence briefing for ${weather.city}, ${weather.country}. Currently it is ${Math.round(weather.temperature)} degrees Celsius with ${weather.condition}. Morning commute until 12 PM will be pleasant and dry. However, rainfall probability jumps sharply after 4 PM, peaking around 85% by evening with high risk of road waterlogging. Please carry an umbrella, wrap electronic gear, and consider completing essential travel before 4:30 PM. Have a safe day!`;
@@ -38,6 +36,8 @@ export const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
 
     window.speechSynthesis.speak(utterance);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200 select-none">

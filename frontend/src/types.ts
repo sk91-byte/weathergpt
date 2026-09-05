@@ -180,11 +180,16 @@ export interface RouteRiskZone {
   icon: string;
 }
 
+export type RouteOptionType = 'safest' | 'fastest' | 'scenic' | 'avoid';
+
 export interface LiveMapRoute {
   id: string;
   name: string;
   badge: string;
   type: 'recommended' | 'fastest' | 'avoid' | 'alternative';
+  routeOptionType?: RouteOptionType;
+  weatherImpactLabel?: string;
+  weatherImpactBadge?: string;
   distanceKm: number;
   durationMinutes: number;
   safetyScore: number; // 0 to 100
@@ -202,8 +207,6 @@ export interface LiveMapRoute {
   departureAdvice: string;
   whyThisRoute: string;
   whyWait: string;
-  dataMode?: 'LIVE' | 'DEMO';
-  riskAvailable?: boolean;
 }
 
 export interface DepartureTimeOption {

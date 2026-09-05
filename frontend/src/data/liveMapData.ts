@@ -232,9 +232,12 @@ export function buildWeatherAwareRoutes(
   // Route 1: WeatherGPT Recommended (Safest Route)
   const rRecommended: LiveMapRoute = {
     id: 'route-safest',
-    name: 'WeatherGPT Recommended',
+    name: 'Safest (Elevated Corridor)',
     badge: '🟢 SAFEST ROUTE',
     type: 'recommended',
+    routeOptionType: 'safest',
+    weatherImpactLabel: 'Elevated Corridor • Dry Pavement • 0 Flood Risk',
+    weatherImpactBadge: '🛡️ Flood Shielded',
     distanceKm: 15.0,
     durationMinutes: 32,
     safetyScore: 92,
@@ -351,9 +354,12 @@ export function buildWeatherAwareRoutes(
   // Route 2: Fastest Route (Moderate Risk)
   const rFastest: LiveMapRoute = {
     id: 'route-fastest',
-    name: 'Fastest Route',
-    badge: '🟡 FASTEST ROUTE',
+    name: 'Fastest (Central Expressway)',
+    badge: '⚡ FASTEST ROUTE',
     type: 'fastest',
+    routeOptionType: 'fastest',
+    weatherImpactLabel: 'Direct Line (-7m) • Slick Road • 8cm Underpass Water',
+    weatherImpactBadge: '⚠️ Ponding Risk',
     distanceKm: 12.0,
     durationMinutes: 25,
     safetyScore: 68,
@@ -411,12 +417,63 @@ export function buildWeatherAwareRoutes(
     whyWait: 'If you wait 20 minutes, the rain band will have moved east, raising this route safety score from 68 to 86.'
   };
 
-  // Route 3: Avoid If Possible (High Risk)
+  // Route 3: Most Scenic Route (Green Belt & Canopy)
+  const rScenic: LiveMapRoute = {
+    id: 'route-scenic',
+    name: 'Most Scenic (Parkway & Green Belt)',
+    badge: '🌿 MOST SCENIC',
+    type: 'alternative',
+    routeOptionType: 'scenic',
+    weatherImpactLabel: 'Tree Canopy • 40% Lower Wind Shear • Calm Air & 26°C',
+    weatherImpactBadge: '🌿 Canopy Sheltered',
+    distanceKm: 16.2,
+    durationMinutes: 35,
+    safetyScore: 88,
+    summaryCondition: 'Overcast & Breezy',
+    rainRisk: 'Low',
+    waterloggingRisk: 'Low',
+    thunderstormRisk: 'Low',
+    hazardCount: 0,
+    color: 'green',
+    strokeColor: '#06b6d4', // cyan-500
+    pathPoints: [
+      { x: 26, y: 24 },
+      { x: 38, y: 16 },
+      { x: 58, y: 22 },
+      { x: 70, y: 42 },
+      { x: 76, y: 64 },
+      { x: 74, y: 78 }
+    ],
+    geoPoints: [
+      [28.5283, 77.1512],
+      [28.5190, 77.1720],
+      [28.4960, 77.1580],
+      [28.4710, 77.1350],
+      [28.4480, 77.1180],
+      [28.4358, 77.1082]
+    ],
+    waypoints: [
+      { id: 'sc-0', name: fromName, expectedTime: formatTime(0), distanceFromStartKm: 0, weatherCondition: 'Mild Breeze', temp: 27, rainProb: 15, rainIntensity: 'None', waterloggingRisk: 'None', safetyScore: 94, coords: { x: 26, y: 24 } },
+      { id: 'sc-1', name: 'Aravalli Biodiversity Parkway', expectedTime: formatTime(9), distanceFromStartKm: 4.5, weatherCondition: 'Gentle Mist & Leaves', temp: 26, rainProb: 20, rainIntensity: 'Light', waterloggingRisk: 'None', safetyScore: 92, coords: { x: 38, y: 16 } },
+      { id: 'sc-2', name: 'Leisure Valley Green Corridor', expectedTime: formatTime(20), distanceFromStartKm: 9.8, weatherCondition: 'Cool Canopy Air', temp: 25, rainProb: 25, rainIntensity: 'Light', waterloggingRisk: 'Low', safetyScore: 89, coords: { x: 58, y: 22 } },
+      { id: 'sc-3', name: 'Sunset Ridge Boulevard', expectedTime: formatTime(28), distanceFromStartKm: 13.5, weatherCondition: 'Passing Drizzle', temp: 25, rainProb: 30, rainIntensity: 'Light', waterloggingRisk: 'None', safetyScore: 88, coords: { x: 70, y: 42 } },
+      { id: 'sc-4', name: toName, expectedTime: formatTime(35), distanceFromStartKm: 16.2, weatherCondition: 'Clear Canopy', temp: 26, rainProb: 20, rainIntensity: 'None', waterloggingRisk: 'None', safetyScore: 92, coords: { x: 74, y: 78 } }
+    ],
+    riskZones: [],
+    departureAdvice: 'Delightful panoramic transit through tree-lined parkways. Canopy cover provides natural buffering from crosswinds and minimizes highway spray.',
+    whyThisRoute: 'Adds 3 minutes over Safest Route, but traverses lush forested parkways with 40% reduced headwind gusts and virtually zero ponding risk.',
+    whyWait: 'Current air quality and temperature along this parkway are optimal (26°C with refreshing forest breeze).'
+  };
+
+  // Route 4: Avoid If Possible (High Risk)
   const rAvoid: LiveMapRoute = {
     id: 'route-avoid',
-    name: 'Avoid If Possible',
+    name: 'Avoid If Possible (Low Trench)',
     badge: '🔴 AVOID IF POSSIBLE',
     type: 'avoid',
+    routeOptionType: 'avoid',
+    weatherImpactLabel: 'Torrential Flooding • 25cm Water Depth • High Stall Risk',
+    weatherImpactBadge: '⛔ Severe Hazard',
     distanceKm: 14.0,
     durationMinutes: 28,
     safetyScore: 35,
@@ -523,7 +580,7 @@ export function buildWeatherAwareRoutes(
   ];
 
   return {
-    routes: [rRecommended, rFastest, rAvoid],
+    routes: [rRecommended, rFastest, rScenic, rAvoid],
     departureOptions
   };
 }

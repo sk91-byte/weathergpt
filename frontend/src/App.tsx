@@ -18,6 +18,7 @@ import { BottomNavigation, TabType } from './components/BottomNavigation';
 import { AIChatScreen } from './components/AIChatScreen';
 import { WeatherMapScreen } from './components/WeatherMapScreen';
 import { ProfileScreen } from './components/ProfileScreen';
+import { OnboardingScreen } from './components/OnboardingScreen';
 import { DailyBriefingModal } from './components/DailyBriefingModal';
 import { ExplainableAIModal } from './components/ExplainableAIModal';
 import { TripDetailsModal } from './components/TripDetailsModal';
@@ -28,6 +29,7 @@ import { ClimateAnalyticsModal } from './components/ClimateAnalyticsModal';
 import { CitySelectorModal } from './components/CitySelectorModal';
 import { NotificationsModal } from './components/NotificationsModal';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
+import { getWeatherTheme } from './utils/weatherGradients';
 
 import {
   DEFAULT_WEATHER_DATA,
@@ -41,11 +43,46 @@ import {
   INITIAL_WEATHER
 } from './data/weatherData';
 import { WeatherData, Language, UserRole, DemoScenario, RouteTrip } from './types';
-import { getCurrentWeather, getReverseLocation, PlaceResult } from './services/backend';
 
 export default function App() {
+  // First-time Onboarding State
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('weathergpt_onboarded') === 'true';
+    }
+    return false;
+  });
+
+  const [userName, setUserName] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('weathergpt_username') || 'Anmol';
+    }
+    return 'Anmol';
+  });
+
+  const [language, setLanguage] = useState<Language>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('weathergpt_language');
+      if (saved === 'en' || saved === 'hi' || saved === 'gu') {
+        return saved;
+      }
+    }
+    return 'en';
+  });
+
   // Primary application state
-  const [weather, setWeather] = useState<WeatherData>(INITIAL_WEATHER);
+  const [weather, setWeather] = useState<WeatherData>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('weathergpt_location');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.city) return parsed;
+        } catch (e) {}
+      }
+    }
+    return INITIAL_WEATHER;
+  });
   const [trip, setTrip] = useState<RouteTrip>(DEFAULT_ROUTE_TRIP);
   const [savedTrips, setSavedTrips] = useState<RouteTrip[]>(DEFAULT_SAVED_TRIPS);
   const [tripModalMode, setTripModalMode] = useState<'details' | 'new' | 'all'>('details');
@@ -53,11 +90,9 @@ export default function App() {
   const [advisory, setAdvisory] = useState(DEFAULT_FARMER_ADVISORY);
 
   const [activeTab, setActiveTab] = useState<TabType>('home');
-  const [language, setLanguage] = useState<Language>('en');
   const [userRole, setUserRole] = useState<UserRole>('citizen');
   const [mapInitialLayer, setMapInitialLayer] = useState<string>('rain');
   const [chatInitialQuery, setChatInitialQuery] = useState<string | undefined>(undefined);
-  const [currentLocation, setCurrentLocation] = useState<PlaceResult | null>(null);
 
   // Live Location states
   const [isLocating, setIsLocating] = useState<boolean>(false);
@@ -76,6 +111,25 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showVoiceAssistant, setShowVoiceAssistant] = useState(false);
 
+  // Onboarding Completion Handler
+  const handleOnboardingComplete = (data: {
+    userName: string;
+    weather: WeatherData;
+    language: Language;
+  }) => {
+    setUserName(data.userName);
+    setWeather(data.weather);
+    setLanguage(data.language);
+    setHasCompletedOnboarding(true);
+  };
+
+  const handleLanguageChange = (newLang: Language) => {
+    setLanguage(newLang);
+    try {
+      localStorage.setItem('weathergpt_language', newLang);
+    } catch (e) {}
+  };
+
   // Live GPS Geolocation Handler
   const handleGetLiveLocation = () => {
     setIsLocating(true);
@@ -91,15 +145,19 @@ export default function App() {
       async (pos) => {
         try {
           const { latitude, longitude } = pos.coords;
-          const [liveData, reverseLocation] = await Promise.all([
-            getCurrentWeather(latitude, longitude),
-            getReverseLocation(latitude, longitude).catch(() => ({ place_id: 'device-gps', name: 'Current location', latitude, longitude }))
-          ]);
-          setCurrentLocation({ ...reverseLocation, place_id: reverseLocation.place_id || 'device-gps', latitude, longitude });
-          liveData.city = reverseLocation.name || 'Current location';
-          setWeather(liveData);
-          setLocationError(null);
-          setShowCitySelector(false);
+          const res = await fetch(`/api/weather/live-location?lat=${latitude}&lon=${longitude}`);
+          if (!res.ok) {
+            throw new Error(`Weather service responded with ${res.status}`);
+          }
+          const liveData = await res.json();
+          if (liveData && liveData.city) {
+            setWeather(liveData);
+            try {
+              localStorage.setItem('weathergpt_location', JSON.stringify(liveData));
+            } catch (e) {}
+            setLocationError(null);
+            setShowCitySelector(false);
+          }
         } catch (err: any) {
           console.warn('Live location API fetch error:', err);
           setLocationError('Fetched coordinates, but weather radar feed failed. Please try again or select a city.');
@@ -147,14 +205,23 @@ export default function App() {
   // Switch City
   const handleSelectCity = (cityString: string) => {
     const cityName = cityString.split(',')[0].trim();
-    if (CITY_WEATHER_DATABASE[cityName]) {
-      setWeather(CITY_WEATHER_DATABASE[cityName]);
+    let newWeather = weather;
+    if (CITY_WEATHER_DATABASE[cityString]) {
+      newWeather = CITY_WEATHER_DATABASE[cityString];
+    } else if (CITY_WEATHER_DATABASE[cityName]) {
+      newWeather = CITY_WEATHER_DATABASE[cityName];
+    } else if (DEFAULT_WEATHER_DATA[cityString]) {
+      newWeather = DEFAULT_WEATHER_DATA[cityString];
     } else {
-      setWeather({
+      newWeather = {
         ...weather,
         city: cityName
-      });
+      };
     }
+    setWeather(newWeather);
+    try {
+      localStorage.setItem('weathergpt_location', JSON.stringify(newWeather));
+    } catch (e) {}
   };
 
   // Hackathon Demo Scenario Handler
@@ -178,15 +245,27 @@ export default function App() {
     setActiveTab('chat');
   };
 
+  // If first-time user hasn't completed onboarding, show modern 3-step setup flow
+  if (!hasCompletedOnboarding) {
+    return <OnboardingScreen onComplete={handleOnboardingComplete} />;
+  }
+
+  // Compute dynamic weather condition theme (cool blues for clear, muted grays for rain, orange hues for heatwaves)
+  const weatherTheme = getWeatherTheme(weather);
+
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center sm:py-6 font-sans">
-      {/* Mobile-style viewport container */}
+    <div
+      className="min-h-screen flex items-center justify-center sm:py-6 font-sans transition-all duration-700 ease-in-out"
+      style={{ background: weatherTheme.outerBackground }}
+    >
+      {/* Mobile-style viewport container with dynamic primary weather gradient */}
       <div
         id="app-container"
-        className="w-full max-w-md h-[100dvh] sm:h-[844px] bg-slate-50 flex flex-col relative sm:rounded-[36px] shadow-2xl border border-slate-200/90 overflow-hidden"
+        className="w-full max-w-md h-[100dvh] sm:h-[844px] flex flex-col relative sm:rounded-[36px] shadow-2xl border border-slate-200/80 overflow-hidden transition-all duration-700 ease-in-out"
+        style={{ background: weatherTheme.appBackground }}
       >
         {/* Top Status Bar (Cosmetic notch / time styling) */}
-        <div className="h-6 bg-transparent shrink-0 flex items-center justify-between px-6 text-[10px] font-bold text-slate-400 select-none z-30">
+        <div className="h-6 bg-transparent shrink-0 flex items-center justify-between px-6 text-[10px] font-bold text-slate-500/80 select-none z-30">
           <span>09:41</span>
           <div className="flex items-center space-x-1.5">
             <span>5G</span>
@@ -211,7 +290,7 @@ export default function App() {
 
               {/* 2. Personalized Greeting & Briefing Trigger */}
               <GreetingSection
-                name="Anmol"
+                name={userName}
                 onOpenBriefing={() => setShowDailyBriefing(true)}
               />
 
@@ -311,7 +390,8 @@ export default function App() {
               onUseLiveLocation={handleGetLiveLocation}
               isLocating={isLocating}
               currentWeather={weather}
-              currentLocation={currentLocation}
+              initialTrip={trip}
+              onUpdateTrip={(updatedTrip) => setTrip(updatedTrip)}
             />
           )}
 
@@ -320,7 +400,7 @@ export default function App() {
               weather={weather}
               trip={trip}
               currentLanguage={language}
-              onLanguageChange={setLanguage}
+              onLanguageChange={handleLanguageChange}
               onBackToHome={() => {
                 setChatInitialQuery(undefined);
                 setActiveTab('home');
@@ -331,8 +411,10 @@ export default function App() {
 
           {activeTab === 'profile' && (
             <ProfileScreen
+              userName={userName}
+              onRerunOnboarding={() => setHasCompletedOnboarding(false)}
               currentLanguage={language}
-              onLanguageChange={setLanguage}
+              onLanguageChange={handleLanguageChange}
               userRole={userRole}
               onUserRoleChange={setUserRole}
               onSelectDemoScenario={handleSelectDemoScenario}
@@ -349,95 +431,116 @@ export default function App() {
         />
 
         {/* Modals & Dialog Overlays */}
-        <DailyBriefingModal
-          weather={weather}
-          isOpen={showDailyBriefing}
-          onClose={() => setShowDailyBriefing(false)}
-        />
+        {showDailyBriefing && (
+          <DailyBriefingModal
+            weather={weather}
+            isOpen={showDailyBriefing}
+            onClose={() => setShowDailyBriefing(false)}
+          />
+        )}
 
-        <ExplainableAIModal
-          weather={weather}
-          isOpen={showExplainableAI}
-          onClose={() => setShowExplainableAI(false)}
-        />
+        {showExplainableAI && (
+          <ExplainableAIModal
+            weather={weather}
+            isOpen={showExplainableAI}
+            onClose={() => setShowExplainableAI(false)}
+          />
+        )}
 
-        <TripDetailsModal
-          trip={trip}
-          isOpen={showTripDetails}
-          onClose={() => setShowTripDetails(false)}
-          onSaveTrip={(updated) => {
-            setTrip(updated);
-            setSavedTrips((prev) => {
-              const idx = prev.findIndex((t) => t.id === updated.id);
-              if (idx >= 0) {
-                const next = [...prev];
-                next[idx] = updated;
-                return next;
-              }
-              return [updated, ...prev];
-            });
-          }}
-          initialMode={tripModalMode}
-          savedTrips={savedTrips}
-          onSelectTrip={(selected) => setTrip(selected)}
-          onOpenLiveMap={() => {
-            setShowTripDetails(false);
-            setActiveTab('map');
-          }}
-        />
+        {showTripDetails && (
+          <TripDetailsModal
+            trip={trip}
+            isOpen={showTripDetails}
+            currentCity={weather.city}
+            onClose={() => setShowTripDetails(false)}
+            onSaveTrip={(updated) => {
+              setTrip(updated);
+              setSavedTrips((prev) => {
+                const idx = prev.findIndex((t) => t.id === updated.id);
+                if (idx >= 0) {
+                  const next = [...prev];
+                  next[idx] = updated;
+                  return next;
+                }
+                return [updated, ...prev];
+              });
+            }}
+            initialMode={tripModalMode}
+            savedTrips={savedTrips}
+            onSelectTrip={(selected) => setTrip(selected)}
+            onOpenLiveMap={() => {
+              setShowTripDetails(false);
+              setActiveTab('map');
+            }}
+          />
+        )}
 
-        <WeatherAlertsModal
-          alerts={alerts}
-          isOpen={showWeatherAlerts}
-          onClose={() => setShowWeatherAlerts(false)}
-        />
+        {showWeatherAlerts && (
+          <WeatherAlertsModal
+            alerts={alerts}
+            isOpen={showWeatherAlerts}
+            onClose={() => setShowWeatherAlerts(false)}
+          />
+        )}
 
-        <ForecastDetailsModal
-          weather={weather}
-          hourly={DEFAULT_HOURLY_FORECAST}
-          daily={DEFAULT_DAILY_FORECAST}
-          initialTab={forecastModalTab}
-          isOpen={showForecastDetails}
-          onClose={() => setShowForecastDetails(false)}
-        />
+        {showForecastDetails && (
+          <ForecastDetailsModal
+            weather={weather}
+            hourly={DEFAULT_HOURLY_FORECAST}
+            daily={DEFAULT_DAILY_FORECAST}
+            initialTab={forecastModalTab}
+            isOpen={showForecastDetails}
+            onClose={() => setShowForecastDetails(false)}
+          />
+        )}
 
-        <FarmerModeModal
-          weather={weather}
-          initialAdvisory={advisory}
-          isOpen={showFarmerMode}
-          onClose={() => setShowFarmerMode(false)}
-        />
+        {showFarmerMode && (
+          <FarmerModeModal
+            weather={weather}
+            initialAdvisory={advisory}
+            isOpen={showFarmerMode}
+            onClose={() => setShowFarmerMode(false)}
+          />
+        )}
 
-        <ClimateAnalyticsModal
-          isOpen={showClimateAnalytics}
-          onClose={() => setShowClimateAnalytics(false)}
-          currentCity={weather.city}
-        />
+        {showClimateAnalytics && (
+          <ClimateAnalyticsModal
+            isOpen={showClimateAnalytics}
+            onClose={() => setShowClimateAnalytics(false)}
+            currentCity={weather.city}
+          />
+        )}
 
-        <CitySelectorModal
-          currentCity={weather.city}
-          isOpen={showCitySelector}
-          onClose={() => setShowCitySelector(false)}
-          onSelectCity={handleSelectCity}
-          onUseLiveLocation={handleGetLiveLocation}
-          isLocating={isLocating}
-          locationError={locationError}
-        />
+        {showCitySelector && (
+          <CitySelectorModal
+            currentCity={weather.city}
+            isOpen={showCitySelector}
+            onClose={() => setShowCitySelector(false)}
+            onSelectCity={handleSelectCity}
+            onUseLiveLocation={handleGetLiveLocation}
+            isLocating={isLocating}
+            locationError={locationError}
+          />
+        )}
 
-        <NotificationsModal
-          isOpen={showNotifications}
-          onClose={() => setShowNotifications(false)}
-          onOpenAlerts={() => setShowWeatherAlerts(true)}
-          onOpenBriefing={() => setShowDailyBriefing(true)}
-        />
+        {showNotifications && (
+          <NotificationsModal
+            isOpen={showNotifications}
+            onClose={() => setShowNotifications(false)}
+            onOpenAlerts={() => setShowWeatherAlerts(true)}
+            onOpenBriefing={() => setShowDailyBriefing(true)}
+          />
+        )}
 
-        <VoiceAssistantModal
-          weather={weather}
-          isOpen={showVoiceAssistant}
-          onClose={() => setShowVoiceAssistant(false)}
-          currentLanguage={language}
-          onLanguageChange={setLanguage}
-        />
+        {showVoiceAssistant && (
+          <VoiceAssistantModal
+            weather={weather}
+            isOpen={showVoiceAssistant}
+            onClose={() => setShowVoiceAssistant(false)}
+            currentLanguage={language}
+            onLanguageChange={setLanguage}
+          />
+        )}
       </div>
     </div>
   );

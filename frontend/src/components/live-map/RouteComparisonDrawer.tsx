@@ -1,6 +1,25 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { LiveMapRoute, DepartureTimeOption } from '../../types';
-import { ShieldAlert, Navigation, Clock, Sparkles, ChevronRight, Info, AlertTriangle, CloudRain } from '../Icons';
+import { SideBySideRouteComparison } from './SideBySideRouteComparison';
+import { Scale } from 'lucide-react';
+import {
+  ShieldAlert,
+  Navigation,
+  Clock,
+  Sparkles,
+  ChevronRight,
+  Info,
+  AlertTriangle,
+  CloudRain,
+  MessageSquare,
+  Coffee,
+  Wind,
+  Eye,
+  Zap,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp
+} from '../Icons';
 
 interface RouteComparisonDrawerProps {
   routes: LiveMapRoute[];
@@ -14,12 +33,14 @@ interface RouteComparisonDrawerProps {
   onOpenNearby: () => void;
   isExpanded: boolean;
   onToggleExpand: () => void;
-  liveMode?: boolean;
-  routeChatInput?: string;
-  routeChatReply?: string;
-  routeChatLoading?: boolean;
-  onRouteChatInputChange?: (value: string) => void;
-  onRouteChatSubmit?: () => void;
+  onOpenChat?: () => void;
+  isLive?: boolean;
+  dataSource?: string;
+  windRisk?: string;
+  fogRisk?: string;
+  thunderstormRisk?: string;
+  recommendedWaitPlaceName?: string;
+  routeSteps?: { instruction: string; name: string; distance_m: number; duration_s?: number }[];
 }
 
 export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
@@ -34,297 +55,421 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
   onOpenNearby,
   isExpanded,
   onToggleExpand,
-  liveMode = false,
-  routeChatInput = '',
-  routeChatReply,
-  routeChatLoading = false,
-  onRouteChatInputChange,
-  onRouteChatSubmit
+  onOpenChat,
+  isLive = true,
+  dataSource = 'Open-Meteo & OSRM',
+  windRisk = 'Low',
+  fogRisk = 'Low',
+  thunderstormRisk = 'Low',
+  recommendedWaitPlaceName,
+  routeSteps = []
 }) => {
-  const activeRoute = routes.find((r) => r.id === activeRouteId) || routes[0];
-  const waitOption = departureOptions.find((d) => d.id === 'opt-wait20') || departureOptions[1];
+  const [showSteps, setShowSteps] = useState(false);
+  const [viewMode, setViewMode] = useState<'overview' | 'comparison'>('overview');
+  const safeRoutes = Array.isArray(routes) ? routes : [];
+  const activeRoute = safeRoutes.find((r) => r.id === activeRouteId) || safeRoutes[0];
+  const safeOptions = Array.isArray(departureOptions) ? departureOptions : [];
+  const waitOption = safeOptions.find((d) => d.isRecommended) || safeOptions[1] || safeOptions[0];
+
+  if (!activeRoute) return null;
+
+  const isLowSafety = activeRoute?.safetyScore !== undefined && activeRoute.safetyScore !== null && activeRoute.safetyScore < 80;
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-30 bg-white rounded-t-3xl shadow-2xl border-t border-slate-200 pointer-events-auto transition-all duration-300 max-h-[80vh] flex flex-col">
-      {/* Pull Handle / Header */}
+    <div className="absolute bottom-0 left-0 right-0 z-30 bg-slate-900/98 backdrop-blur-md text-white rounded-t-3xl shadow-2xl border-t border-slate-700/80 pointer-events-auto transition-all duration-300 max-h-[82vh] flex flex-col">
+      {/* Pull Handle & Quick Status Bar */}
       <div
         onClick={onToggleExpand}
-        className="w-full pt-2 pb-1.5 flex flex-col items-center cursor-pointer select-none hover:bg-slate-50 rounded-t-3xl transition"
+        className="w-full pt-2.5 pb-1 flex flex-col items-center cursor-pointer select-none hover:bg-slate-800/50 rounded-t-3xl transition"
       >
-        <div className="w-10 h-1 bg-slate-300 rounded-full mb-1" />
-        <div className="flex items-center space-x-1.5 text-[11px] font-bold text-slate-500">
-          <span>WeatherGPT Route Comparison</span>
-          <span className="text-blue-600 font-extrabold">
-            {isExpanded ? '▼ Collapse' : '▲ View Details & Best Time'}
+        <div className="w-12 h-1 bg-slate-600 rounded-full mb-1.5" />
+        <div className="flex items-center space-x-2 text-[11px] font-bold">
+          <span className="text-slate-300">WeatherGPT Route Intelligence</span>
+          <span className="text-sky-400 font-extrabold">
+            {isExpanded ? '▼ Collapse' : '▲ Best Time & Weather Details'}
+          </span>
+          <span
+            className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-xs uppercase tracking-wider ${
+              isLive
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+            }`}
+          >
+            {isLive ? 'LIVE DATA' : 'DEMO'}
           </span>
         </div>
       </div>
 
-      <div className="overflow-y-auto px-4 pb-6 space-y-3">
-        {/* Active Route Quick Summary Card */}
-        <div className="p-3.5 rounded-2xl bg-gradient-to-br from-blue-50/80 via-white to-indigo-50/50 border border-blue-200/80 shadow-xs">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center space-x-2">
-              <span
-                className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wider ${
-                  activeRoute.color === 'green'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : activeRoute.color === 'orange'
-                    ? 'bg-amber-100 text-amber-800'
-                    : 'bg-red-100 text-red-800'
-                }`}
-              >
-                {activeRoute.badge}
-              </span>
-              <span className="text-xs font-extrabold text-slate-900 truncate">
-                {activeRoute.name}
-              </span>
-            </div>
-
-            {/* Weather Safety Score Badge */}
-            <div className="flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-white shadow-xs border border-slate-200">
-              <span className="text-[10px] font-bold text-slate-500">Safety Score:</span>
-              <span
-                className={`text-xs font-black ${
-                  activeRoute.safetyScore >= 80
-                    ? 'text-emerald-600'
-                    : activeRoute.safetyScore >= 60
-                    ? 'text-amber-600'
-                    : 'text-red-600'
-                }`}
-              >
-                {liveMode && !activeRoute.riskAvailable ? 'Risk unavailable' : `${activeRoute.safetyScore}/100`}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-baseline justify-between mb-2.5">
-            <div className="flex items-baseline space-x-2">
-              <span className="text-xl font-black text-slate-900">
-                {activeRoute.durationMinutes} min
-              </span>
-              <span className="text-xs font-bold text-slate-500">
-                ({activeRoute.distanceKm} km)
-              </span>
-            </div>
-            <div className="text-xs font-semibold text-slate-700 flex items-center space-x-1">
-              <span>☁️ {activeRoute.summaryCondition}</span>
-            </div>
-          </div>
-
-          {/* Rain and Waterlogging Status Pills */}
-          <div className="grid grid-cols-2 gap-2 mb-3 text-[11px]">
-            <div className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between">
-              <span className="text-slate-500 font-medium">Rain Risk:</span>
-              <span
-                className={`font-bold ${
-                  activeRoute.rainRisk === 'Low'
-                    ? 'text-emerald-600'
-                    : activeRoute.rainRisk === 'Moderate'
-                    ? 'text-amber-600'
-                    : 'text-red-600'
-                }`}
-              >
-                {activeRoute.rainRisk}
-              </span>
-            </div>
-            <div className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between">
-              <span className="text-slate-500 font-medium">Waterlogging:</span>
-              <span
-                className={`font-bold ${
-                  activeRoute.waterloggingRisk === 'Low'
-                    ? 'text-emerald-600'
-                    : activeRoute.waterloggingRisk === 'Moderate'
-                    ? 'text-amber-600'
-                    : 'text-red-600'
-                }`}
-              >
-                {activeRoute.waterloggingRisk}
-              </span>
-            </div>
-          </div>
-
-          {/* Primary Navigation & Explain Actions */}
-          <div className="flex items-center space-x-2">
+      {/* View Mode Switcher: Route Overview vs Side-by-Side Weather Comparison */}
+      {safeRoutes.length > 1 && (
+        <div className="px-4 py-1.5 shrink-0">
+          <div className="flex items-center p-1 bg-slate-850 rounded-2xl border border-slate-750/90 shadow-inner">
             <button
-              onClick={onStartNavigation}
-              className="flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/25 flex items-center justify-center space-x-2 transition cursor-pointer active:scale-98"
+              onClick={() => setViewMode('overview')}
+              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center space-x-1.5 ${
+                viewMode === 'overview'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
-              <Navigation className="w-4 h-4 fill-white" />
-              <span>START NAVIGATION</span>
+              <Navigation className="w-3.5 h-3.5" />
+              <span>Route Overview</span>
             </button>
 
             <button
-              onClick={onOpenWhyRoute}
-              className="px-3 py-3 rounded-xl bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs border border-blue-200 transition cursor-pointer flex items-center space-x-1"
-              title="Explainable AI Route Justification"
+              onClick={() => setViewMode('comparison')}
+              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center space-x-1.5 relative ${
+                viewMode === 'comparison'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-300 hover:text-white'
+              }`}
             >
-              <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-              <span className="hidden sm:inline">Why This Route?</span>
-              <span className="sm:hidden">Why?</span>
-            </button>
-
-            <button
-              onClick={onOpenTimeline}
-              className="px-3 py-3 rounded-xl bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200 transition cursor-pointer flex items-center space-x-1"
-              title="View Stop-by-Stop Weather Timeline"
-            >
-              <Clock className="w-3.5 h-3.5 text-slate-500" />
-              <span>Timeline</span>
+              <Scale className="w-3.5 h-3.5 text-sky-400" />
+              <span>Side-by-Side Comparison ({safeRoutes.length})</span>
+              {viewMode !== 'comparison' && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 absolute top-1.5 right-2 ring-2 ring-slate-900 animate-pulse" />
+              )}
             </button>
           </div>
         </div>
+      )}
 
-        {/* 3-Route Alternative Selector Buttons */}
-        <div>
-          <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider block mb-1.5">
-            Available Route Options ({routes.length})
-          </span>
-          <div className="space-y-1.5">
-            {routes.map((route) => {
-              const isSelected = route.id === activeRouteId;
-              return (
-                <div
-                  key={route.id}
-                  onClick={() => onSelectRoute(route.id)}
-                  className={`p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-between ${
-                    isSelected
-                      ? 'bg-blue-50/90 border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
-                      : 'bg-white border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2.5 min-w-0">
-                    <div
-                      className={`w-3 h-3 rounded-full shrink-0 ${
-                        route.color === 'green'
-                          ? 'bg-emerald-500'
-                          : route.color === 'orange'
-                          ? 'bg-amber-500'
-                          : 'bg-red-500'
-                      }`}
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center space-x-1.5">
-                        <h4 className="text-xs font-bold text-slate-900 truncate">
-                          {route.name}
-                        </h4>
-                        {route.type === 'recommended' && (
-                          <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-sm">
-                            SAFEST
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-500 truncate">
-                        {route.distanceKm} km • {route.durationMinutes} min • {route.summaryCondition}
-                      </p>
-                    </div>
+      <div className="overflow-y-auto px-4 pb-6 space-y-3">
+        {/* VIEW 1: SIDE-BY-SIDE WEATHER COMPARISON VIEW */}
+        {viewMode === 'comparison' ? (
+          <div className="space-y-3 pt-1">
+            <SideBySideRouteComparison
+              routes={safeRoutes}
+              activeRouteId={activeRouteId}
+              onSelectRoute={onSelectRoute}
+              onStartNavigation={onStartNavigation}
+            />
+          </div>
+        ) : (
+          /* VIEW 2: STANDARD DETAILED OVERVIEW */
+          <>
+            {/* Safety Alert Warning Banner if score < 80 */}
+            {isLowSafety && (
+              <div className="p-3 rounded-2xl bg-red-950/80 border border-red-500/50 text-red-200 text-xs shadow-lg animate-pulse flex items-start space-x-2.5">
+                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-black text-red-100 flex items-center justify-between">
+                    <span>⚠️ Safety Warning: Score is {activeRoute.safetyScore}/100 (&lt; 80)</span>
                   </div>
+                  <p className="text-[11px] text-red-200/90 mt-0.5">
+                    Significant weather hazard detected on this corridor. We strongly advise waiting or departing around{' '}
+                    <strong className="text-white font-black underline">{waitOption?.time || 'in 20 mins'}</strong> for safer pavement conditions.
+                  </p>
+                  {recommendedWaitPlaceName && (
+                    <div className="mt-2 flex items-center justify-between bg-red-900/40 p-2 rounded-xl border border-red-500/30">
+                      <span className="text-[10px] text-red-200">
+                        Recommended wait shelter: <strong>{recommendedWaitPlaceName}</strong>
+                      </span>
+                      <button
+                        onClick={onOpenNearby}
+                        className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white text-[10px] font-bold rounded-lg transition cursor-pointer"
+                      >
+                        View Shelter
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <div className="text-right">
-                      <div className="text-[10px] text-slate-400 font-semibold">Safety</div>
-                      <div
-                        className={`text-xs font-black ${
-                          route.safetyScore >= 80
-                            ? 'text-emerald-600'
-                            : route.safetyScore >= 60
-                            ? 'text-amber-600'
-                            : 'text-red-600'
+            {/* Route Option Switcher & Comparison Grid */}
+            {safeRoutes.length > 1 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 px-1">
+                  <span>SELECT ROUTE OPTION</span>
+                  <button
+                    onClick={() => setViewMode('comparison')}
+                    className="text-[10px] text-sky-400 hover:text-sky-300 font-bold flex items-center space-x-1 cursor-pointer transition"
+                  >
+                    <Scale className="w-3 h-3" />
+                    <span>Compare All Side-by-Side</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {safeRoutes.map((route) => {
+                    const isSelected = route.id === activeRouteId;
+                    const isSafest = route.id === 'route-safest' || route.routeOptionType === 'safest';
+                    const isFastest = route.id === 'route-fastest' || route.routeOptionType === 'fastest';
+                    const isScenic = route.id === 'route-scenic' || route.routeOptionType === 'scenic';
+
+                    return (
+                      <button
+                        key={route.id}
+                        onClick={() => onSelectRoute(route.id)}
+                        className={`p-2.5 rounded-2xl text-left transition cursor-pointer border relative overflow-hidden ${
+                          isSelected
+                            ? 'bg-slate-800/95 text-white border-blue-500 shadow-md ring-1 ring-blue-500/50'
+                            : 'bg-slate-850/80 hover:bg-slate-800 text-slate-300 border-slate-750 hover:border-slate-600'
                         }`}
                       >
-                        {liveMode && !route.riskAvailable ? 'Unavailable' : `${route.safetyScore}/100`}
-                      </div>
-                    </div>
-                    <ChevronRight className={`w-4 h-4 ${isSelected ? 'text-blue-600' : 'text-slate-300'}`} />
+                        {/* Top status & badge */}
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="text-xs">
+                              {isSafest ? '🟢' : isFastest ? '⚡' : isScenic ? '🌿' : '🚗'}
+                            </span>
+                            <span className="text-xs font-black">
+                              {isSafest ? 'Safest' : isFastest ? 'Fastest' : isScenic ? 'Scenic' : route.name.split(' ')[0]}
+                            </span>
+                          </div>
+                          <span
+                            className={`text-[9px] font-black px-1.5 py-0.2 rounded-xs ${
+                              route.safetyScore >= 80
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            }`}
+                          >
+                            {route.safetyScore}/100
+                          </span>
+                        </div>
+
+                        {/* Duration & distance */}
+                        <div className="flex items-baseline space-x-1.5 mb-1">
+                          <span className="text-base font-black text-white">{route.durationMinutes} min</span>
+                          <span className="text-[10px] text-slate-400">({route.distanceKm} km)</span>
+                        </div>
+
+                        {/* Weather Impact Label */}
+                        <div className="text-[9.5px] font-medium text-slate-400 leading-snug line-clamp-2">
+                          {route.weatherImpactLabel || route.weatherImpactBadge || route.summaryCondition}
+                        </div>
+
+                        {isSelected && (
+                          <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-500 ring-2 ring-blue-400/40" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Active Route Quick Summary Card */}
+            <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-800 via-slate-850 to-slate-900 border border-slate-700 shadow-md">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <span
+                    className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider ${
+                      activeRoute.color === 'green'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : activeRoute.color === 'orange'
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                    }`}
+                  >
+                    {activeRoute.badge || 'SELECTED ROUTE'}
+                  </span>
+                  <span className="text-xs font-black text-white truncate max-w-[180px]">
+                    {activeRoute.name}
+                  </span>
+                </div>
+
+                {/* Weather Safety Score Badge */}
+                <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700">
+                  <span className="text-[10px] font-bold text-slate-400">Safety:</span>
+                  <span
+                    className={`text-xs font-black ${
+                      activeRoute.safetyScore !== undefined && activeRoute.safetyScore !== null
+                        ? activeRoute.safetyScore >= 80
+                          ? 'text-emerald-400'
+                          : activeRoute.safetyScore >= 60
+                          ? 'text-amber-400'
+                          : 'text-red-400'
+                        : 'text-slate-400'
+                    }`}
+                  >
+                    {activeRoute.safetyScore !== undefined && activeRoute.safetyScore !== null
+                      ? `${activeRoute.safetyScore}/100`
+                      : 'Unavailable'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-baseline justify-between mb-2.5">
+                <div className="flex items-baseline space-x-2">
+                  <span className="text-2xl font-black text-white tracking-tight">
+                    {activeRoute.durationMinutes} min
+                  </span>
+                  <span className="text-xs font-bold text-slate-400">
+                    ({activeRoute.distanceKm} km)
+                  </span>
+                </div>
+                <div className="text-xs font-semibold text-sky-400 flex items-center space-x-1">
+                  <span>{activeRoute.summaryCondition}</span>
+                </div>
+              </div>
+
+              {/* 5-Hazard Risk Matrix: Rain, Waterlogging, Wind, Fog, Thunderstorm */}
+              <div className="grid grid-cols-5 gap-1.5 mb-3 text-[10px]">
+                <div className="p-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-center">
+                  <div className="text-slate-400 text-[9px] mb-0.5">Rain</div>
+                  <div className={`font-black ${activeRoute.rainRisk === 'Low' ? 'text-emerald-400' : activeRoute.rainRisk === 'Moderate' ? 'text-amber-400' : activeRoute.rainRisk === 'High' ? 'text-red-400' : 'text-slate-400'}`}>
+                    {activeRoute.rainRisk || 'Unavailable'}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
 
-        {/* Best Departure Time AI Card (Mandatory Feature) */}
-        <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/90 shadow-xs">
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="flex items-center space-x-1.5">
-              <span className="text-amber-600 font-extrabold text-sm">🕒</span>
-              <h4 className="text-xs font-black text-amber-950 uppercase tracking-wider">
-                Best Departure Time AI
-              </h4>
+                <div className="p-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-center">
+                  <div className="text-slate-400 text-[9px] mb-0.5">Flood</div>
+                  <div className={`font-black ${activeRoute.waterloggingRisk === 'Low' ? 'text-emerald-400' : activeRoute.waterloggingRisk === 'Moderate' ? 'text-amber-400' : activeRoute.waterloggingRisk === 'High' ? 'text-red-400' : 'text-slate-400'}`}>
+                    {activeRoute.waterloggingRisk || 'Unavailable'}
+                  </div>
+                </div>
+
+                <div className="p-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-center">
+                  <div className="text-slate-400 text-[9px] mb-0.5">Wind</div>
+                  <div className={`font-black ${windRisk === 'Low' ? 'text-emerald-400' : windRisk === 'Moderate' ? 'text-amber-400' : windRisk === 'High' ? 'text-red-400' : 'text-slate-400'}`}>
+                    {windRisk || 'Unavailable'}
+                  </div>
+                </div>
+
+                <div className="p-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-center">
+                  <div className="text-slate-400 text-[9px] mb-0.5">Fog</div>
+                  <div className={`font-black ${fogRisk === 'Low' ? 'text-emerald-400' : fogRisk === 'Moderate' ? 'text-amber-400' : fogRisk === 'High' ? 'text-red-400' : 'text-slate-400'}`}>
+                    {fogRisk || 'Unavailable'}
+                  </div>
+                </div>
+
+                <div className="p-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-center">
+                  <div className="text-slate-400 text-[9px] mb-0.5">Storm</div>
+                  <div className={`font-black ${thunderstormRisk === 'Low' ? 'text-emerald-400' : thunderstormRisk === 'Moderate' ? 'text-amber-400' : thunderstormRisk === 'High' ? 'text-red-400' : 'text-slate-400'}`}>
+                    {thunderstormRisk || 'Unavailable'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Primary Action Buttons */}
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={onStartNavigation}
+                  className="flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-lg shadow-blue-600/30 flex items-center justify-center space-x-2 transition cursor-pointer active:scale-98"
+                >
+                  <Navigation className="w-4 h-4" />
+                  <span>Start Navigation</span>
+                </button>
+
+                {onOpenChat && (
+                  <button
+                    onClick={onOpenChat}
+                    className="py-3 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer"
+                    title="Ask WeatherGPT about this route"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Ask AI</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={onOpenWhyRoute}
+                  className="py-3 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs flex items-center space-x-1 transition cursor-pointer"
+                  title="Explain Route Decision"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span>Why?</span>
+                </button>
+              </div>
             </div>
-            <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
-              Doppler Predictive Sync
+          </>
+        )}
+
+        {/* Best Departure Time Recommendations */}
+        <div className="p-3 rounded-2xl bg-slate-850 border border-slate-800">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center space-x-1.5">
+              <Clock className="w-4 h-4 text-sky-400" />
+              <h4 className="text-xs font-black text-white">Best Departure Time</h4>
+            </div>
+            <span className="text-[10px] font-bold text-sky-400">
+              {waitOption?.tag || 'Smart Departure'}
             </span>
           </div>
 
-          <p className="text-xs text-amber-900 leading-relaxed mb-3">
-            {liveMode ? 'Departure recommendations use the available backend forecast for this route.' : <>Heavy rainfall is expected on low-lying segments for the next 20 minutes. <span className="font-extrabold text-amber-950">Recommendation: WAIT FOR 20 MINUTES.</span> Rain intensity is predicted to decrease significantly after 5:40 PM.</>}
-          </p>
-
-          {/* Departure Options Grid */}
-          <div className="grid grid-cols-3 gap-1.5 mb-3">
-            {departureOptions.length ? departureOptions.map((opt) => (
-              <div
+          <div className="grid grid-cols-3 gap-2">
+            {safeOptions.map((opt) => (
+              <button
                 key={opt.id}
-                className={`p-2 rounded-xl text-center border transition ${
+                onClick={() => {
+                  if (opt.id.includes('wait') || opt.time.includes('20')) {
+                    onActivateSmartWait(20);
+                  }
+                }}
+                className={`p-2.5 rounded-xl text-left border transition cursor-pointer flex flex-col justify-between ${
                   opt.isRecommended
-                    ? 'bg-white border-emerald-400 shadow-sm ring-2 ring-emerald-500/20'
-                    : 'bg-white/70 border-amber-200'
+                    ? 'bg-blue-600/20 border-blue-500/50 text-white ring-1 ring-blue-500/30'
+                    : 'bg-slate-800/80 border-slate-700/60 text-slate-300 hover:bg-slate-800'
                 }`}
               >
-                {opt.tag && (
-                  <span className="text-[8px] font-black text-emerald-700 bg-emerald-100 px-1 py-0.2 rounded-xs block mb-1 truncate">
-                    {opt.tag}
-                  </span>
-                )}
-                <div className="text-[10px] font-bold text-slate-600">{opt.title}</div>
-                <div className="text-xs font-black text-slate-900">{opt.time}</div>
-                <div
-                  className={`text-[10px] font-black mt-0.5 ${
-                    opt.safetyScore >= 80 ? 'text-emerald-600' : 'text-amber-600'
-                  }`}
-                >
-                  Score: {opt.safetyScore}
+                <div>
+                  <div className="text-xs font-black truncate">{opt.title}</div>
+                  <div className="text-[10px] text-slate-400 truncate">{opt.time}</div>
                 </div>
-              </div>
-            )) : <div className="col-span-3 rounded-xl border border-amber-200 bg-white/70 p-3 text-center text-xs font-bold text-amber-900">Best departure time is unavailable for this route right now.</div>}
-          </div>
-
-          {/* Departure Buttons */}
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => onActivateSmartWait(20)}
-              className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm flex items-center justify-center space-x-1.5 transition cursor-pointer"
-            >
-              <span>🕒</span>
-              <span>WAIT 20 MINUTES (SMART WAIT)</span>
-            </button>
-
-            <button
-              onClick={onStartNavigation}
-              className="py-2.5 px-3 rounded-xl bg-white hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-300 transition cursor-pointer"
-            >
-              Leave Now
-            </button>
-
-            <button
-              onClick={onOpenNearby}
-              className="py-2.5 px-3 rounded-xl bg-white hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-300 transition cursor-pointer flex items-center space-x-1"
-            >
-              <span>☕ Places to Wait</span>
-            </button>
+                <div className="mt-2 flex items-center justify-between text-[10px] font-black">
+                  <span className={opt.safetyScore >= 80 ? 'text-emerald-400' : 'text-amber-400'}>
+                    {opt.safetyScore}/100
+                  </span>
+                  {opt.isRecommended && (
+                    <span className="text-[9px] bg-blue-500 text-white px-1.5 py-0.2 rounded-xs">
+                      Best
+                    </span>
+                  )}
+                </div>
+              </button>
+            ))}
           </div>
         </div>
 
-        {onRouteChatSubmit && (
-          <form onSubmit={(event) => { event.preventDefault(); onRouteChatSubmit(); }} className="p-3 rounded-2xl bg-slate-50 border border-slate-200">
-            <div className="text-[11px] font-black text-slate-700 mb-2">Ask about this route...</div>
-            {routeChatReply && <div className="mb-2 rounded-xl bg-white border border-blue-100 p-2 text-xs text-slate-700 whitespace-pre-wrap">{routeChatReply}</div>}
-            <div className="flex gap-2">
-              <input value={routeChatInput} onChange={(event) => onRouteChatInputChange?.(event.target.value)} placeholder="Why? What should I carry?" className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-blue-500" />
-              <button type="submit" disabled={!routeChatInput.trim() || routeChatLoading} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white disabled:opacity-40">{routeChatLoading ? '...' : 'Send'}</button>
-            </div>
-          </form>
+        {/* Secondary Actions: Timeline, Nearby Places, Step Maneuvers */}
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <button
+            onClick={onOpenTimeline}
+            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 font-bold flex items-center justify-center space-x-1.5 transition cursor-pointer"
+          >
+            <Clock className="w-3.5 h-3.5 text-sky-400" />
+            <span>Timeline</span>
+          </button>
+
+          <button
+            onClick={onOpenNearby}
+            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 font-bold flex items-center justify-center space-x-1.5 transition cursor-pointer"
+          >
+            <Coffee className="w-3.5 h-3.5 text-amber-400" />
+            <span>Nearby Places</span>
+          </button>
+
+          <button
+            onClick={() => setShowSteps(!showSteps)}
+            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 font-bold flex items-center justify-center space-x-1 transition cursor-pointer"
+          >
+            <span>Steps ({routeSteps.length})</span>
+            {showSteps ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {/* Route Steps Accordion */}
+        {showSteps && routeSteps.length > 0 && (
+          <div className="p-3 rounded-2xl bg-slate-850 border border-slate-800 space-y-2 max-h-48 overflow-y-auto">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide">
+              Turn-by-Turn Maneuvers
+            </span>
+            {routeSteps.map((st, i) => (
+              <div key={i} className="flex items-start space-x-2 text-xs py-1 border-b border-slate-800 last:border-b-0">
+                <span className="w-4 h-4 rounded-full bg-slate-700 text-[9px] font-bold flex items-center justify-center text-slate-300 shrink-0 mt-0.5">
+                  {i + 1}
+                </span>
+                <div className="flex-1">
+                  <div className="font-semibold text-slate-200">{st.instruction}</div>
+                  <div className="text-[10px] text-slate-500">
+                    {st.name} • {(st.distance_m / 1000).toFixed(1)} km
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

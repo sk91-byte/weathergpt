@@ -1,262 +1,526 @@
-import React, { useEffect, useState } from 'react';
-import { Search, X, MapPin, Mic, Clock, Building2, Navigation } from '../Icons';
+import React, { useState, useEffect } from 'react';
+import {
+  Search,
+  X,
+  MapPin,
+  Clock,
+  Building2,
+  Navigation,
+  Car,
+  Footprints,
+  Bike,
+  Bus,
+  RotateCcw,
+  Sparkles,
+  Compass,
+  AlertTriangle
+} from '../Icons';
 import { DestinationPreset } from '../../data/liveMapData';
-import { searchPlaces } from '../../services/backend';
+import { apiAutocompleteLocations } from '../../services/api';
+
+export type MapLanguage = 'en' | 'hi' | 'hinglish';
 
 interface SearchAndDestinationsProps {
-  searchQuery: string;
-  onSearchChange: (q: string) => void;
+  originQuery: string;
+  onOriginChange: (q: string) => void;
+  originCoords?: [number, number];
+  destinationQuery: string;
+  onDestinationChange: (q: string) => void;
+  destinationCoords?: [number, number];
   isOpen: boolean;
   onOpen: () => void;
   onClose: () => void;
-  onSelectPreset: (preset: DestinationPreset) => void;
+  onSelectOriginPreset?: (item: { name: string; lat: number; lon: number }) => void;
+  onSelectDestinationPreset: (preset: DestinationPreset | { name: string; lat: number; lon: number }) => void;
   presets: DestinationPreset[];
   currentLocationName: string;
   selectedDestinationName: string | null;
   onClearDestination: () => void;
   onUseGps: () => void;
   isLocating?: boolean;
-  currentLocation?: { latitude: number; longitude: number } | null;
-  originQuery: string;
-  onOriginChange: (q: string) => void;
-  originLocation?: { name: string } | null;
-  onSelectOrigin: (preset: DestinationPreset) => void;
+  gpsPermissionNotice?: string | null;
+  onDismissGpsNotice?: () => void;
+  travelMode: string;
+  onChangeTravelMode: (mode: string) => void;
+  onSwapLocations?: () => void;
+  onOpenPlanTripModal?: () => void;
+  onSubmitDestination?: (destQuery: string) => void;
 }
 
 export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
-  searchQuery,
-  onSearchChange,
+  originQuery,
+  onOriginChange,
+  originCoords,
+  destinationQuery,
+  onDestinationChange,
+  destinationCoords,
   isOpen,
   onOpen,
   onClose,
-  onSelectPreset,
+  onSelectOriginPreset,
+  onSelectDestinationPreset,
   presets,
   currentLocationName,
   selectedDestinationName,
   onClearDestination,
   onUseGps,
   isLocating,
-  currentLocation
-  , originQuery,
-  onOriginChange,
-  originLocation,
-  onSelectOrigin
+  gpsPermissionNotice,
+  onDismissGpsNotice,
+  travelMode,
+  onChangeTravelMode,
+  onSwapLocations,
+  onOpenPlanTripModal,
+  onSubmitDestination
 }) => {
-  const [remotePresets, setRemotePresets] = useState<DestinationPreset[]>([]);
-  const [remoteOrigins, setRemoteOrigins] = useState<DestinationPreset[]>([]);
-  const [searchState, setSearchState] = useState<'idle' | 'loading' | 'results' | 'no_results' | 'error'>('idle');
+  const [activeField, setActiveField] = useState<'origin' | 'destination'>('destination');
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<any[]>([]);
+  const [isSearchingApi, setIsSearchingApi] = useState(false);
+  const [lang, setLang] = useState<MapLanguage>('en');
 
+  // Friendly bilingual labels
+  const labels = {
+    en: {
+      originTitle: 'Where are you starting from?',
+      destTitle: 'Where do you want to go?',
+      originPlaceholder: currentLocationName || 'Search city, landmark, or use GPS...',
+      destPlaceholder: 'Search Indian city, town, campus, or address...',
+      setBtn: 'Set Route',
+      gpsTitle: 'Use Current GPS',
+      change: 'Change',
+      searching: 'Searching locations in India...',
+      curated: 'Quick Weather Hotspots & Hubs'
+    },
+    hi: {
+      originTitle: 'आप कहाँ से शुरू कर रहे हैं?',
+      destTitle: 'आप कहाँ जाना चाहते हैं?',
+      originPlaceholder: currentLocationName || 'शुरुआती शहर, लैंडमार्क या GPS चुनें...',
+      destPlaceholder: 'गंतव्य शहर, कस्बा, कॉलेज या पता खोजें...',
+      setBtn: 'रूट देखें',
+      gpsTitle: 'मेरा GPS स्थान',
+      change: 'बदलें',
+      searching: 'स्थान खोजे जा रहे हैं...',
+      curated: 'प्रमुख भारतीय शहर व कॉलेज'
+    },
+    hinglish: {
+      originTitle: 'Aap kahan se start kar rahe ho?',
+      destTitle: 'Aap kahan jaana chahte ho?',
+      originPlaceholder: currentLocationName || 'Starting point (city, landmark ya GPS)...',
+      destPlaceholder: 'Destination city, campus ya address search karein...',
+      setBtn: 'Set Route',
+      gpsTitle: 'Current GPS lein',
+      change: 'Change',
+      searching: 'Locations search ho rahi hain...',
+      curated: 'Quick Popular Hubs'
+    }
+  }[lang];
+
+  // Debounced API autocomplete query
   useEffect(() => {
-    if (searchQuery.trim().length < 2) {
-      setRemotePresets([]);
-      setSearchState('idle');
+    const q = activeField === 'origin' ? originQuery : destinationQuery;
+    if (!q || q.trim().length < 2) {
+      setAutocompleteSuggestions([]);
       return;
     }
-    setSearchState('loading');
-    const timer = window.setTimeout(() => {
-      searchPlaces(searchQuery, currentLocation?.latitude, currentLocation?.longitude)
-        .then((places) => {
-          const converted = places.map((place) => ({
-            id: place.place_id,
-            name: place.name,
-            subtitle: place.formatted_address || place.address || 'India',
-            category: 'landmark' as const,
-            coords: { x: 50, y: 50, lat: place.latitude, lon: place.longitude },
-            city: place.city || place.state || 'India'
-          }));
-          setRemotePresets(converted);
-          setSearchState(converted.length ? 'results' : 'no_results');
-        })
-        .catch(() => {
-          setRemotePresets([]);
-          setSearchState('error');
-        });
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [searchQuery, currentLocation]);
 
-  useEffect(() => {
-    if (originQuery.trim().length < 2) {
-      setRemoteOrigins([]);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      searchPlaces(originQuery, currentLocation?.latitude, currentLocation?.longitude)
-        .then((places) => setRemoteOrigins(places.map((place) => ({
-          id: place.place_id, name: place.name, subtitle: place.formatted_address || place.address || 'India',
-          category: 'landmark' as const, coords: { x: 50, y: 50, lat: place.latitude, lon: place.longitude }, city: place.city || place.state || 'India'
-        }))))
-        .catch(() => setRemoteOrigins([]));
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [originQuery, currentLocation]);
+    const timer = setTimeout(async () => {
+      setIsSearchingApi(true);
+      try {
+        const results = await apiAutocompleteLocations(q);
+        setAutocompleteSuggestions(results);
+      } catch (e) {
+        console.warn('Autocomplete lookup error:', e);
+      } finally {
+        setIsSearchingApi(false);
+      }
+    }, 280);
 
-  const filtered = presets.filter((p) =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    p.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    p.city.toLowerCase().includes(searchQuery.toLowerCase())
+    return () => clearTimeout(timer);
+  }, [originQuery, destinationQuery, activeField]);
+
+  const filteredPresets = presets.filter(
+    (p) =>
+      p.name.toLowerCase().includes(destinationQuery.toLowerCase()) ||
+      p.subtitle.toLowerCase().includes(destinationQuery.toLowerCase()) ||
+      p.city.toLowerCase().includes(destinationQuery.toLowerCase())
   );
-  const displayPresets = searchQuery.trim().length >= 2 ? remotePresets : filtered;
 
   return (
-    <div className="relative z-30 w-full px-3 pt-3 pointer-events-auto">
-      {/* Floating Main Search Bar */}
-      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200/90 p-1.5 transition-all">
-        <div className="flex items-center space-x-2">
-          {/* WeatherGPT Map Logo Badge */}
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-            <Navigation className="w-5 h-5 text-white stroke-[2.2]" />
-          </div>
-
-          {/* Search Input */}
-          <div className="flex-1 flex items-center min-w-0" onClick={onOpen}>
-            <input
-              type="text"
-              value={searchQuery || (selectedDestinationName ? selectedDestinationName : '')}
-              onChange={(e) => {
-                onSearchChange(e.target.value);
-                if (!isOpen) onOpen();
-              }}
-              onFocus={onOpen}
-              placeholder="Where do you want to go?"
-              className="w-full bg-transparent text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-hidden truncate"
-            />
-          </div>
-
-          {/* Clear or Quick GPS Actions */}
-          {selectedDestinationName || searchQuery ? (
-            <button
-              onClick={() => {
-                onClearDestination();
-                onSearchChange('');
-              }}
-              className="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition cursor-pointer"
-              title="Clear destination"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          ) : (
-            <button
-              onClick={onUseGps}
-              className={`w-7 h-7 rounded-lg flex items-center justify-center text-blue-600 hover:bg-blue-50 transition cursor-pointer ${
-                isLocating ? 'animate-spin text-blue-400' : ''
-              }`}
-              title="Locate via GPS"
-            >
-              <MapPin className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Auto Location Sub-Indicator when Destination is active */}
-        {selectedDestinationName && (
-          <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500 px-1">
-            <div className="flex items-center space-x-1.5 truncate">
-              <span className="text-emerald-500 font-bold">🟢 Start:</span>
-              <span className="font-semibold text-slate-700 truncate">{currentLocationName}</span>
-            </div>
-            <div className="flex items-center space-x-1 shrink-0 ml-2">
-              <span className="text-red-500 font-bold">📍 To:</span>
-              <span className="font-bold text-slate-900 truncate max-w-[120px]">{selectedDestinationName}</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Auto-suggest overlay drawer */}
-      {isOpen && (
-        <div className="absolute top-16 left-3 right-3 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[70vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
-          <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-            <span className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider">
-              Search Destination...
+    <div className="relative z-30 w-full px-3 pt-2.5 pointer-events-auto">
+      {/* Main Dual Search Card */}
+      <div className="bg-slate-900/96 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700/90 p-3 text-white transition-all">
+        {/* Top Bar: Language Switcher & Quick Planner Link */}
+        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-xs">
+          <div className="flex items-center space-x-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+              Language:
             </span>
-            <button
-              onClick={onClose}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
-            >
-              Cancel
-            </button>
-          </div>
-
-          <div className="p-3 space-y-2 border-b border-slate-100">
-            <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Starting location</label>
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
-              <input value={originQuery} onChange={(event) => onOriginChange(event.target.value)} placeholder={originLocation?.name || 'Search starting point'} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold outline-none focus:border-blue-500" />
-              <button type="button" onClick={onUseGps} className="text-[10px] font-black text-blue-600 whitespace-nowrap">Use GPS</button>
-            </div>
-            {originQuery.trim().length >= 2 && remoteOrigins.slice(0, 4).map((preset) => (
-              <button key={preset.id} type="button" onClick={() => { onSelectOrigin(preset); onOriginChange(preset.name); }} className="w-full text-left rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-100">{preset.name}<span className="block text-[10px] text-slate-500 truncate">{preset.subtitle}</span></button>
+            {(['en', 'hi', 'hinglish'] as MapLanguage[]).map((l) => (
+              <button
+                key={l}
+                onClick={() => setLang(l)}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
+                  lang === l
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {l === 'en' ? 'EN' : l === 'hi' ? 'हिन्दी' : 'Hinglish'}
+              </button>
             ))}
           </div>
 
-          <div className="overflow-y-auto p-2 space-y-2 flex-1">
-            {/* Quick Categories */}
-            <div className="px-2 pt-1 pb-1">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-                Suggested Destinations
+          <div className="flex items-center space-x-2">
+            {onOpenPlanTripModal && (
+              <button
+                type="button"
+                onClick={onOpenPlanTripModal}
+                className="text-[10.5px] font-extrabold text-sky-400 hover:text-sky-300 flex items-center space-x-1 bg-sky-950/60 border border-sky-800/60 px-2 py-0.5 rounded-lg transition active:scale-95 cursor-pointer"
+                title="Open full Plan Trip modal with all departure options"
+              >
+                <Sparkles className="w-3 h-3 text-sky-400" />
+                <span>+ Plan Trip</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 1. Origin Section */}
+        <div className="space-y-1 pb-2 border-b border-slate-800/80">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-bold text-emerald-400 flex items-center space-x-1.5">
+              <span>📍</span>
+              <span>{labels.originTitle}</span>
+            </label>
+            {originCoords && (
+              <span className="text-[9px] font-mono text-emerald-300/80 bg-emerald-950/60 border border-emerald-800/50 px-1.5 py-0.2 rounded-md">
+                {originCoords[0].toFixed(3)}°N, {originCoords[1].toFixed(3)}°E
               </span>
-              <div className="space-y-1">
-                {searchState === 'loading' && <div className="px-2 py-3 text-xs text-slate-500">Searching places...</div>}
-                {searchState === 'no_results' && <div className="px-2 py-3 text-xs text-slate-500">No places found. Try a more complete address.</div>}
-                {searchState === 'error' && <div className="px-2 py-3 text-xs text-red-600">Destination search is temporarily unavailable.</div>}
-                {displayPresets.map((preset) => (
-                  <button
-                    key={preset.id}
-                    onClick={() => {
-                      onSelectPreset(preset);
-                      onClose();
-                    }}
-                    className="w-full text-left p-2.5 rounded-xl hover:bg-blue-50 transition flex items-center space-x-3 cursor-pointer group"
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-blue-100/70 text-blue-600 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center transition shrink-0">
-                      {preset.category === 'university' && <Building2 className="w-4 h-4" />}
-                      {preset.category === 'home' && <span>🏠</span>}
-                      {preset.category === 'office' && <span>🏢</span>}
-                      {preset.category === 'transport' && <span>✈️</span>}
-                      {preset.category === 'landmark' && <span>⭐</span>}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h4 className="text-xs font-bold text-slate-900 group-hover:text-blue-700 truncate">
-                        {preset.name}
-                      </h4>
-                      <p className="text-[11px] text-slate-500 truncate">
-                        {preset.subtitle}
-                      </p>
-                    </div>
-                    <span className="text-[10px] text-slate-400 font-semibold group-hover:text-blue-600 shrink-0">
-                      Select →
-                    </span>
-                  </button>
-                ))}
-              </div>
+            )}
+          </div>
+
+          <div className="flex items-center space-x-2 bg-slate-800/80 rounded-xl px-2.5 py-1.5 border border-slate-700/60 focus-within:border-emerald-500/80 transition">
+            <div className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0 text-[11px] font-black shadow-xs">
+              A
+            </div>
+            <div className="flex-1 min-w-0">
+              <input
+                type="text"
+                value={originQuery}
+                onChange={(e) => {
+                  onOriginChange(e.target.value);
+                  setActiveField('origin');
+                  if (!isOpen) onOpen();
+                }}
+                onFocus={() => {
+                  setActiveField('origin');
+                  onOpen();
+                }}
+                placeholder={labels.originPlaceholder}
+                className="w-full bg-transparent text-xs font-bold text-white placeholder-slate-400 focus:outline-hidden truncate"
+              />
             </div>
 
-            {/* Recent Searches */}
-            <div className="px-2 pt-2 border-t border-slate-100">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                📍 Recent Searches
+            {/* GPS Location Button */}
+            <button
+              onClick={onUseGps}
+              className={`px-2 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 flex items-center space-x-1 text-[10px] font-bold transition cursor-pointer shrink-0 ${
+                isLocating ? 'animate-pulse text-emerald-200' : ''
+              }`}
+              title={labels.gpsTitle}
+            >
+              <MapPin className={`w-3 h-3 ${isLocating ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">GPS</span>
+            </button>
+
+            {originQuery && (
+              <button
+                onClick={() => onOriginChange('')}
+                className="w-6 h-6 rounded-lg bg-slate-700/60 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
+                title="Clear origin"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 2. Destination Section */}
+        <div className="space-y-1 pt-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-bold text-sky-400 flex items-center space-x-1.5">
+              <span>🎯</span>
+              <span>{labels.destTitle}</span>
+            </label>
+            {destinationCoords && (
+              <span className="text-[9px] font-mono text-sky-300/80 bg-sky-950/60 border border-sky-800/50 px-1.5 py-0.2 rounded-md">
+                {destinationCoords[0].toFixed(3)}°N, {destinationCoords[1].toFixed(3)}°E
               </span>
-              <div className="flex flex-wrap gap-1.5">
-                {searchQuery.trim().length < 2 && [
-                  { name: 'Sushant University', city: 'Gurugram' },
-                  { name: 'Cyber Hub', city: 'Gurugram' },
-                  { name: 'Terminal 3 Airport', city: 'Delhi' }
-                ].map((item, idx) => (
+            )}
+          </div>
+
+          <div className="flex items-center space-x-2 bg-slate-800/80 rounded-xl px-2.5 py-1.5 border border-slate-700/60 focus-within:border-sky-500/80 transition">
+            <div className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center shrink-0 text-[11px] font-black shadow-xs">
+              B
+            </div>
+            <div className="flex-1 min-w-0">
+              <input
+                type="text"
+                value={destinationQuery}
+                onChange={(e) => {
+                  onDestinationChange(e.target.value);
+                  setActiveField('destination');
+                  if (!isOpen) onOpen();
+                }}
+                onFocus={() => {
+                  setActiveField('destination');
+                  onOpen();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (onSubmitDestination && destinationQuery.trim()) {
+                      onSubmitDestination(destinationQuery.trim());
+                      onClose();
+                    }
+                  }
+                }}
+                placeholder={labels.destPlaceholder}
+                className="w-full bg-transparent text-xs font-bold text-white placeholder-slate-400 focus:outline-hidden truncate"
+              />
+            </div>
+
+            {/* Quick 'Set' Action Button */}
+            {destinationQuery.trim().length > 0 && onSubmitDestination && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSubmitDestination(destinationQuery.trim());
+                  onClose();
+                }}
+                className="px-2.5 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg text-[11px] font-extrabold flex items-center space-x-1 shrink-0 transition active:scale-95 shadow-xs cursor-pointer"
+                title="Calculate weather-safe route"
+              >
+                <Navigation className="w-3 h-3 text-white fill-white" />
+                <span>{labels.setBtn}</span>
+              </button>
+            )}
+
+            {/* Swap Button */}
+            {onSwapLocations && (
+              <button
+                onClick={onSwapLocations}
+                className="w-6 h-6 rounded-lg bg-slate-700/60 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
+                title="Swap Start & Destination"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            )}
+
+            {destinationQuery ? (
+              <button
+                onClick={() => {
+                  onClearDestination();
+                  onDestinationChange('');
+                }}
+                className="w-6 h-6 rounded-lg bg-slate-700/60 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
+                title="Clear destination"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {/* 3. Travel Mode Selector & Quick Indian Chips */}
+        <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
+          <div className="flex items-center space-x-1">
+            {[
+              { id: 'driving', label: 'Drive', icon: Car },
+              { id: 'walking', label: 'Walk', icon: Footprints },
+              { id: 'cycling', label: 'Cycle', icon: Bike },
+              { id: 'transit', label: 'Transit', icon: Bus }
+            ].map((mode) => {
+              const Icon = mode.icon;
+              const isActive = travelMode === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  onClick={() => onChangeTravelMode(mode.id)}
+                  className={`px-2.5 py-1 rounded-xl font-bold flex items-center space-x-1 transition cursor-pointer ${
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-800/80 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                  }`}
+                >
+                  <Icon className="w-3 h-3" />
+                  <span className="text-[10px]">{mode.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="text-[10px] text-slate-400 font-medium flex items-center space-x-1">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+            <span>WeatherGPT Live Safe Corridor</span>
+          </div>
+        </div>
+      </div>
+
+      {/* GPS Fallback Notice if Permission Denied */}
+      {gpsPermissionNotice && (
+        <div className="mt-2 p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs flex items-center justify-between shadow-lg">
+          <div className="flex items-center space-x-2 min-w-0">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="truncate">{gpsPermissionNotice}</span>
+          </div>
+          {onDismissGpsNotice && (
+            <button
+              onClick={onDismissGpsNotice}
+              className="text-amber-400 hover:text-white font-bold ml-2 shrink-0 cursor-pointer"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Auto-suggest overlay drawer */}
+      {isOpen && (
+        <div className="absolute top-36 left-3 right-3 bg-slate-900/98 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700/90 overflow-hidden max-h-[65vh] flex flex-col animate-in fade-in zoom-in-95 duration-150 text-white">
+          <div className="p-3 border-b border-slate-800 flex items-center justify-between bg-slate-800/60">
+            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+              {activeField === 'origin' ? labels.originTitle : labels.destTitle}
+            </span>
+            <div className="flex items-center space-x-2">
+              {onOpenPlanTripModal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenPlanTripModal();
+                  }}
+                  className="text-xs font-bold text-sky-400 hover:text-sky-300 flex items-center space-x-1 cursor-pointer bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700"
+                >
+                  <Navigation className="w-3 h-3 text-sky-400" />
+                  <span>Full Trip Planner</span>
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="text-xs font-bold text-slate-300 hover:text-white cursor-pointer px-1.5 py-0.5"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-y-auto p-2 space-y-2 flex-1">
+            {/* Real API Autocomplete Results */}
+            {autocompleteSuggestions.length > 0 && (
+              <div className="space-y-1">
+                <span className="text-[10px] font-black text-sky-400 px-2 uppercase tracking-wide">
+                  Live Search Results ({autocompleteSuggestions.length})
+                </span>
+                {autocompleteSuggestions.map((item, idx) => (
                   <button
                     key={idx}
                     onClick={() => {
-                      const match = presets.find((p) => p.name.includes(item.name)) || presets[0];
-                      onSelectPreset(match);
+                      if (activeField === 'origin' && onSelectOriginPreset) {
+                        onSelectOriginPreset({
+                          name: item.name || item.display_name.split(',')[0],
+                          lat: item.lat,
+                          lon: item.lon
+                        });
+                        onOriginChange(item.name || item.display_name.split(',')[0]);
+                      } else {
+                        onSelectDestinationPreset({
+                          name: item.name || item.display_name.split(',')[0],
+                          lat: item.lat,
+                          lon: item.lon
+                        });
+                        onDestinationChange(item.name || item.display_name.split(',')[0]);
+                      }
                       onClose();
                     }}
-                    className="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 text-[11px] font-medium rounded-lg transition cursor-pointer flex items-center gap-1"
+                    className="w-full text-left p-2.5 rounded-xl bg-slate-800/70 hover:bg-slate-750 border border-slate-700/60 transition cursor-pointer flex items-start space-x-2.5 group"
                   >
-                    <Clock className="w-3 h-3 text-slate-400" />
-                    <span>{item.name}</span>
+                    <MapPin className="w-4 h-4 text-sky-400 shrink-0 mt-0.5 group-hover:text-sky-300" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-bold text-white truncate">
+                          {item.name || item.display_name.split(',')[0]}
+                        </span>
+                        <span className="text-[9.5px] font-mono font-semibold text-slate-400 shrink-0 bg-slate-900/60 px-1.5 py-0.5 rounded-md border border-slate-700/40">
+                          {item.lat?.toFixed(3)}°, {item.lon?.toFixed(3)}°
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-300 truncate mt-0.5">
+                        {item.display_name}
+                      </div>
+                      {(item.city || item.state) && (
+                        <div className="flex items-center space-x-1.5 mt-1 text-[9px] text-sky-400 font-semibold">
+                          <span>📍 {item.city ? `${item.city}, ` : ''}{item.state || 'India'}</span>
+                        </div>
+                      )}
+                    </div>
                   </button>
                 ))}
               </div>
+            )}
+
+            {isSearchingApi && (
+              <div className="py-2 text-center text-xs text-slate-400 flex items-center justify-center space-x-1.5">
+                <div className="w-3.5 h-3.5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+                <span>{labels.searching}</span>
+              </div>
+            )}
+
+            {/* Curated Presets */}
+            <div className="space-y-1 pt-1">
+              <span className="text-[10px] font-black text-slate-400 px-2 uppercase tracking-wide">
+                {labels.curated}
+              </span>
+              {filteredPresets.map((preset) => (
+                <button
+                  key={preset.id}
+                  onClick={() => {
+                    if (activeField === 'origin' && onSelectOriginPreset) {
+                      onSelectOriginPreset({
+                        name: preset.name,
+                        lat: preset.coords.lat,
+                        lon: preset.coords.lng
+                      });
+                      onOriginChange(preset.name);
+                    } else {
+                      onSelectDestinationPreset(preset);
+                      onDestinationChange(preset.name);
+                    }
+                    onClose();
+                  }}
+                  className="w-full text-left p-2 rounded-xl hover:bg-slate-800 border border-slate-800 transition cursor-pointer flex items-center justify-between"
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0">
+                      <Building2 className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-white truncate">{preset.name}</div>
+                      <div className="text-[10px] text-slate-400 truncate">
+                        {preset.subtitle} • {preset.city}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 ml-2">
+                    <span className="text-[10px] font-bold text-slate-400 block">
+                      {preset.typicalMinutes}m
+                    </span>
+                    <span className="text-[9px] text-sky-400 font-mono">
+                      {preset.coords.lat.toFixed(2)}°, {preset.coords.lng.toFixed(2)}°
+                    </span>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>

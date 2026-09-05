@@ -1,20 +1,17 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
 import { fileURLToPath } from 'url';
 import {defineConfig} from 'vite';
 
-const configDirectory = path.dirname(fileURLToPath(import.meta.url));
+const configDirectory = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
-    // Cloudflare direct uploads may serve the Worker under a route prefix.
-    // Relative asset URLs keep the JavaScript and CSS reachable there.
     base: './',
+    plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(configDirectory, '.'),
+        '@': configDirectory,
       },
     },
     server: {

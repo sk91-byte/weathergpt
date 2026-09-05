@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Mic, MicOff, Volume2, VolumeX, Sparkles, CheckCircle2, RotateCcw, AlertTriangle, Loader2 } from './Icons';
 import { Language, WeatherData } from '../types';
-import { sendChatMessage } from '../services/backend';
 
 interface VoiceAssistantModalProps {
   weather: WeatherData;
@@ -18,8 +17,6 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   currentLanguage,
   onLanguageChange
 }) => {
-  if (!isOpen) return null;
-
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -181,11 +178,20 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const processVoiceQuery = async (queryText: string) => {
     setIsProcessing(true);
     try {
-      const data = await sendChatMessage({
-        message: queryText,
-        language: currentLanguage,
-        profile: 'general_public'
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: queryText,
+          language: currentLanguage,
+          city: weather.city,
+          role: 'citizen'
+        })
       });
+
+      if (!res.ok) throw new Error('Failed to fetch AI voice response');
+
+      const data = await res.json();
       const reply = data.response;
       setResponse(reply);
       speakText(reply);
@@ -226,6 +232,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     }
     setIsSpeaking(false);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200 select-none">

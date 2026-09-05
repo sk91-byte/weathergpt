@@ -31,6 +31,8 @@ import {
   X,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   Bot,
   Phone,
   TrendingUp,
@@ -68,7 +70,13 @@ import {
   Radio,
   Timer,
   Navigation2,
-  Maximize2
+  Maximize2,
+  Globe,
+  Car,
+  Footprints,
+  Bike,
+  Bus,
+  ArrowUpDown
 } from 'lucide-react';
 
 export {
@@ -103,6 +111,8 @@ export {
   X,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   Bot,
   Phone,
   TrendingUp,
@@ -140,5 +150,11 @@ export {
   Radio,
   Timer,
   Navigation2,
-  Maximize2
+  Maximize2,
+  Globe,
+  Car,
+  Footprints,
+  Bike,
+  Bus,
+  ArrowUpDown
 };

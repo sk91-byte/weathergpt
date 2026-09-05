@@ -4,6 +4,8 @@ import { Language, UserRole, DemoScenario } from '../types';
 import { DEMO_SCENARIOS } from '../data/weatherData';
 
 interface ProfileScreenProps {
+  userName?: string;
+  onRerunOnboarding?: () => void;
   currentLanguage: Language;
   onLanguageChange: (lang: Language) => void;
   userRole: UserRole;
@@ -13,6 +15,8 @@ interface ProfileScreenProps {
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
+  userName = 'Anmol',
+  onRerunOnboarding,
   currentLanguage,
   onLanguageChange,
   userRole,
@@ -39,14 +43,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         {/* User Card */}
         <div className="p-4 bg-white rounded-3xl border border-slate-200 shadow-xs flex items-center space-x-3.5">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 via-sky-500 to-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow-md">
-            AS
+            {userName ? userName.slice(0, 2).toUpperCase() : 'AS'}
           </div>
           <div>
             <div className="flex items-center space-x-1.5">
-              <h3 className="text-base font-bold text-slate-900 font-heading">Anmol Sahu</h3>
+              <h3 className="text-base font-bold text-slate-900 font-heading">{userName}</h3>
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
             </div>
-            <p className="text-xs text-slate-500">anmolsahu118@gmail.com</p>
+            <p className="text-xs text-slate-500">WeatherGPT Member</p>
             <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60 uppercase">
               {userRole} Mode
             </span>
@@ -252,6 +256,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Reconfigure Onboarding Walkthrough Option */}
+        {onRerunOnboarding && (
+          <button
+            onClick={onRerunOnboarding}
+            className="w-full py-3 px-4 rounded-2xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-blue-600 flex items-center justify-center space-x-2 transition cursor-pointer shadow-xs active:scale-98"
+          >
+            <Sparkles className="w-4 h-4 text-blue-500" />
+            <span>Rerun Onboarding Setup Walkthrough</span>
+          </button>
+        )}
 
         {/* App Info / Tagline */}
         <div className="text-center py-3 text-slate-400 text-xs">
