@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 import requests
+from math import cos, radians, sqrt
 
 from backend.config import settings
 from backend.services.cache_service import cache
@@ -80,3 +81,37 @@ def place_details(place_id: str) -> dict[str, Any] | None:
     if value is not None:
         cache.set(f"place:{place_id}", value, ttl_seconds=600)
     return value
+
+
+def nearby_places(latitude: float, longitude: float, radius_km: float = 5, limit: int = 12) -> list[dict[str, Any]]:
+    """Find practical waiting and safety places near a coordinate."""
+    key = f"nearby-places:{round(latitude, 4)}:{round(longitude, 4)}:{radius_km}:{limit}"
+    saved = cache.get(key)
+    if saved is not None:
+        return saved
+    # Nominatim's public endpoint is deliberately queried once with a broad
+    # amenity expression to keep the feature lightweight and rate-limit friendly.
+    try:
+        delta_lat = radius_km / 111.0
+        delta_lon = radius_km / max(1.0, 111.0 * cos(radians(latitude)))
+        response = requests.get(f"{NominatimPlaceProvider.base_url}/search", params={
+            "q": "cafe OR restaurant OR hotel OR fuel OR hospital OR convenience",
+            "format": "jsonv2", "addressdetails": 1, "limit": min(limit, 20),
+            "viewbox": f"{longitude - delta_lon},{latitude + delta_lat},{longitude + delta_lon},{latitude - delta_lat}", "bounded": 1,
+        }, headers={"User-Agent": "WeatherGPT/1.0 nearby-places"}, timeout=10)
+        response.raise_for_status()
+        values = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise PlaceSearchError("Nearby place search is temporarily unavailable") from exc
+    result: list[dict[str, Any]] = []
+    for item in values if isinstance(values, list) else []:
+        if not isinstance(item, dict) or not item.get("lat") or not item.get("lon"): continue
+        normalized = NominatimPlaceProvider._normalize(item)
+        tags = item.get("type", "").lower()
+        category = "cafe" if "cafe" in tags else "restaurant" if "restaurant" in tags else "petrol" if "fuel" in tags else "hospital" if "hospital" in tags else "hotel" if "hotel" in tags else "convenience"
+        distance = sqrt(((float(item["lat"]) - latitude) * 111) ** 2 + ((float(item["lon"]) - longitude) * 111 * cos(radians(latitude))) ** 2)
+        result.append({**normalized, "category": category, "distance_km": round(distance, 2)})
+    result.sort(key=lambda item: item["distance_km"])
+    result = result[:limit]
+    cache.set(key, result, ttl_seconds=120)
+    return result

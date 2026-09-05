@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { LiveMapRoute, RouteRiskZone, NearbySafePlace } from '../../types';
+import { getCurrentWeather } from '../../services/backend';
 
 interface LeafletMapViewProps {
   routes: LiveMapRoute[];
@@ -56,12 +57,24 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
     mapRef.current = map;
     elementsLayerGroupRef.current = L.layerGroup().addTo(map);
 
+    // Any map tap can be used as a weather probe, not only a route waypoint.
+    map.on('click', async (event) => {
+      const popup = L.popup().setLatLng(event.latlng).setContent('<strong>Loading weather…</strong>').openOn(map);
+      try {
+        const weather = await getCurrentWeather(event.latlng.lat, event.latlng.lng);
+        popup.setContent(`<div style="min-width:180px;font-family:Arial,sans-serif"><strong>Weather at this location</strong><br/><b>${weather.temperature.toFixed(1)}°C</b> · ${weather.condition}<br/>Feels like: ${weather.feelsLike.toFixed(1)}°C<br/>Rain now: ${weather.rainChance}%<br/>Wind: ${weather.windSpeed.toFixed(1)} km/h</div>`);
+      } catch {
+        popup.setContent('<strong>Weather is temporarily unavailable for this location.</strong>');
+      }
+    });
+
     // Initial resize trigger to ensure tiles fill container
     setTimeout(() => {
       map.invalidateSize();
     }, 150);
 
     return () => {
+      map.off('click');
       map.remove();
       mapRef.current = null;
     };
@@ -190,6 +203,21 @@ export const LeafletMapView: React.FC<LeafletMapViewProps> = ({
       if (!isNavigating) {
         map.fitBounds(activeLine.getBounds(), { padding: [50, 50] });
       }
+
+      // Weather-aware route points are interactive: tapping one opens the
+      // forecast data returned for that part of the route.
+      activeRoute.waypoints.forEach((point) => {
+        if (point.coords.lat === undefined || point.coords.lng === undefined) return;
+        const marker = L.circleMarker([point.coords.lat, point.coords.lng], {
+          radius: 7,
+          color: point.rainIntensity === 'Heavy' ? '#dc2626' : point.rainIntensity === 'Moderate' ? '#f59e0b' : '#2563eb',
+          weight: 2,
+          fillColor: '#ffffff',
+          fillOpacity: 0.95
+        });
+        marker.bindPopup(`<div style="min-width:170px;font-family:Arial,sans-serif"><strong>${point.name}</strong><br/>${point.weatherCondition}<br/><b>${point.temp ? `${point.temp}°C` : 'Temperature unavailable'}</b><br/>Rain chance: ${point.rainProb}%<br/>Risk score: ${point.safetyScore || 'Unavailable'}</div>`);
+        layerGroup.addLayer(marker);
+      });
     }
 
     // 3. Origin Marker

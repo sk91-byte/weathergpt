@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, X, MapPin, Mic, Clock, Building2, Navigation } from '../Icons';
 import { DestinationPreset } from '../../data/liveMapData';
+import { searchPlaces } from '../../services/backend';
 
 interface SearchAndDestinationsProps {
   searchQuery: string;
@@ -15,6 +16,11 @@ interface SearchAndDestinationsProps {
   onClearDestination: () => void;
   onUseGps: () => void;
   isLocating?: boolean;
+  currentLocation?: { latitude: number; longitude: number } | null;
+  originQuery: string;
+  onOriginChange: (q: string) => void;
+  originLocation?: { name: string } | null;
+  onSelectOrigin: (preset: DestinationPreset) => void;
 }
 
 export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
@@ -29,13 +35,68 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
   selectedDestinationName,
   onClearDestination,
   onUseGps,
-  isLocating
+  isLocating,
+  currentLocation
+  , originQuery,
+  onOriginChange,
+  originLocation,
+  onSelectOrigin
 }) => {
+  const [remotePresets, setRemotePresets] = useState<DestinationPreset[]>([]);
+  const [remoteOrigins, setRemoteOrigins] = useState<DestinationPreset[]>([]);
+  const [searchState, setSearchState] = useState<'idle' | 'loading' | 'results' | 'no_results' | 'error'>('idle');
+
+  useEffect(() => {
+    if (searchQuery.trim().length < 2) {
+      setRemotePresets([]);
+      setSearchState('idle');
+      return;
+    }
+    setSearchState('loading');
+    const timer = window.setTimeout(() => {
+      searchPlaces(searchQuery, currentLocation?.latitude, currentLocation?.longitude)
+        .then((places) => {
+          const converted = places.map((place) => ({
+            id: place.place_id,
+            name: place.name,
+            subtitle: place.formatted_address || place.address || 'India',
+            category: 'landmark' as const,
+            coords: { x: 50, y: 50, lat: place.latitude, lon: place.longitude },
+            city: place.city || place.state || 'India'
+          }));
+          setRemotePresets(converted);
+          setSearchState(converted.length ? 'results' : 'no_results');
+        })
+        .catch(() => {
+          setRemotePresets([]);
+          setSearchState('error');
+        });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery, currentLocation]);
+
+  useEffect(() => {
+    if (originQuery.trim().length < 2) {
+      setRemoteOrigins([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      searchPlaces(originQuery, currentLocation?.latitude, currentLocation?.longitude)
+        .then((places) => setRemoteOrigins(places.map((place) => ({
+          id: place.place_id, name: place.name, subtitle: place.formatted_address || place.address || 'India',
+          category: 'landmark' as const, coords: { x: 50, y: 50, lat: place.latitude, lon: place.longitude }, city: place.city || place.state || 'India'
+        }))))
+        .catch(() => setRemoteOrigins([]));
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [originQuery, currentLocation]);
+
   const filtered = presets.filter((p) =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.city.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const displayPresets = searchQuery.trim().length >= 2 ? remotePresets : filtered;
 
   return (
     <div className="relative z-30 w-full px-3 pt-3 pointer-events-auto">
@@ -117,6 +178,18 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
             </button>
           </div>
 
+          <div className="p-3 space-y-2 border-b border-slate-100">
+            <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Starting location</label>
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+              <input value={originQuery} onChange={(event) => onOriginChange(event.target.value)} placeholder={originLocation?.name || 'Search starting point'} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold outline-none focus:border-blue-500" />
+              <button type="button" onClick={onUseGps} className="text-[10px] font-black text-blue-600 whitespace-nowrap">Use GPS</button>
+            </div>
+            {originQuery.trim().length >= 2 && remoteOrigins.slice(0, 4).map((preset) => (
+              <button key={preset.id} type="button" onClick={() => { onSelectOrigin(preset); onOriginChange(preset.name); }} className="w-full text-left rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-100">{preset.name}<span className="block text-[10px] text-slate-500 truncate">{preset.subtitle}</span></button>
+            ))}
+          </div>
+
           <div className="overflow-y-auto p-2 space-y-2 flex-1">
             {/* Quick Categories */}
             <div className="px-2 pt-1 pb-1">
@@ -124,7 +197,10 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                 Suggested Destinations
               </span>
               <div className="space-y-1">
-                {filtered.map((preset) => (
+                {searchState === 'loading' && <div className="px-2 py-3 text-xs text-slate-500">Searching places...</div>}
+                {searchState === 'no_results' && <div className="px-2 py-3 text-xs text-slate-500">No places found. Try a more complete address.</div>}
+                {searchState === 'error' && <div className="px-2 py-3 text-xs text-red-600">Destination search is temporarily unavailable.</div>}
+                {displayPresets.map((preset) => (
                   <button
                     key={preset.id}
                     onClick={() => {
@@ -162,7 +238,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                 📍 Recent Searches
               </span>
               <div className="flex flex-wrap gap-1.5">
-                {[
+                {searchQuery.trim().length < 2 && [
                   { name: 'Sushant University', city: 'Gurugram' },
                   { name: 'Cyber Hub', city: 'Gurugram' },
                   { name: 'Terminal 3 Airport', city: 'Delhi' }

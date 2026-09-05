@@ -38,6 +38,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [isListeningVoice, setIsListeningVoice] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -160,8 +161,10 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
       const data = await sendChatMessage({
         message: textToSend,
         language: currentLanguage,
-        profile: 'general_public'
+        profile: 'general_public',
+        conversation_id: conversationId
       });
+      if (data.conversation_id) setConversationId(data.conversation_id);
       const botMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         sender: 'weathergpt',

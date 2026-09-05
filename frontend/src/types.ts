@@ -202,6 +202,8 @@ export interface LiveMapRoute {
   departureAdvice: string;
   whyThisRoute: string;
   whyWait: string;
+  dataMode?: 'LIVE' | 'DEMO';
+  riskAvailable?: boolean;
 }
 
 export interface DepartureTimeOption {

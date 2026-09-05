@@ -41,7 +41,7 @@ import {
   INITIAL_WEATHER
 } from './data/weatherData';
 import { WeatherData, Language, UserRole, DemoScenario, RouteTrip } from './types';
-import { getCurrentWeather } from './services/backend';
+import { getCurrentWeather, getReverseLocation, PlaceResult } from './services/backend';
 
 export default function App() {
   // Primary application state
@@ -57,6 +57,7 @@ export default function App() {
   const [userRole, setUserRole] = useState<UserRole>('citizen');
   const [mapInitialLayer, setMapInitialLayer] = useState<string>('rain');
   const [chatInitialQuery, setChatInitialQuery] = useState<string | undefined>(undefined);
+  const [currentLocation, setCurrentLocation] = useState<PlaceResult | null>(null);
 
   // Live Location states
   const [isLocating, setIsLocating] = useState<boolean>(false);
@@ -90,7 +91,12 @@ export default function App() {
       async (pos) => {
         try {
           const { latitude, longitude } = pos.coords;
-          const liveData = await getCurrentWeather(latitude, longitude);
+          const [liveData, reverseLocation] = await Promise.all([
+            getCurrentWeather(latitude, longitude),
+            getReverseLocation(latitude, longitude).catch(() => ({ place_id: 'device-gps', name: 'Current location', latitude, longitude }))
+          ]);
+          setCurrentLocation({ ...reverseLocation, place_id: reverseLocation.place_id || 'device-gps', latitude, longitude });
+          liveData.city = reverseLocation.name || 'Current location';
           setWeather(liveData);
           setLocationError(null);
           setShowCitySelector(false);
@@ -305,6 +311,7 @@ export default function App() {
               onUseLiveLocation={handleGetLiveLocation}
               isLocating={isLocating}
               currentWeather={weather}
+              currentLocation={currentLocation}
             />
           )}
 

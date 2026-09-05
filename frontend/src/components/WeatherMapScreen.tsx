@@ -27,6 +27,7 @@ import {
   CheckCircle2,
   Info
 } from './Icons';
+import { createRoute, getRouteWeather, getBestDeparture, getRouteExplanation, getNearbyPlaces, sendChatMessage, PlaceResult, RouteResult, RouteWeatherResult, toLiveMapRoute } from '../services/backend';
 
 interface WeatherMapScreenProps {
   initialLayer?: string;
@@ -35,6 +36,7 @@ interface WeatherMapScreenProps {
   onUseLiveLocation?: () => void;
   isLocating?: boolean;
   currentWeather?: WeatherData;
+  currentLocation?: PlaceResult | null;
 }
 
 export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
@@ -43,30 +45,41 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   onBackToHome,
   onUseLiveLocation,
   isLocating,
-  currentWeather
+  currentWeather,
+  currentLocation
 }) => {
   // Origin & Destination state
   const originName = currentWeather?.city
     ? `${currentWeather.city} (Current Location)`
     : 'Current Location';
 
-  const [selectedDestination, setSelectedDestination] = useState<DestinationPreset | null>(
-    DESTINATION_PRESETS[0] // Default to Sushant University as requested
-  );
+  const [manualOrigin, setManualOrigin] = useState<PlaceResult | null>(null);
+  const effectiveOrigin = manualOrigin || currentLocation;
+  const effectiveOriginName = effectiveOrigin?.name || originName;
+  const [selectedDestination, setSelectedDestination] = useState<DestinationPreset | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [originQuery, setOriginQuery] = useState<string>('');
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
 
   // Analysis Loading State
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [liveRoute, setLiveRoute] = useState<LiveMapRoute | null>(null);
+  const [routeWeather, setRouteWeather] = useState<RouteWeatherResult | null>(null);
+  const [liveDepartureOptions, setLiveDepartureOptions] = useState<DepartureTimeOption[]>([]);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [travelMode, setTravelMode] = useState('driving');
 
   // Scenario toggle (Normal, No dry route, All high risk)
   const [scenario, setScenario] = useState<'normal' | 'no-dry-route' | 'all-high-risk'>('normal');
 
   // Generated Routes & Departure Options
-  const { routes, departureOptions } = useMemo(() => {
+  const { routes: demoRoutes, departureOptions: demoDepartureOptions } = useMemo(() => {
     const destName = selectedDestination?.name || 'Sushant University';
     return buildWeatherAwareRoutes(originName, destName, 0, scenario);
   }, [originName, selectedDestination, scenario]);
+
+  const routes = liveRoute ? [liveRoute] : demoRoutes;
+  const departureOptions = liveRoute ? liveDepartureOptions : demoDepartureOptions;
 
   const [activeRouteId, setActiveRouteId] = useState<string>('route-safest');
 
@@ -81,11 +94,21 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   // Nearby places state
   const [showNearbyPlaces, setShowNearbyPlaces] = useState<boolean>(false);
   const [selectedNearbyPlace, setSelectedNearbyPlace] = useState<NearbySafePlace | null>(null);
+  const [liveNearbyPlaces, setLiveNearbyPlaces] = useState<NearbySafePlace[]>([]);
 
   // Modals state
   const [showTimelineModal, setShowTimelineModal] = useState<boolean>(false);
   const [explainModalMode, setExplainModalMode] = useState<'why-route' | 'why-wait' | null>(null);
+  const [routeExplanation, setRouteExplanation] = useState<string[]>([]);
+  const [explanationLoading, setExplanationLoading] = useState(false);
   const [showScenarioMenu, setShowScenarioMenu] = useState<boolean>(false);
+
+  // Route-specific conversation state. This stays separate from the main chat so
+  // the traveller can ask follow-up questions without losing route context.
+  const [routeChatInput, setRouteChatInput] = useState('');
+  const [routeChatReply, setRouteChatReply] = useState('');
+  const [routeChatLoading, setRouteChatLoading] = useState(false);
+  const [routeChatConversationId, setRouteChatConversationId] = useState<string | undefined>();
 
   // Drawer expansion
   const [isDrawerExpanded, setIsDrawerExpanded] = useState<boolean>(false);
@@ -101,7 +124,52 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     setIsNavigating(false);
     setVehicleProgress(0);
     setIsSmartWaitActive(false);
+    setLiveRoute(null);
+    setRouteWeather(null);
+    setLiveDepartureOptions([]);
+    setRouteError(null);
+    setRouteExplanation([]);
+    setRouteChatReply('');
+    setLiveNearbyPlaces([]);
   };
+
+  useEffect(() => {
+    if (!selectedDestination || !effectiveOrigin) return;
+    let cancelled = false;
+    setIsAnalyzing(true);
+    setRouteError(null);
+    const destination: PlaceResult = { place_id: selectedDestination.id, name: selectedDestination.name, address: selectedDestination.subtitle, latitude: selectedDestination.coords.lat, longitude: selectedDestination.coords.lon };
+    createRoute({ origin: effectiveOrigin, destination, travelMode })
+      .then((route: RouteResult) => Promise.all([getRouteWeather(route.route_id), getBestDeparture(route.route_id)]).then(([weather, best]) => ({ route, weather, best })))
+      .then(async ({ route, weather, best }) => {
+        if (cancelled) return;
+        setRouteWeather(weather);
+        setLiveRoute(toLiveMapRoute(route, weather));
+        setActiveRouteId(route.route_id);
+        setLiveDepartureOptions((best.alternative_times || []).map((item, index) => ({
+          id: `live-departure-${index}`, title: item.departure_time === best.recommended_departure_time ? 'Recommended' : 'Alternative', time: item.departure_time,
+          safetyScore: typeof item.risk?.score === 'number' ? Math.round(item.risk.score) : 0, travelTime: 'Live route', statusNote: best.reason || 'Backend recommendation',
+          isRecommended: item.departure_time === best.recommended_departure_time, rainRisk: item.risk?.level === 'high' ? 'High' : item.risk?.level === 'moderate' ? 'Moderate' : 'Low', conditionIcon: 'partly-cloudy'
+        })));
+        const coordinates = route.geometry?.coordinates || [];
+        const midpoint = coordinates[Math.floor(coordinates.length / 2)];
+        if (midpoint) {
+          try {
+            const places = await getNearbyPlaces(midpoint[1], midpoint[0]);
+            if (!cancelled) setLiveNearbyPlaces(places.map((place, index) => ({
+              id: place.place_id || `nearby-${index}`, name: place.name,
+              category: (place.category || 'convenience') as NearbySafePlace['category'], categoryLabel: (place.category || 'place').toUpperCase(),
+              rating: 0, reviews: 0, distanceMeters: Math.round((place.distance_km || 0) * 1000), walkingMinutes: Math.max(1, Math.round((place.distance_km || 0) * 12)),
+              address: place.formatted_address || place.address || 'Near route', openStatus: 'Provider hours unavailable', shelterFeature: 'Nearby route stop',
+              coords: { x: 50, y: 50, lat: place.latitude, lng: place.longitude }
+            })));
+          } catch { if (!cancelled) setLiveNearbyPlaces([]); }
+        }
+      })
+      .catch(() => { if (!cancelled) setRouteError('Route service is temporarily unavailable. Please try again.'); })
+      .finally(() => { if (!cancelled) setIsAnalyzing(false); });
+    return () => { cancelled = true; };
+  }, [selectedDestination, effectiveOrigin, travelMode]);
 
   const handleClearDestination = () => {
     setSelectedDestination(null);
@@ -139,6 +207,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             </p>
           </div>
         </div>
+        <span className={`text-[9px] font-black px-2 py-1 rounded-full ${liveRoute ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-slate-900'}`}>{liveRoute ? 'LIVE' : 'DEMO'}</span>
 
         {/* Scenarios / Edge Cases Menu Toggle */}
         <div className="relative">
@@ -191,13 +260,22 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           onClose={() => setIsSearchOpen(false)}
           onSelectPreset={handleSelectPreset}
           presets={DESTINATION_PRESETS}
-          currentLocationName={originName}
+          currentLocationName={effectiveOriginName}
           selectedDestinationName={selectedDestination?.name || null}
           onClearDestination={handleClearDestination}
           onUseGps={onUseLiveLocation || (() => {})}
           isLocating={isLocating}
+          currentLocation={currentLocation}
+          originQuery={originQuery}
+          onOriginChange={setOriginQuery}
+          originLocation={effectiveOrigin}
+          onSelectOrigin={(preset) => setManualOrigin({ place_id: preset.id, name: preset.name, address: preset.subtitle, latitude: preset.coords.lat, longitude: preset.coords.lon })}
         />
       )}
+
+      {routeError && <div className="absolute top-20 left-3 right-3 z-40 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold p-3">{routeError}</div>}
+
+      {!effectiveOrigin && <div className="absolute top-20 left-3 right-3 z-20 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold p-3 pointer-events-none">Choose a starting location or use GPS, then choose a destination.</div>}
 
       {/* Main Interactive Vector Map Canvas */}
       <div className="relative flex-1 w-full overflow-hidden">
@@ -206,11 +284,11 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           activeRouteId={activeRouteId}
           onSelectRoute={setActiveRouteId}
           destinationName={selectedDestination?.name || 'Destination'}
-          originName={originName}
+          originName={effectiveOriginName}
           isNavigating={isNavigating}
           vehicleProgress={vehicleProgress}
           showNearbyPlaces={showNearbyPlaces}
-          nearbyPlaces={NEARBY_SAFE_PLACES}
+          nearbyPlaces={liveRoute ? liveNearbyPlaces : NEARBY_SAFE_PLACES}
           selectedNearbyPlace={selectedNearbyPlace}
           onSelectNearbyPlace={setSelectedNearbyPlace}
           showRadarOverlay={showRadarOverlay}
@@ -241,17 +319,56 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             setSmartWaitMinutes(mins);
             setIsSmartWaitActive(true);
           }}
-          onOpenWhyRoute={() => setExplainModalMode('why-route')}
+          onOpenWhyRoute={async () => {
+            setExplainModalMode('why-route');
+            if (liveRoute) {
+              setExplanationLoading(true);
+              try {
+                const result = await getRouteExplanation(liveRoute.id);
+                setRouteExplanation(result.explanation || []);
+              } catch {
+                setRouteExplanation(['The backend could not provide a route explanation right now.']);
+              } finally {
+                setExplanationLoading(false);
+              }
+            }
+          }}
           onOpenTimeline={() => setShowTimelineModal(true)}
           onOpenNearby={() => setShowNearbyPlaces(true)}
           isExpanded={isDrawerExpanded}
           onToggleExpand={() => setIsDrawerExpanded(!isDrawerExpanded)}
+          liveMode={Boolean(liveRoute)}
+          routeChatInput={routeChatInput}
+          routeChatReply={routeChatReply}
+          routeChatLoading={routeChatLoading}
+          onRouteChatInputChange={setRouteChatInput}
+          onRouteChatSubmit={async () => {
+            const message = routeChatInput.trim();
+            if (!message || routeChatLoading || !selectedDestination) return;
+            setRouteChatLoading(true);
+            try {
+              const contextMessage = `Route from ${originName} to ${selectedDestination.name}. Traveller question: ${message}`;
+              const result = await sendChatMessage({
+                message: contextMessage,
+                language: 'en',
+                profile: 'traveller',
+                conversation_id: routeChatConversationId
+              });
+              setRouteChatReply(result.response || 'The weather assistant returned no response.');
+              if (result.conversation_id) setRouteChatConversationId(result.conversation_id);
+              setRouteChatInput('');
+            } catch {
+              setRouteChatReply('Route chat is temporarily unavailable. Please try again.');
+            } finally {
+              setRouteChatLoading(false);
+            }
+          }}
         />
       )}
 
       {/* Nearby Places While You Wait Drawer */}
       <NearbyPlacesDrawer
-        places={NEARBY_SAFE_PLACES}
+        places={liveRoute ? liveNearbyPlaces : NEARBY_SAFE_PLACES}
         isOpen={showNearbyPlaces}
         onClose={() => setShowNearbyPlaces(false)}
         onSelectPlace={(place) => {
@@ -272,7 +389,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             setVehicleProgress(0);
           }}
           onOpenNearby={() => setShowNearbyPlaces(true)}
-          nearbyPlaces={NEARBY_SAFE_PLACES}
+          nearbyPlaces={liveRoute ? liveNearbyPlaces : NEARBY_SAFE_PLACES}
         />
       )}
 
@@ -304,6 +421,9 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         isOpen={explainModalMode !== null}
         onClose={() => setExplainModalMode(null)}
         mode={explainModalMode || 'why-route'}
+        explanation={routeExplanation}
+        isLoading={explanationLoading}
+        liveMode={Boolean(liveRoute)}
       />
     </div>
   );

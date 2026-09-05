@@ -14,6 +14,12 @@ interface RouteComparisonDrawerProps {
   onOpenNearby: () => void;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  liveMode?: boolean;
+  routeChatInput?: string;
+  routeChatReply?: string;
+  routeChatLoading?: boolean;
+  onRouteChatInputChange?: (value: string) => void;
+  onRouteChatSubmit?: () => void;
 }
 
 export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
@@ -27,7 +33,13 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
   onOpenTimeline,
   onOpenNearby,
   isExpanded,
-  onToggleExpand
+  onToggleExpand,
+  liveMode = false,
+  routeChatInput = '',
+  routeChatReply,
+  routeChatLoading = false,
+  onRouteChatInputChange,
+  onRouteChatSubmit
 }) => {
   const activeRoute = routes.find((r) => r.id === activeRouteId) || routes[0];
   const waitOption = departureOptions.find((d) => d.id === 'opt-wait20') || departureOptions[1];
@@ -81,7 +93,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                     : 'text-red-600'
                 }`}
               >
-                {activeRoute.safetyScore}/100
+                {liveMode && !activeRoute.riskAvailable ? 'Risk unavailable' : `${activeRoute.safetyScore}/100`}
               </span>
             </div>
           </div>
@@ -220,7 +232,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                             : 'text-red-600'
                         }`}
                       >
-                        {route.safetyScore}/100
+                        {liveMode && !route.riskAvailable ? 'Unavailable' : `${route.safetyScore}/100`}
                       </div>
                     </div>
                     <ChevronRight className={`w-4 h-4 ${isSelected ? 'text-blue-600' : 'text-slate-300'}`} />
@@ -246,16 +258,12 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
           </div>
 
           <p className="text-xs text-amber-900 leading-relaxed mb-3">
-            Heavy rainfall is expected on low-lying segments for the next 20 minutes.{' '}
-            <span className="font-extrabold text-amber-950">
-              Recommendation: WAIT FOR 20 MINUTES.
-            </span>{' '}
-            Rain intensity is predicted to decrease significantly after 5:40 PM.
+            {liveMode ? 'Departure recommendations use the available backend forecast for this route.' : <>Heavy rainfall is expected on low-lying segments for the next 20 minutes. <span className="font-extrabold text-amber-950">Recommendation: WAIT FOR 20 MINUTES.</span> Rain intensity is predicted to decrease significantly after 5:40 PM.</>}
           </p>
 
           {/* Departure Options Grid */}
           <div className="grid grid-cols-3 gap-1.5 mb-3">
-            {departureOptions.map((opt) => (
+            {departureOptions.length ? departureOptions.map((opt) => (
               <div
                 key={opt.id}
                 className={`p-2 rounded-xl text-center border transition ${
@@ -279,7 +287,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                   Score: {opt.safetyScore}
                 </div>
               </div>
-            ))}
+            )) : <div className="col-span-3 rounded-xl border border-amber-200 bg-white/70 p-3 text-center text-xs font-bold text-amber-900">Best departure time is unavailable for this route right now.</div>}
           </div>
 
           {/* Departure Buttons */}
@@ -307,6 +315,17 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
             </button>
           </div>
         </div>
+
+        {onRouteChatSubmit && (
+          <form onSubmit={(event) => { event.preventDefault(); onRouteChatSubmit(); }} className="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+            <div className="text-[11px] font-black text-slate-700 mb-2">Ask about this route...</div>
+            {routeChatReply && <div className="mb-2 rounded-xl bg-white border border-blue-100 p-2 text-xs text-slate-700 whitespace-pre-wrap">{routeChatReply}</div>}
+            <div className="flex gap-2">
+              <input value={routeChatInput} onChange={(event) => onRouteChatInputChange?.(event.target.value)} placeholder="Why? What should I carry?" className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-blue-500" />
+              <button type="submit" disabled={!routeChatInput.trim() || routeChatLoading} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white disabled:opacity-40">{routeChatLoading ? '...' : 'Send'}</button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
