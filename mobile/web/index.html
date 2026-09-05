@@ -31,6 +31,25 @@
 
   <title>weathergpt_mobile</title>
   <link rel="manifest" href="manifest.json">
+  <!-- Keep Material icons available when the app is hosted as static assets. -->
+  <link rel="preload" href="assets/fonts/MaterialIcons-Regular.otf" as="font" type="font/otf" crossorigin>
+  <style>
+    @font-face {
+      font-family: 'MaterialIcons';
+      font-style: normal;
+      font-weight: 400;
+      font-display: block;
+      src: url('assets/fonts/MaterialIcons-Regular.otf') format('opentype');
+    }
+    /* Some web renderers use the spaced family name for Material icons. */
+    @font-face {
+      font-family: 'Material Icons';
+      font-style: normal;
+      font-weight: 400;
+      font-display: block;
+      src: url('assets/fonts/MaterialIcons-Regular.otf') format('opentype');
+    }
+  </style>
 </head>
 <body>
   <!--

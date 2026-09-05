@@ -1,0 +1,12 @@
+{
+  "name": "WeatherGPT",
+  "description": "AI-powered multilingual weather intelligence and decision-support platform for India: Don't Just Know the Weather. Know What to Do.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
+
