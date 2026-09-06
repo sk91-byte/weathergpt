@@ -54,9 +54,16 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             <h3 className="text-base font-black text-white mb-1">
               Weather Map temporarily unavailable
             </h3>
-            <p className="text-xs text-slate-300 mb-4 max-w-xs">
+            <p className="text-xs text-slate-300 mb-2 max-w-xs">
               We encountered a minor display issue loading map assets. Tap below to refresh the view.
             </p>
+
+            {state.error && (
+              <div className="w-full p-2.5 mb-4 rounded-xl bg-slate-950/80 border border-slate-700/60 text-[10.5px] font-mono text-amber-300 text-left overflow-x-auto max-h-24">
+                <strong>Error:</strong> {state.error.message || String(state.error)}
+              </div>
+            )}
+
             <button
               onClick={this.handleReset}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition cursor-pointer active:scale-95 shadow-md"

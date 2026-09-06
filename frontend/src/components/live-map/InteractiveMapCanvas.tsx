@@ -151,7 +151,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
                 <div className="text-left leading-tight">
                   <div className="flex items-center space-x-1.5">
                     <span className="text-xs font-black">
-                      {isSafest ? 'Safest' : isFastest ? 'Fastest' : isScenic ? 'Scenic' : route.name.split(' ')[0]}
+                      {isSafest ? 'Safest' : isFastest ? 'Fastest' : isScenic ? 'Scenic' : (route?.name || 'Route').split(' ')[0]}
                     </span>
                     <span className="text-[11px] font-bold text-slate-200">
                       {route.durationMinutes}m

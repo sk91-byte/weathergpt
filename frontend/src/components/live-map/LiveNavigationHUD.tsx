@@ -88,9 +88,9 @@ export const LiveNavigationHUD: React.FC<LiveNavigationHUDProps> = ({
   const currentManeuver = getManeuver(vehicleProgress);
 
   // Telemetry computations
-  const totalKm = route.distanceKm;
+  const totalKm = route?.distanceKm ?? 15;
   const remainingKm = Math.max(0, +(totalKm * (1 - vehicleProgress / 100)).toFixed(1));
-  const remainingMins = Math.max(1, Math.round(route.durationMinutes * (1 - vehicleProgress / 100)));
+  const remainingMins = Math.max(1, Math.round((route?.durationMinutes ?? 30) * (1 - vehicleProgress / 100)));
 
   const now = new Date();
   const eta = new Date(now.getTime() + remainingMins * 60000);
@@ -233,7 +233,7 @@ export const LiveNavigationHUD: React.FC<LiveNavigationHUDProps> = ({
             <div className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-xs font-black">
-                {hasRerouted ? '91/100 🟢 LOW RISK' : `${route.safetyScore}/100 🟢 LOW RISK`}
+                {hasRerouted ? '91/100 🟢 LOW RISK' : `${route?.safetyScore ?? 88}/100 🟢 LOW RISK`}
               </span>
             </div>
             <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
