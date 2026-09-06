@@ -578,6 +578,17 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     if (!destQuery.trim()) return;
     setIsAnalyzing(true);
     try {
+      // If destinationCoords already exist and destinationName matches destQuery, use existing coords directly without re-geocoding!
+      if (destinationCoords && destinationName.toLowerCase() === destQuery.trim().toLowerCase()) {
+        await fetchRouteAndWeather(
+          originCoords,
+          originName,
+          destinationCoords,
+          destinationName,
+          travelMode
+        );
+        return;
+      }
       const res = await apiResolveLocation(destQuery.trim());
       if (res && res.latitude && res.longitude) {
         const resolvedCoords: [number, number] = [res.latitude, res.longitude];
@@ -733,10 +744,16 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           onSelectOriginPreset={(item) => {
             setOriginName(item.name);
             setOriginCoords([item.lat, item.lon]);
+            setOriginQuery(item.name);
+            if (destinationCoords) {
+              fetchRouteAndWeather([item.lat, item.lon], item.name, destinationCoords, destinationName, travelMode);
+            }
           }}
           onSelectDestinationPreset={(item) => {
             setDestinationName(item.name);
             setDestinationCoords([item.lat, item.lon]);
+            setDestinationQuery(item.name);
+            fetchRouteAndWeather(originCoords, originName, [item.lat, item.lon], item.name, travelMode);
           }}
           presets={DESTINATION_PRESETS}
           currentLocationName={originName}

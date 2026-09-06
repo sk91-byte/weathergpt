@@ -16,7 +16,41 @@ import {
   Sparkles,
   CheckCircle2
 } from '../Icons';
-import { apiAutocompleteLocations, apiResolveLocation, apiGetPointWeather } from '../../services/api';
+import { apiAutocompleteLocations, apiResolveLocation, apiGetPointWeather, ApiAutocompleteSuggestion } from '../../services/api';
+
+function getPlaceTypeBadge(type?: string) {
+  const t = (type || '').toLowerCase();
+  if (t === 'university' || t === 'college') return { label: 'University / College', icon: '🎓', color: 'bg-purple-100 text-purple-800 border-purple-200' };
+  if (t === 'school') return { label: 'School', icon: '🏫', color: 'bg-blue-100 text-blue-800 border-blue-200' };
+  if (t === 'hospital') return { label: 'Hospital', icon: '🏥', color: 'bg-red-100 text-red-800 border-red-200' };
+  if (t === 'airport') return { label: 'Airport', icon: '✈️', color: 'bg-sky-100 text-sky-800 border-sky-200' };
+  if (t === 'station') return { label: 'Station', icon: '🚆', color: 'bg-amber-100 text-amber-800 border-amber-200' };
+  if (t === 'bus_station') return { label: 'Bus Station', icon: '🚌', color: 'bg-orange-100 text-orange-800 border-orange-200' };
+  if (t === 'road') return { label: 'Road / Marg', icon: '🛣️', color: 'bg-slate-100 text-slate-800 border-slate-200' };
+  if (t === 'locality') return { label: 'Locality / Sector', icon: '📍', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+  if (t === 'city' || t === 'town' || t === 'village') return { label: 'City / Town', icon: '🏙️', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' };
+  if (t === 'landmark') return { label: 'Landmark', icon: '🏛️', color: 'bg-cyan-100 text-cyan-800 border-cyan-200' };
+  if (t === 'commercial') return { label: 'Market / Mall', icon: '🛍️', color: 'bg-pink-100 text-pink-800 border-pink-200' };
+  if (t === 'religious') return { label: 'Place of Worship', icon: '🛕', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' };
+  return { label: 'Location', icon: '📍', color: 'bg-slate-100 text-slate-800 border-slate-200' };
+}
+
+function highlightMatch(text: string, query: string): React.ReactNode {
+  if (!query || !text) return text;
+  const terms = query.trim().split(/\s+/).filter(Boolean);
+  if (!terms.length) return text;
+  const regex = new RegExp(`(${terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  const parts = text.split(regex);
+  return parts.map((part, i) =>
+    regex.test(part) ? (
+      <span key={i} className="text-blue-700 font-extrabold underline decoration-blue-300">
+        {part}
+      </span>
+    ) : (
+      part
+    )
+  );
+}
 
 interface LiveMapPlanTripModalProps {
   isOpen: boolean;
@@ -59,8 +93,11 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
 
   // Autocomplete suggestions state
   const [activeField, setActiveField] = useState<'origin' | 'destination' | null>(null);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<ApiAutocompleteSuggestion[]>([]);
   const [isSearchingSuggestions, setIsSearchingSuggestions] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // GPS state
   const [isLocatingOrigin, setIsLocatingOrigin] = useState(false);
@@ -85,28 +122,89 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
     }
   }, [isOpen, currentOriginName, currentOriginCoords, currentDestinationName, currentDestinationCoords, currentTravelMode, currentLeaveBy]);
 
-  // Real-time debounced location database search
+  // Real-time debounced location database search (300ms + AbortController)
   useEffect(() => {
     const query = activeField === 'origin' ? originInput : destinationInput;
+    setSelectedIndex(-1);
+    setSearchError(null);
+
     if (!activeField || !query || query.trim().length < 2) {
       setSuggestions([]);
+      setIsSearchingSuggestions(false);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
       return;
     }
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     const timer = setTimeout(async () => {
       setIsSearchingSuggestions(true);
+      setSearchError(null);
       try {
-        const results = await apiAutocompleteLocations(query);
-        setSuggestions(results);
-      } catch (err) {
-        console.warn('Location suggestion lookup error:', err);
+        const biasCoords = activeField === 'destination' ? originCoords : undefined;
+        const results = await apiAutocompleteLocations(
+          query,
+          biasCoords ? biasCoords[0] : undefined,
+          biasCoords ? biasCoords[1] : undefined,
+          controller.signal,
+          8
+        );
+        if (!controller.signal.aborted) {
+          setSuggestions(results);
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError' && !controller.signal.aborted) {
+          console.warn('Location suggestion lookup error:', err);
+          setSearchError('Location search is temporarily unavailable. Please try again.');
+        }
       } finally {
-        setIsSearchingSuggestions(false);
+        if (!controller.signal.aborted) {
+          setIsSearchingSuggestions(false);
+        }
       }
-    }, 280);
+    }, 300);
 
-    return () => clearTimeout(timer);
-  }, [originInput, destinationInput, activeField]);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [originInput, destinationInput, activeField, originCoords]);
+
+  const handleSelectSuggestion = (item: ApiAutocompleteSuggestion) => {
+    if (activeField === 'origin') {
+      setOriginInput(item.name);
+      setOriginCoords([item.latitude, item.longitude]);
+    } else {
+      setDestinationInput(item.name);
+      setDestinationCoords([item.latitude, item.longitude]);
+    }
+    setActiveField(null);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!activeField) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex((prev) => Math.min(prev + 1, suggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex((prev) => Math.max(prev - 1, -1));
+    } else if (e.key === 'Enter') {
+      if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+        e.preventDefault();
+        handleSelectSuggestion(suggestions[selectedIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setActiveField(null);
+    }
+  };
 
   // Click outside to close suggestion dropdown
   useEffect(() => {
@@ -321,6 +419,7 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
                   setOriginInput(e.target.value);
                   setActiveField('origin');
                 }}
+                onKeyDown={handleKeyDown}
                 className="w-full bg-transparent text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-hidden py-1"
               />
 
@@ -361,40 +460,70 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
 
             {/* Origin Autocomplete Suggestions Dropdown */}
             {activeField === 'origin' && (
-              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden max-h-52 overflow-y-auto">
+              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden max-h-64 overflow-y-auto">
+                {searchError && (
+                  <div className="p-3 bg-red-50 border-b border-red-100 text-xs text-red-700 flex items-center space-x-2">
+                    <span className="shrink-0">⚠️</span>
+                    <span>{searchError}</span>
+                  </div>
+                )}
                 {isSearchingSuggestions ? (
                   <div className="p-3 text-center text-xs text-slate-500 flex items-center justify-center space-x-2">
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                    <span>Searching places...</span>
+                    <span>Searching locations in India...</span>
                   </div>
                 ) : suggestions.length > 0 ? (
                   <div className="divide-y divide-slate-100">
-                    <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                      Search Results ({suggestions.length})
+                    <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+                      <span>Search Results ({suggestions.length})</span>
+                      <span className="text-[9px] text-slate-400 font-normal">Use ↑↓ arrows to navigate</span>
                     </div>
-                    {suggestions.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setOriginInput(item.name);
-                          setOriginCoords([item.latitude, item.longitude]);
-                          setActiveField(null);
-                        }}
-                        className="w-full text-left p-2.5 hover:bg-blue-50/70 transition flex items-start space-x-2 cursor-pointer"
-                      >
-                        <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-900 truncate">{item.name}</span>
-                            <span className="text-[10px] text-slate-400 font-mono shrink-0 ml-1">
-                              {item.latitude.toFixed(2)}°, {item.longitude.toFixed(2)}°
-                            </span>
+                    {suggestions.map((item, idx) => {
+                      const badge = getPlaceTypeBadge(item.place_type);
+                      const isSelected = selectedIndex === idx;
+                      return (
+                        <button
+                          key={item.place_id || idx}
+                          type="button"
+                          onClick={() => handleSelectSuggestion(item)}
+                          className={`w-full text-left p-2.5 transition flex items-start space-x-2.5 cursor-pointer ${
+                            isSelected ? 'bg-blue-50/90 ring-1 ring-blue-500/40' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-xs shrink-0 mt-0.5">
+                            {badge.icon}
                           </div>
-                          <p className="text-[11px] text-slate-500 truncate">{item.subtitle}</p>
-                        </div>
-                      </button>
-                    ))}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1 flex-wrap">
+                              <span className="text-xs font-bold text-slate-900 truncate">
+                                {highlightMatch(item.name, originInput)}
+                              </span>
+                              <div className="flex items-center space-x-1 shrink-0">
+                                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md border ${badge.color}`}>
+                                  {badge.label}
+                                </span>
+                                <span className="text-[9px] text-slate-400 font-mono">
+                                  {item.latitude.toFixed(2)}°, {item.longitude.toFixed(2)}°
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-[11px] text-slate-600 line-clamp-1 mt-0.5">
+                              {highlightMatch(item.formatted_address, originInput)}
+                            </p>
+                            {(item.city || item.state) && (
+                              <div className="text-[9.5px] text-blue-700 font-semibold mt-0.5">
+                                📍 {[item.city, item.district !== item.city ? item.district : null, item.state].filter(Boolean).join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : originInput.trim().length >= 2 ? (
+                  <div className="p-4 text-center text-xs text-slate-500">
+                    <p className="font-bold text-slate-700">No matching locations found.</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Try searching a nearby landmark, college, or city.</p>
                   </div>
                 ) : (
                   <div className="p-2 space-y-1">
@@ -471,6 +600,7 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
                   setDestinationInput(e.target.value);
                   setActiveField('destination');
                 }}
+                onKeyDown={handleKeyDown}
                 className="w-full bg-transparent text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-hidden py-1"
               />
 
@@ -494,40 +624,70 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
 
             {/* Destination Autocomplete Suggestions Dropdown */}
             {activeField === 'destination' && (
-              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden max-h-52 overflow-y-auto">
+              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden max-h-64 overflow-y-auto">
+                {searchError && (
+                  <div className="p-3 bg-red-50 border-b border-red-100 text-xs text-red-700 flex items-center space-x-2">
+                    <span className="shrink-0">⚠️</span>
+                    <span>{searchError}</span>
+                  </div>
+                )}
                 {isSearchingSuggestions ? (
                   <div className="p-3 text-center text-xs text-slate-500 flex items-center justify-center space-x-2">
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                    <span>Searching destination database...</span>
+                    <span>Searching locations in India...</span>
                   </div>
                 ) : suggestions.length > 0 ? (
                   <div className="divide-y divide-slate-100">
-                    <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                      Search Results ({suggestions.length})
+                    <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+                      <span>Search Results ({suggestions.length})</span>
+                      <span className="text-[9px] text-slate-400 font-normal">Use ↑↓ arrows to navigate</span>
                     </div>
-                    {suggestions.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setDestinationInput(item.name);
-                          setDestinationCoords([item.latitude, item.longitude]);
-                          setActiveField(null);
-                        }}
-                        className="w-full text-left p-2.5 hover:bg-blue-50/70 transition flex items-start space-x-2 cursor-pointer"
-                      >
-                        <MapPin className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-900 truncate">{item.name}</span>
-                            <span className="text-[10px] text-slate-400 font-mono shrink-0 ml-1">
-                              {item.latitude.toFixed(2)}°, {item.longitude.toFixed(2)}°
-                            </span>
+                    {suggestions.map((item, idx) => {
+                      const badge = getPlaceTypeBadge(item.place_type);
+                      const isSelected = selectedIndex === idx;
+                      return (
+                        <button
+                          key={item.place_id || idx}
+                          type="button"
+                          onClick={() => handleSelectSuggestion(item)}
+                          className={`w-full text-left p-2.5 transition flex items-start space-x-2.5 cursor-pointer ${
+                            isSelected ? 'bg-red-50/90 ring-1 ring-red-500/40' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-xs shrink-0 mt-0.5">
+                            {badge.icon}
                           </div>
-                          <p className="text-[11px] text-slate-500 truncate">{item.subtitle}</p>
-                        </div>
-                      </button>
-                    ))}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1 flex-wrap">
+                              <span className="text-xs font-bold text-slate-900 truncate">
+                                {highlightMatch(item.name, destinationInput)}
+                              </span>
+                              <div className="flex items-center space-x-1 shrink-0">
+                                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md border ${badge.color}`}>
+                                  {badge.label}
+                                </span>
+                                <span className="text-[9px] text-slate-400 font-mono">
+                                  {item.latitude.toFixed(2)}°, {item.longitude.toFixed(2)}°
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-[11px] text-slate-600 line-clamp-1 mt-0.5">
+                              {highlightMatch(item.formatted_address, destinationInput)}
+                            </p>
+                            {(item.city || item.state) && (
+                              <div className="text-[9.5px] text-red-700 font-semibold mt-0.5">
+                                📍 {[item.city, item.district !== item.city ? item.district : null, item.state].filter(Boolean).join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : destinationInput.trim().length >= 2 ? (
+                  <div className="p-4 text-center text-xs text-slate-500">
+                    <p className="font-bold text-slate-700">No matching locations found.</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Try searching a landmark, college, metro station, or city.</p>
                   </div>
                 ) : (
                   <div className="p-2 space-y-1">

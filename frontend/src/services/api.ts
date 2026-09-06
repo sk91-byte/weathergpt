@@ -7,11 +7,32 @@ export interface ApiPointWeatherResponse { latitude:number; longitude:number; lo
 export interface ApiNearbyPlaceItem { id:string; name:string; category:any; category_label:string; rating:number; reviews:number; distance_meters:number; walking_minutes:number; address:string; latitude:number; longitude:number; open_status:string; shelter_feature:string; route_relevance:string; phone?:string; is_live:boolean; }
 export interface ApiNearbyPlacesResponse { places: ApiNearbyPlaceItem[]; recommended_wait_place?: ApiNearbyPlaceItem; is_live:boolean; }
 
+export interface ApiAutocompleteSuggestion {
+  place_id: string;
+  name: string;
+  display_name: string;
+  formatted_address: string;
+  latitude: number;
+  longitude: number;
+  city?: string | null;
+  district?: string | null;
+  state?: string | null;
+  country?: string;
+  place_type?: string;
+}
+
 export const BACKEND_BASE_URL = (import.meta.env.VITE_BACKEND_BASE_URL || 'https://weathergpt-bjhy.onrender.com').replace(/\/$/, '');
 let latestRouteId: string | null = null;
 
 async function fetchWithTimeout(endpoint: string, options: RequestInit = {}, timeoutMs = 20000, onSlow?: () => void) {
   const controller = new AbortController();
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
   const slow = onSlow ? window.setTimeout(onSlow, 2800) : undefined;
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   const targetUrl = `${BACKEND_BASE_URL}${endpoint}`;
@@ -47,11 +68,33 @@ export async function apiResolveLocation(query?: string, latitude?: number, long
   return places[0];
 }
 
-export async function apiAutocompleteLocations(query: string): Promise<any[]> {
+export async function apiAutocompleteLocations(
+  query: string,
+  latitude?: number,
+  longitude?: number,
+  signal?: AbortSignal,
+  limit: number = 8
+): Promise<ApiAutocompleteSuggestion[]> {
   if (query.trim().length < 2) return [];
-  const response = await fetchWithTimeout(`/places/autocomplete?input=${encodeURIComponent(query.trim())}`, {}, 20000);
+  let endpoint = `/places/autocomplete?input=${encodeURIComponent(query.trim())}&limit=${limit}`;
+  if (latitude !== undefined && longitude !== undefined) {
+    endpoint += `&latitude=${latitude}&longitude=${longitude}`;
+  }
+  const response = await fetchWithTimeout(endpoint, { signal }, 15000);
   const payload = await response.json();
-  return (payload.suggestions || []).map((item: any) => ({ ...item, display_name: item.formatted_address || item.address || item.name }));
+  return (payload.suggestions || []).map((item: any) => ({
+    place_id: String(item.place_id || `${item.latitude}_${item.longitude}`),
+    name: item.name || item.display_name?.split(',')[0] || 'Location',
+    display_name: item.display_name || item.formatted_address || item.name || '',
+    formatted_address: item.formatted_address || item.address || item.display_name || '',
+    latitude: Number(item.latitude ?? item.lat),
+    longitude: Number(item.longitude ?? item.lon),
+    city: item.city || null,
+    district: item.district || null,
+    state: item.state || null,
+    country: item.country || 'India',
+    place_type: item.place_type || 'locality'
+  }));
 }
 
 export async function apiCalculateRoute(origin: ApiPoint, destination: ApiPoint, travelMode = 'driving', onSlow?: () => void): Promise<ApiRouteResponse> {

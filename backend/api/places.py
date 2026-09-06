@@ -18,9 +18,15 @@ def nearby(latitude: float = Query(..., ge=-90, le=90), longitude: float = Query
 
 
 @router.get("/autocomplete")
-def place_autocomplete(input: str = Query(..., min_length=2, max_length=160), latitude: float | None = Query(None, ge=-90, le=90), longitude: float | None = Query(None, ge=-180, le=180), session_id: str | None = Query(None, max_length=100)) -> dict[str, list[dict[str, Any]]]:
+def place_autocomplete(
+    input: str = Query(..., min_length=2, max_length=160),
+    latitude: float | None = Query(None, ge=-90, le=90),
+    longitude: float | None = Query(None, ge=-180, le=180),
+    session_id: str | None = Query(None, max_length=100),
+    limit: int = Query(8, ge=1, le=20)
+) -> dict[str, list[dict[str, Any]]]:
     try:
-        return {"suggestions": autocomplete(input, latitude, longitude)}
+        return {"suggestions": autocomplete(input, latitude, longitude, limit)}
     except PlaceSearchError as exc:
         raise HTTPException(503, str(exc)) from exc
 

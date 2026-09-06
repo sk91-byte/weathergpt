@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Search,
   X,
@@ -16,9 +16,43 @@ import {
   AlertTriangle
 } from '../Icons';
 import { DestinationPreset } from '../../data/liveMapData';
-import { apiAutocompleteLocations } from '../../services/api';
+import { apiAutocompleteLocations, ApiAutocompleteSuggestion } from '../../services/api';
 
 export type MapLanguage = 'en' | 'hi' | 'hinglish';
+
+function getPlaceTypeBadge(type?: string) {
+  const t = (type || '').toLowerCase();
+  if (t === 'university' || t === 'college') return { label: 'University / College', icon: '🎓', color: 'bg-purple-950/80 text-purple-300 border-purple-800/60' };
+  if (t === 'school') return { label: 'School', icon: '🏫', color: 'bg-blue-950/80 text-blue-300 border-blue-800/60' };
+  if (t === 'hospital') return { label: 'Hospital', icon: '🏥', color: 'bg-red-950/80 text-red-300 border-red-800/60' };
+  if (t === 'airport') return { label: 'Airport', icon: '✈️', color: 'bg-sky-950/80 text-sky-300 border-sky-800/60' };
+  if (t === 'station') return { label: 'Station', icon: '🚆', color: 'bg-amber-950/80 text-amber-300 border-amber-800/60' };
+  if (t === 'bus_station') return { label: 'Bus Station', icon: '🚌', color: 'bg-orange-950/80 text-orange-300 border-orange-800/60' };
+  if (t === 'road') return { label: 'Road / Marg', icon: '🛣️', color: 'bg-slate-800 text-slate-300 border-slate-700' };
+  if (t === 'locality') return { label: 'Locality / Sector', icon: '📍', color: 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60' };
+  if (t === 'city' || t === 'town' || t === 'village') return { label: 'City / Town', icon: '🏙️', color: 'bg-indigo-950/80 text-indigo-300 border-indigo-800/60' };
+  if (t === 'landmark') return { label: 'Landmark', icon: '🏛️', color: 'bg-cyan-950/80 text-cyan-300 border-cyan-800/60' };
+  if (t === 'commercial') return { label: 'Market / Mall', icon: '🛍️', color: 'bg-pink-950/80 text-pink-300 border-pink-800/60' };
+  if (t === 'religious') return { label: 'Place of Worship', icon: '🛕', color: 'bg-yellow-950/80 text-yellow-300 border-yellow-800/60' };
+  return { label: 'Location', icon: '📍', color: 'bg-slate-800 text-slate-300 border-slate-700' };
+}
+
+function highlightMatch(text: string, query: string): React.ReactNode {
+  if (!query || !text) return text;
+  const terms = query.trim().split(/\s+/).filter(Boolean);
+  if (!terms.length) return text;
+  const regex = new RegExp(`(${terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  const parts = text.split(regex);
+  return parts.map((part, i) =>
+    regex.test(part) ? (
+      <span key={i} className="text-sky-300 font-extrabold underline decoration-sky-400/60">
+        {part}
+      </span>
+    ) : (
+      part
+    )
+  );
+}
 
 interface SearchAndDestinationsProps {
   originQuery: string;
@@ -74,9 +108,12 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
   onSubmitDestination
 }) => {
   const [activeField, setActiveField] = useState<'origin' | 'destination'>('destination');
-  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<any[]>([]);
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<ApiAutocompleteSuggestion[]>([]);
   const [isSearchingApi, setIsSearchingApi] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [lang, setLang] = useState<MapLanguage>('en');
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Friendly bilingual labels
   const labels = {
@@ -115,28 +152,110 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
     }
   }[lang];
 
-  // Debounced API autocomplete query
+  // Current query based on active field
+  const currentQuery = activeField === 'origin' ? originQuery : destinationQuery;
+
+  // Debounced API autocomplete query with 300ms delay and AbortController
   useEffect(() => {
     const q = activeField === 'origin' ? originQuery : destinationQuery;
+    setSelectedIndex(-1);
+    setSearchError(null);
+
     if (!q || q.trim().length < 2) {
       setAutocompleteSuggestions([]);
+      setIsSearchingApi(false);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
       return;
     }
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     const timer = setTimeout(async () => {
       setIsSearchingApi(true);
+      setSearchError(null);
       try {
-        const results = await apiAutocompleteLocations(q);
-        setAutocompleteSuggestions(results);
-      } catch (e) {
-        console.warn('Autocomplete lookup error:', e);
+        const biasCoords = activeField === 'destination' ? originCoords : undefined;
+        const results = await apiAutocompleteLocations(
+          q,
+          biasCoords ? biasCoords[0] : undefined,
+          biasCoords ? biasCoords[1] : undefined,
+          controller.signal,
+          8
+        );
+        if (!controller.signal.aborted) {
+          setAutocompleteSuggestions(results);
+        }
+      } catch (e: any) {
+        if (e.name !== 'AbortError' && !controller.signal.aborted) {
+          console.warn('Autocomplete lookup error:', e);
+          setSearchError('Location search is temporarily unavailable. Please try again.');
+        }
       } finally {
-        setIsSearchingApi(false);
+        if (!controller.signal.aborted) {
+          setIsSearchingApi(false);
+        }
       }
-    }, 280);
+    }, 300);
 
-    return () => clearTimeout(timer);
-  }, [originQuery, destinationQuery, activeField]);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [originQuery, destinationQuery, activeField, originCoords]);
+
+  const handleSelectSuggestion = (item: ApiAutocompleteSuggestion) => {
+    const chosen = {
+      name: item.name,
+      lat: item.latitude,
+      lon: item.longitude,
+      address: item.formatted_address,
+      place_id: item.place_id
+    };
+    if (activeField === 'origin') {
+      onOriginChange(item.name);
+      if (onSelectOriginPreset) {
+        onSelectOriginPreset(chosen);
+      }
+    } else {
+      onDestinationChange(item.name);
+      onSelectDestinationPreset(chosen);
+    }
+    onClose();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        onOpen();
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex((prev) => Math.min(prev + 1, autocompleteSuggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex((prev) => Math.max(prev - 1, -1));
+    } else if (e.key === 'Enter') {
+      if (selectedIndex >= 0 && autocompleteSuggestions[selectedIndex]) {
+        e.preventDefault();
+        handleSelectSuggestion(autocompleteSuggestions[selectedIndex]);
+      } else if (onSubmitDestination && activeField === 'destination' && destinationQuery.trim()) {
+        e.preventDefault();
+        onSubmitDestination(destinationQuery.trim());
+        onClose();
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose();
+    }
+  };
 
   const filteredPresets = presets.filter(
     (p) =>
@@ -216,6 +335,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                   setActiveField('origin');
                   onOpen();
                 }}
+                onKeyDown={handleKeyDown}
                 placeholder={labels.originPlaceholder}
                 className="w-full bg-transparent text-xs font-bold text-white placeholder-slate-400 focus:outline-hidden truncate"
               />
@@ -276,15 +396,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                   setActiveField('destination');
                   onOpen();
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (onSubmitDestination && destinationQuery.trim()) {
-                      onSubmitDestination(destinationQuery.trim());
-                      onClose();
-                    }
-                  }
-                }}
+                onKeyDown={handleKeyDown}
                 placeholder={labels.destPlaceholder}
                 className="w-full bg-transparent text-xs font-bold text-white placeholder-slate-400 focus:outline-hidden truncate"
               />
@@ -416,63 +528,87 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
           </div>
 
           <div className="overflow-y-auto p-2 space-y-2 flex-1">
-            {/* Real API Autocomplete Results */}
-            {autocompleteSuggestions.length > 0 && (
-              <div className="space-y-1">
-                <span className="text-[10px] font-black text-sky-400 px-2 uppercase tracking-wide">
-                  Live Search Results ({autocompleteSuggestions.length})
-                </span>
-                {autocompleteSuggestions.map((item, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      if (activeField === 'origin' && onSelectOriginPreset) {
-                        onSelectOriginPreset({
-                          name: item.name || item.display_name.split(',')[0],
-                          lat: item.lat,
-                          lon: item.lon
-                        });
-                        onOriginChange(item.name || item.display_name.split(',')[0]);
-                      } else {
-                        onSelectDestinationPreset({
-                          name: item.name || item.display_name.split(',')[0],
-                          lat: item.lat,
-                          lon: item.lon
-                        });
-                        onDestinationChange(item.name || item.display_name.split(',')[0]);
-                      }
-                      onClose();
-                    }}
-                    className="w-full text-left p-2.5 rounded-xl bg-slate-800/70 hover:bg-slate-750 border border-slate-700/60 transition cursor-pointer flex items-start space-x-2.5 group"
-                  >
-                    <MapPin className="w-4 h-4 text-sky-400 shrink-0 mt-0.5 group-hover:text-sky-300" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-bold text-white truncate">
-                          {item.name || item.display_name.split(',')[0]}
-                        </span>
-                        <span className="text-[9.5px] font-mono font-semibold text-slate-400 shrink-0 bg-slate-900/60 px-1.5 py-0.5 rounded-md border border-slate-700/40">
-                          {item.lat?.toFixed(3)}°, {item.lon?.toFixed(3)}°
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-slate-300 truncate mt-0.5">
-                        {item.display_name}
-                      </div>
-                      {(item.city || item.state) && (
-                        <div className="flex items-center space-x-1.5 mt-1 text-[9px] text-sky-400 font-semibold">
-                          <span>📍 {item.city ? `${item.city}, ` : ''}{item.state || 'India'}</span>
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                ))}
+            {/* Search Error State */}
+            {searchError && (
+              <div className="p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-red-200 text-xs flex items-center space-x-2">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{searchError}</span>
               </div>
             )}
 
+            {/* Real API Autocomplete Results */}
+            {autocompleteSuggestions.length > 0 && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between px-2 py-1">
+                  <span className="text-[10px] font-black text-sky-400 uppercase tracking-wide">
+                    Live Search Results ({autocompleteSuggestions.length})
+                  </span>
+                  <span className="text-[9px] text-slate-400">
+                    Use ↑↓ arrows to navigate, Enter to select
+                  </span>
+                </div>
+                {autocompleteSuggestions.map((item, idx) => {
+                  const badge = getPlaceTypeBadge(item.place_type);
+                  const isSelected = selectedIndex === idx;
+                  return (
+                    <button
+                      key={item.place_id || idx}
+                      type="button"
+                      onClick={() => handleSelectSuggestion(item)}
+                      className={`w-full text-left p-2.5 rounded-xl border transition cursor-pointer flex items-start space-x-3 group ${
+                        isSelected
+                          ? 'bg-sky-950/90 border-sky-500 shadow-md ring-1 ring-sky-500/50'
+                          : 'bg-slate-800/70 hover:bg-slate-750 border-slate-700/60'
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0 bg-slate-900/90 border border-slate-700/80 shadow-xs mt-0.5">
+                        {badge.icon}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1 flex-wrap">
+                          <span className="text-xs font-bold text-white group-hover:text-sky-300 transition truncate">
+                            {highlightMatch(item.name, currentQuery)}
+                          </span>
+                          <div className="flex items-center space-x-1 shrink-0">
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${badge.color}`}>
+                              {badge.label}
+                            </span>
+                            <span className="text-[9px] font-mono text-slate-400 bg-slate-900/80 px-1.5 py-0.5 rounded-md border border-slate-700/50">
+                              {item.latitude?.toFixed(3)}°, {item.longitude?.toFixed(3)}°
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-[11px] text-slate-300 line-clamp-1 mt-0.5">
+                          {highlightMatch(item.formatted_address, currentQuery)}
+                        </div>
+                        {(item.city || item.state) && (
+                          <div className="flex items-center space-x-1.5 mt-1 text-[9.5px] text-sky-400 font-semibold">
+                            <span>📍 {[item.city, item.district !== item.city ? item.district : null, item.state].filter(Boolean).join(', ')}</span>
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Empty State */}
+            {!isSearchingApi && !searchError && currentQuery.trim().length >= 2 && autocompleteSuggestions.length === 0 && (
+              <div className="py-6 text-center text-xs text-slate-400 flex flex-col items-center justify-center space-y-1.5">
+                <span className="text-2xl">🔍</span>
+                <span className="font-bold text-slate-200">No matching locations found.</span>
+                <span className="text-[11px] text-slate-400 max-w-xs">
+                  Try searching a landmark, college, metro station, road, or city name across India.
+                </span>
+              </div>
+            )}
+
+            {/* Loading State */}
             {isSearchingApi && (
-              <div className="py-2 text-center text-xs text-slate-400 flex items-center justify-center space-x-1.5">
+              <div className="py-4 text-center text-xs text-sky-400 flex items-center justify-center space-x-2 font-medium">
                 <div className="w-3.5 h-3.5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
-                <span>{labels.searching}</span>
+                <span>Searching locations in India...</span>
               </div>
             )}
 
