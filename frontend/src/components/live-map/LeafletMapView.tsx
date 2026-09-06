@@ -32,6 +32,41 @@ interface LeafletMapViewProps {
   gpsCoords?: [number, number] | null;
 }
 
+export function toValidLatLng(coords: any, fallback: [number, number] = [28.472, 77.125]): [number, number] {
+  if (!coords) return fallback;
+  let lat: any;
+  let lon: any;
+  if (Array.isArray(coords)) {
+    lat = coords[0];
+    lon = coords[1];
+  } else if (typeof coords === 'object' && coords !== null) {
+    lat = coords.lat ?? coords.latitude;
+    lon = coords.lng ?? coords.lon ?? coords.longitude;
+  }
+  const nLat = Number(lat);
+  const nLon = Number(lon);
+  if (typeof nLat === 'number' && typeof nLon === 'number' && !isNaN(nLat) && !isNaN(nLon)) {
+    return [nLat, nLon];
+  }
+  return fallback;
+}
+
+export function isValidLatLng(coords: any): boolean {
+  if (!coords) return false;
+  let lat: any;
+  let lon: any;
+  if (Array.isArray(coords)) {
+    lat = coords[0];
+    lon = coords[1];
+  } else if (typeof coords === 'object' && coords !== null) {
+    lat = coords.lat ?? coords.latitude;
+    lon = coords.lng ?? coords.lon ?? coords.longitude;
+  }
+  const nLat = Number(lat);
+  const nLon = Number(lon);
+  return typeof nLat === 'number' && typeof nLon === 'number' && !isNaN(nLat) && !isNaN(nLon);
+}
+
 export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(({
   routes,
   activeRouteId,
@@ -74,18 +109,28 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
     },
     recenter: (lat?: number, lon?: number) => {
       if (mapRef.current) {
-        const targetLat = lat ?? originCoords?.[0] ?? 28.472;
-        const targetLon = lon ?? originCoords?.[1] ?? 77.125;
-        mapRef.current.setView([targetLat, targetLon], 14, { animate: true });
+        const target = (typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon))
+          ? [lat, lon] as [number, number]
+          : toValidLatLng(originCoords, [28.472, 77.125]);
+        mapRef.current.setView(target, 14, { animate: true });
       }
     },
     recenterRoute: () => {
       if (mapRef.current && routes.length > 0) {
         const active = routes.find((r) => r.id === activeRouteId) || routes[0];
         if (active && active.geoPoints && active.geoPoints.length > 1) {
-          const bounds = L.latLngBounds(active.geoPoints as [number, number][]);
-          if (bounds.isValid()) {
-            mapRef.current.fitBounds(bounds, { padding: [55, 55], animate: true });
+          const validPts = active.geoPoints
+            .map((pt) => (isValidLatLng(pt) ? toValidLatLng(pt) : null))
+            .filter((pt): pt is [number, number] => pt !== null);
+          if (validPts.length > 1) {
+            try {
+              const bounds = L.latLngBounds(validPts);
+              if (bounds.isValid()) {
+                mapRef.current.fitBounds(bounds, { padding: [55, 55], animate: true });
+              }
+            } catch (e) {
+              console.warn('fitBounds error:', e);
+            }
           }
         }
       }
@@ -96,11 +141,10 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const initialLat = originCoords ? originCoords[0] : 28.472;
-    const initialLon = originCoords ? originCoords[1] : 77.125;
+    const initialCenter = toValidLatLng(originCoords, [28.472, 77.125]);
 
     const map = L.map(containerRef.current, {
-      center: [initialLat, initialLon],
+      center: initialCenter,
       zoom: 12,
       zoomControl: false,
       attributionControl: false
@@ -316,21 +360,25 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
     safeRoutes
       .filter((r) => r.id !== activeRouteId && r.geoPoints && r.geoPoints.length > 0)
       .forEach((route, rIdx) => {
-        const polyline = L.polyline(route.geoPoints as [number, number][], {
-          color: route.strokeColor || '#94a3b8',
-          weight: 6,
-          opacity: 0.65,
-          dashArray: '6, 6',
-          lineCap: 'round',
-          lineJoin: 'round'
-        });
+        const validGeoPoints = (route.geoPoints || [])
+          .map((pt) => (isValidLatLng(pt) ? toValidLatLng(pt) : null))
+          .filter((pt): pt is [number, number] => pt !== null);
 
-        polyline.on('click', () => onSelectRoute(route.id));
-        layerGroup.addLayer(polyline);
+        if (validGeoPoints.length > 1) {
+          const polyline = L.polyline(validGeoPoints, {
+            color: route.strokeColor || '#94a3b8',
+            weight: 6,
+            opacity: 0.65,
+            dashArray: '6, 6',
+            lineCap: 'round',
+            lineJoin: 'round'
+          });
 
-        if (route.geoPoints && route.geoPoints.length > 1) {
-          const midPt = getRouteLabelPoint(route.geoPoints as [number, number][], route.routeOptionType, route.id, rIdx);
-          if (midPt) {
+          polyline.on('click', () => onSelectRoute(route.id));
+          layerGroup.addLayer(polyline);
+
+          const midPt = getRouteLabelPoint(validGeoPoints, route.routeOptionType, route.id, rIdx);
+          if (midPt && isValidLatLng(midPt)) {
             const badgeTitle = route.routeOptionType === 'safest'
               ? '🟢 Safest'
               : route.routeOptionType === 'fastest'
@@ -383,7 +431,7 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
               iconSize: [0, 0],
               iconAnchor: [0, 0]
             });
-            const marker = L.marker(midPt, { icon: badgeIcon, zIndexOffset: 300 });
+            const marker = L.marker(toValidLatLng(midPt), { icon: badgeIcon, zIndexOffset: 300 });
             marker.on('click', () => onSelectRoute(route.id));
             layerGroup.addLayer(marker);
           }
@@ -393,192 +441,198 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
     // 2. Draw Active Route with Outer Glow and Colored Route Sections:
     // Green: safer | Yellow: caution | Orange: risky | Red: dangerous
     if (activeRoute && activeRoute.geoPoints && activeRoute.geoPoints.length > 0) {
-      const glowLine = L.polyline(activeRoute.geoPoints as [number, number][], {
-        color: activeRoute.strokeColor || '#3b82f6',
-        weight: 12,
-        opacity: 0.35,
-        lineCap: 'round',
-        lineJoin: 'round'
-      });
-      layerGroup.addLayer(glowLine);
+      const validActivePoints = (activeRoute.geoPoints || [])
+        .map((pt) => (isValidLatLng(pt) ? toValidLatLng(pt) : null))
+        .filter((pt): pt is [number, number] => pt !== null);
 
-      // Render colored route sections based on safety scores & weather hazards
-      const numPoints = activeRoute.geoPoints.length;
-      if (numPoints >= 2) {
-        const numSegments = Math.min(4, Math.max(2, Math.floor(numPoints / 3)));
-        const ptsPerSegment = Math.ceil(numPoints / numSegments);
-
-        for (let s = 0; s < numSegments; s++) {
-          const startIdx = Math.max(0, s * ptsPerSegment - (s > 0 ? 1 : 0));
-          const endIdx = Math.min(numPoints, (s + 1) * ptsPerSegment);
-          const segmentPts = activeRoute.geoPoints.slice(startIdx, endIdx);
-
-          if (segmentPts.length >= 2) {
-            let segmentScore = activeRoute.safetyScore;
-            let sectionLabel =
-              s === 0
-                ? 'Departure Corridor'
-                : s === numSegments - 1
-                ? 'Destination Approach'
-                : `Corridor Sector ${s}`;
-            let sectionAdvice = 'Normal road conditions. Maintain safe speed.';
-            let sectionCondition = activeRoute.summaryCondition || 'Normal';
-
-            if (activeRoute.routeOptionType === 'fastest') {
-              if (s === 1 || s === 2) {
-                segmentScore = Math.min(segmentScore, 52);
-                sectionLabel = 'Low-Lying Underpass';
-                sectionAdvice = '⚠️ Waterlogging hazard (+8cm ponding). Slow down under 30 km/h.';
-                sectionCondition = 'Heavy Waterlogging';
-              }
-            } else if (activeRoute.riskZones && activeRoute.riskZones.length > 0 && s === 1) {
-              const rz = activeRoute.riskZones[0];
-              segmentScore = rz.severity === 'High' ? 45 : 62;
-              sectionLabel = rz.title || 'Caution Area';
-              sectionAdvice = rz.description || 'Slippery surface, proceed cautiously.';
-              sectionCondition = rz.type || 'Ponding Risk';
-            } else if (s === 0) {
-              segmentScore = Math.min(96, activeRoute.safetyScore + 4);
-              sectionLabel = 'Departure Corridor';
-              sectionAdvice = 'High elevation roadway, dry pavement with good tire grip.';
-            }
-
-            // Route-wise weather color palette
-            const segmentColor =
-              segmentScore >= 80
-                ? '#10b981' // Green: safer
-                : segmentScore >= 65
-                ? '#eab308' // Yellow: caution
-                : segmentScore >= 50
-                ? '#f97316' // Orange: risky
-                : '#ef4444'; // Red: dangerous
-
-            const segmentLine = L.polyline(segmentPts as [number, number][], {
-              color: segmentColor,
-              weight: 7,
-              opacity: 0.95,
-              lineCap: 'round',
-              lineJoin: 'round'
-            });
-
-            // Tapping route section -> opens weather popup with detailed route-specific info
-            segmentLine.on('click', () => {
-              if (onRoutePointClick) {
-                const midSegPt = segmentPts[Math.floor(segmentPts.length / 2)];
-                onRoutePointClick({
-                  id: `seg_${s}`,
-                  name: `${activeRoute.name} (${sectionLabel})`,
-                  expectedTime: `+${Math.round((s + 0.5) * (activeRoute.durationMinutes / numSegments))} min`,
-                  distanceFromStartKm: Math.round((s + 0.5) * (activeRoute.distanceKm / numSegments) * 10) / 10,
-                  weatherCondition: sectionCondition,
-                  temp: 26,
-                  rainProb: segmentScore < 70 ? 75 : 20,
-                  rainIntensity: segmentScore < 60 ? 'Heavy' : segmentScore < 80 ? 'Moderate' : 'Light',
-                  waterloggingRisk: segmentScore < 60 ? 'High' : segmentScore < 80 ? 'Moderate' : 'Low',
-                  safetyScore: segmentScore,
-                  hazard: sectionAdvice,
-                  coords: { x: 500, y: 500, lat: midSegPt[0], lng: midSegPt[1] }
-                });
-              }
-            });
-
-            layerGroup.addLayer(segmentLine);
-          }
-        }
-      } else {
-        const activeLine = L.polyline(activeRoute.geoPoints as [number, number][], {
-          color: activeRoute.strokeColor || '#2563eb',
-          weight: 6,
-          opacity: 0.95,
+      if (validActivePoints.length > 1) {
+        const glowLine = L.polyline(validActivePoints, {
+          color: activeRoute.strokeColor || '#3b82f6',
+          weight: 12,
+          opacity: 0.35,
           lineCap: 'round',
           lineJoin: 'round'
         });
-        layerGroup.addLayer(activeLine);
-      }
+        layerGroup.addLayer(glowLine);
 
-      // Active Route Real-Time Weather Impact Pill directly on the path
-      const activeMidPt = getRouteLabelPoint(activeRoute.geoPoints as [number, number][], activeRoute.routeOptionType, activeRoute.id, 0);
-      if (activeMidPt) {
-        const activeBadgeTitle = activeRoute.routeOptionType === 'safest'
-          ? '🟢 SAFEST'
-          : activeRoute.routeOptionType === 'fastest'
-          ? '⚡ FASTEST'
-          : activeRoute.routeOptionType === 'scenic'
-          ? '🌿 SCENIC'
-          : activeRoute.badge || 'SELECTED ROUTE';
+        // Render colored route sections based on safety scores & weather hazards
+        const numPoints = validActivePoints.length;
+        if (numPoints >= 2) {
+          const numSegments = Math.min(4, Math.max(2, Math.floor(numPoints / 3)));
+          const ptsPerSegment = Math.ceil(numPoints / numSegments);
 
-        const weatherImpactDetail = activeRoute.weatherImpactLabel || activeRoute.weatherImpactBadge || activeRoute.summaryCondition;
+          for (let s = 0; s < numSegments; s++) {
+            const startIdx = Math.max(0, s * ptsPerSegment - (s > 0 ? 1 : 0));
+            const endIdx = Math.min(numPoints, (s + 1) * ptsPerSegment);
+            const segmentPts = validActivePoints.slice(startIdx, endIdx);
 
-        const activeBadgeIcon = L.divIcon({
-          className: 'route-weather-pill-active',
-          html: `
-            <div style="transform: translate(-50%, -50%); cursor: pointer; display: inline-flex; flex-direction: column; align-items: center; pointer-events: auto;">
-              <div style="
-                background: rgba(15, 23, 42, 0.96);
-                border: 2px solid ${activeRoute.strokeColor || '#3b82f6'};
-                box-shadow: 0 0 16px ${activeRoute.strokeColor || '#3b82f6'}80, 0 4px 14px rgba(0,0,0,0.6);
-                border-radius: 12px;
-                padding: 6px 10px;
-                color: #ffffff;
-                font-family: system-ui, -apple-system, sans-serif;
-                min-width: 145px;
-                max-width: 220px;
-                backdrop-filter: blur(8px);
-              ">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 3px;">
-                  <span style="font-size: 10.5px; font-weight: 900; color: ${activeRoute.strokeColor || '#38bdf8'}; letter-spacing: 0.5px;">
-                    ${activeBadgeTitle}
-                  </span>
-                  <span style="font-size: 11.5px; font-weight: 900; color: #ffffff;">
-                    ${activeRoute.durationMinutes} min
-                  </span>
-                </div>
+            if (segmentPts.length >= 2) {
+              let segmentScore = activeRoute.safetyScore;
+              let sectionLabel =
+                s === 0
+                  ? 'Departure Corridor'
+                  : s === numSegments - 1
+                  ? 'Destination Approach'
+                  : `Corridor Sector ${s}`;
+              let sectionAdvice = 'Normal road conditions. Maintain safe speed.';
+              let sectionCondition = activeRoute.summaryCondition || 'Normal';
 
+              if (activeRoute.routeOptionType === 'fastest') {
+                if (s === 1 || s === 2) {
+                  segmentScore = Math.min(segmentScore, 52);
+                  sectionLabel = 'Low-Lying Underpass';
+                  sectionAdvice = '⚠️ Waterlogging hazard (+8cm ponding). Slow down under 30 km/h.';
+                  sectionCondition = 'Heavy Waterlogging';
+                }
+              } else if (activeRoute.riskZones && activeRoute.riskZones.length > 0 && s === 1) {
+                const rz = activeRoute.riskZones[0];
+                segmentScore = rz.severity === 'High' ? 45 : 62;
+                sectionLabel = rz.title || 'Caution Area';
+                sectionAdvice = rz.description || 'Slippery surface, proceed cautiously.';
+                sectionCondition = rz.type || 'Ponding Risk';
+              } else if (s === 0) {
+                segmentScore = Math.min(96, activeRoute.safetyScore + 4);
+                sectionLabel = 'Departure Corridor';
+                sectionAdvice = 'High elevation roadway, dry pavement with good tire grip.';
+              }
+
+              // Route-wise weather color palette
+              const segmentColor =
+                segmentScore >= 80
+                  ? '#10b981' // Green: safer
+                  : segmentScore >= 65
+                  ? '#eab308' // Yellow: caution
+                  : segmentScore >= 50
+                  ? '#f97316' // Orange: risky
+                  : '#ef4444'; // Red: dangerous
+
+              const segmentLine = L.polyline(segmentPts, {
+                color: segmentColor,
+                weight: 7,
+                opacity: 0.95,
+                lineCap: 'round',
+                lineJoin: 'round'
+              });
+
+              // Tapping route section -> opens weather popup with detailed route-specific info
+              segmentLine.on('click', () => {
+                if (onRoutePointClick) {
+                  const midSegPt = segmentPts[Math.floor(segmentPts.length / 2)];
+                  onRoutePointClick({
+                    id: `seg_${s}`,
+                    name: `${activeRoute.name} (${sectionLabel})`,
+                    expectedTime: `+${Math.round((s + 0.5) * (activeRoute.durationMinutes / numSegments))} min`,
+                    distanceFromStartKm: Math.round((s + 0.5) * (activeRoute.distanceKm / numSegments) * 10) / 10,
+                    weatherCondition: sectionCondition,
+                    temp: 26,
+                    rainProb: segmentScore < 70 ? 75 : 20,
+                    rainIntensity: segmentScore < 60 ? 'Heavy' : segmentScore < 80 ? 'Moderate' : 'Light',
+                    waterloggingRisk: segmentScore < 60 ? 'High' : segmentScore < 80 ? 'Moderate' : 'Low',
+                    safetyScore: segmentScore,
+                    hazard: sectionAdvice,
+                    coords: { x: 500, y: 500, lat: midSegPt[0], lng: midSegPt[1] }
+                  });
+                }
+              });
+
+              layerGroup.addLayer(segmentLine);
+            }
+          }
+        } else {
+          const activeLine = L.polyline(validActivePoints, {
+            color: activeRoute.strokeColor || '#2563eb',
+            weight: 6,
+            opacity: 0.95,
+            lineCap: 'round',
+            lineJoin: 'round'
+          });
+          layerGroup.addLayer(activeLine);
+        }
+
+        // Active Route Real-Time Weather Impact Pill directly on the path
+        const activeMidPt = getRouteLabelPoint(validActivePoints, activeRoute.routeOptionType, activeRoute.id, 0);
+        if (activeMidPt && isValidLatLng(activeMidPt)) {
+          const activeBadgeTitle = activeRoute.routeOptionType === 'safest'
+            ? '🟢 SAFEST'
+            : activeRoute.routeOptionType === 'fastest'
+            ? '⚡ FASTEST'
+            : activeRoute.routeOptionType === 'scenic'
+            ? '🌿 SCENIC'
+            : activeRoute.badge || 'SELECTED ROUTE';
+
+          const weatherImpactDetail = activeRoute.weatherImpactLabel || activeRoute.weatherImpactBadge || activeRoute.summaryCondition;
+
+          const activeBadgeIcon = L.divIcon({
+            className: 'route-weather-pill-active',
+            html: `
+              <div style="transform: translate(-50%, -50%); cursor: pointer; display: inline-flex; flex-direction: column; align-items: center; pointer-events: auto;">
                 <div style="
-                  font-size: 9px;
-                  font-weight: 600;
-                  color: #cbd5e1;
-                  line-height: 1.25;
-                  background: rgba(30, 41, 59, 0.85);
-                  padding: 3px 6px;
-                  border-radius: 6px;
-                  margin-bottom: 4px;
-                  border-left: 2.5px solid ${activeRoute.strokeColor || '#38bdf8'};
+                  background: rgba(15, 23, 42, 0.96);
+                  border: 2px solid ${activeRoute.strokeColor || '#3b82f6'};
+                  box-shadow: 0 0 16px ${activeRoute.strokeColor || '#3b82f6'}80, 0 4px 14px rgba(0,0,0,0.6);
+                  border-radius: 12px;
+                  padding: 6px 10px;
+                  color: #ffffff;
+                  font-family: system-ui, -apple-system, sans-serif;
+                  min-width: 145px;
+                  max-width: 220px;
+                  backdrop-filter: blur(8px);
                 ">
-                  ${weatherImpactDetail}
-                </div>
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 3px;">
+                    <span style="font-size: 10.5px; font-weight: 900; color: ${activeRoute.strokeColor || '#38bdf8'}; letter-spacing: 0.5px;">
+                      ${activeBadgeTitle}
+                    </span>
+                    <span style="font-size: 11.5px; font-weight: 900; color: #ffffff;">
+                      ${activeRoute.durationMinutes} min
+                    </span>
+                  </div>
 
-                <div style="display: flex; align-items: center; justify-content: space-between; font-size: 9px; font-weight: 700;">
-                  <span style="color: #94a3b8;">${activeRoute.distanceKm} km</span>
-                  <span style="
-                    background: ${activeRoute.safetyScore >= 80 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)'};
-                    color: ${activeRoute.safetyScore >= 80 ? '#34d399' : '#fbbf24'};
-                    border: 1px solid ${activeRoute.safetyScore >= 80 ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'};
-                    padding: 1px 5px;
-                    border-radius: 5px;
+                  <div style="
+                    font-size: 9px;
+                    font-weight: 600;
+                    color: #cbd5e1;
+                    line-height: 1.25;
+                    background: rgba(30, 41, 59, 0.85);
+                    padding: 3px 6px;
+                    border-radius: 6px;
+                    margin-bottom: 4px;
+                    border-left: 2.5px solid ${activeRoute.strokeColor || '#38bdf8'};
                   ">
-                    🛡️ ${activeRoute.safetyScore}/100
-                  </span>
+                    ${weatherImpactDetail}
+                  </div>
+
+                  <div style="display: flex; align-items: center; justify-content: space-between; font-size: 9px; font-weight: 700;">
+                    <span style="color: #94a3b8;">${activeRoute.distanceKm} km</span>
+                    <span style="
+                      background: ${activeRoute.safetyScore >= 80 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)'};
+                      color: ${activeRoute.safetyScore >= 80 ? '#34d399' : '#fbbf24'};
+                      border: 1px solid ${activeRoute.safetyScore >= 80 ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'};
+                      padding: 1px 5px;
+                      border-radius: 5px;
+                    ">
+                      🛡️ ${activeRoute.safetyScore}/100
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          `,
-          iconSize: [0, 0],
-          iconAnchor: [0, 0]
-        });
-        const activeMarker = L.marker(activeMidPt, { icon: activeBadgeIcon, zIndexOffset: 600 });
-        layerGroup.addLayer(activeMarker);
-      }
+            `,
+            iconSize: [0, 0],
+            iconAnchor: [0, 0]
+          });
+          const activeMarker = L.marker(toValidLatLng(activeMidPt), { icon: activeBadgeIcon, zIndexOffset: 600 });
+          layerGroup.addLayer(activeMarker);
+        }
 
-      // Fit bounds when not actively navigating
-      if (!isNavigating) {
-        try {
-          const bounds = L.latLngBounds(activeRoute.geoPoints as [number, number][]);
-          if (bounds.isValid()) {
-            map.fitBounds(bounds, { padding: [50, 50] });
+        // Fit bounds when not actively navigating
+        if (!isNavigating) {
+          try {
+            const bounds = L.latLngBounds(validActivePoints);
+            if (bounds.isValid()) {
+              map.fitBounds(bounds, { padding: [50, 50] });
+            }
+          } catch (e) {
+            console.warn('fitBounds error:', e);
           }
-        } catch (e) {
-          console.warn('fitBounds error:', e);
         }
       }
     }
@@ -586,33 +640,35 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
     // 3. Render Route Segment Waypoints (Clickable for weather details)
     if (activeRoute && activeRoute.waypoints && activeRoute.waypoints.length > 0) {
       activeRoute.waypoints.forEach((wp) => {
-        const wpLat = wp.coords?.lat || (activeRoute.geoPoints?.[0]?.[0] ?? 28.5);
-        const wpLng = wp.coords?.lng || (activeRoute.geoPoints?.[0]?.[1] ?? 77.1);
+        const wpPos = toValidLatLng(wp.coords, [28.5, 77.1]);
+        if (isValidLatLng(wpPos)) {
+          const wpIcon = L.divIcon({
+            className: 'waypoint-marker',
+            html: `
+              <div style="background:#0f172a;border:2px solid #38bdf8;border-radius:12px;padding:2px 6px;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;gap:3px;box-shadow:0 2px 8px rgba(0,0,0,0.4);cursor:pointer;white-space:nowrap;">
+                <span>${wp.rainIntensity === 'Heavy' ? '🌧️' : wp.rainIntensity === 'Moderate' ? '🌦️' : '☁️'}</span>
+                <span>${wp.name.split(' ')[0]}</span>
+                <span style="color:${wp.safetyScore >= 80 ? '#34d399' : '#f87171'};">${wp.temp}°C</span>
+              </div>
+            `,
+            iconSize: [90, 22],
+            iconAnchor: [45, 11]
+          });
 
-        const wpIcon = L.divIcon({
-          className: 'waypoint-marker',
-          html: `
-            <div style="background:#0f172a;border:2px solid #38bdf8;border-radius:12px;padding:2px 6px;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;gap:3px;box-shadow:0 2px 8px rgba(0,0,0,0.4);cursor:pointer;white-space:nowrap;">
-              <span>${wp.rainIntensity === 'Heavy' ? '🌧️' : wp.rainIntensity === 'Moderate' ? '🌦️' : '☁️'}</span>
-              <span>${wp.name.split(' ')[0]}</span>
-              <span style="color:${wp.safetyScore >= 80 ? '#34d399' : '#f87171'};">${wp.temp}°C</span>
-            </div>
-          `,
-          iconSize: [90, 22],
-          iconAnchor: [45, 11]
-        });
-
-        const marker = L.marker([wpLat, wpLng], { icon: wpIcon });
-        if (onRoutePointClick) {
-          marker.on('click', () => onRoutePointClick(wp));
+          const marker = L.marker(wpPos, { icon: wpIcon });
+          if (onRoutePointClick) {
+            marker.on('click', () => onRoutePointClick(wp));
+          }
+          layerGroup.addLayer(marker);
         }
-        layerGroup.addLayer(marker);
       });
     }
 
     // 4. Origin Marker
-    const startCoords: [number, number] =
-      originCoords || activeRoute?.geoPoints?.[0] || [28.5283, 77.1512];
+    const startCoords = toValidLatLng(
+      originCoords || (activeRoute?.geoPoints ? activeRoute.geoPoints[0] : null),
+      [28.5283, 77.1512]
+    );
 
     const originIcon = L.divIcon({
       className: 'custom-map-pin-origin',
@@ -630,10 +686,11 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
     layerGroup.addLayer(L.marker(startCoords, { icon: originIcon }));
 
     // 5. Destination Marker
-    const endCoords: [number, number] =
+    const endCoords = toValidLatLng(
       destinationCoords ||
-      activeRoute?.geoPoints?.[activeRoute.geoPoints.length - 1] ||
-      [28.4358, 77.1082];
+        (activeRoute?.geoPoints ? activeRoute.geoPoints[activeRoute.geoPoints.length - 1] : null),
+      [28.4358, 77.1082]
+    );
 
     const destIcon = L.divIcon({
       className: 'custom-map-pin-destination',
@@ -651,7 +708,8 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
     layerGroup.addLayer(L.marker(endCoords, { icon: destIcon }));
 
     // 6. Real GPS User Position Marker (if active)
-    if (gpsCoords) {
+    if (gpsCoords && isValidLatLng(gpsCoords)) {
+      const validGps = toValidLatLng(gpsCoords);
       const gpsIcon = L.divIcon({
         className: 'gps-user-marker',
         html: `
@@ -663,18 +721,17 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
         iconSize: [30, 30],
         iconAnchor: [15, 15]
       });
-      layerGroup.addLayer(L.marker(gpsCoords, { icon: gpsIcon }));
+      layerGroup.addLayer(L.marker(validGps, { icon: gpsIcon }));
     }
 
     // 7. Severe Risk Zones (e.g. Underpass Waterlogging / Flooding)
-    if (activeRoute.riskZones && activeRoute.riskZones.length > 0) {
+    if (activeRoute && activeRoute.riskZones && activeRoute.riskZones.length > 0) {
       activeRoute.riskZones.forEach((zone, idx) => {
-        const lat =
-          zone.coords?.lat ||
-          startCoords[0] + (endCoords[0] - startCoords[0]) * (0.35 + idx * 0.28);
-        const lng =
-          zone.coords?.lng ||
-          startCoords[1] + (endCoords[1] - startCoords[1]) * (0.35 + idx * 0.28) + 0.004;
+        const defaultPos: [number, number] = [
+          startCoords[0] + (endCoords[0] - startCoords[0]) * (0.35 + idx * 0.28),
+          startCoords[1] + (endCoords[1] - startCoords[1]) * (0.35 + idx * 0.28) + 0.004
+        ];
+        const riskPos = toValidLatLng(zone.coords, defaultPos);
 
         const riskIcon = L.divIcon({
           className: 'custom-risk-marker',
@@ -688,45 +745,52 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
           iconAnchor: [65, 13]
         });
 
-        const riskMarker = L.marker([lat, lng], { icon: riskIcon });
+        const riskMarker = L.marker(riskPos, { icon: riskIcon });
         riskMarker.on('click', () => onSelectRiskZone(zone));
         layerGroup.addLayer(riskMarker);
       });
     }
 
     // 8. Navigation Vehicle Indicator (if actively navigating)
-    if (isNavigating && activeRoute.geoPoints && activeRoute.geoPoints.length > 1) {
-      const pts = activeRoute.geoPoints;
-      const total = pts.length - 1;
-      const frac = Math.min(0.999, Math.max(0, vehicleProgress / 100));
-      const seg = Math.min(total - 1, Math.floor(frac * total));
-      const localFrac = frac * total - seg;
+    if (isNavigating && activeRoute && activeRoute.geoPoints && activeRoute.geoPoints.length > 1) {
+      const validNavPts = activeRoute.geoPoints
+        .map((pt) => (isValidLatLng(pt) ? toValidLatLng(pt) : null))
+        .filter((pt): pt is [number, number] => pt !== null);
 
-      const pA = pts[seg];
-      const pB = pts[seg + 1];
-      const curLat = pA[0] + (pB[0] - pA[0]) * localFrac;
-      const curLng = pA[1] + (pB[1] - pA[1]) * localFrac;
+      if (validNavPts.length > 1) {
+        const total = validNavPts.length - 1;
+        const frac = Math.min(0.999, Math.max(0, vehicleProgress / 100));
+        const seg = Math.min(total - 1, Math.floor(frac * total));
+        const localFrac = frac * total - seg;
 
-      const vehicleIcon = L.divIcon({
-        className: 'vehicle-nav-pin',
-        html: `
-          <div style="position:relative;display:flex;align-items:center;justify-content:center;">
-            <div style="position:absolute;width:32px;height:32px;border-radius:9999px;background:rgba(59,130,246,0.3);animation:ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-            <div style="width:20px;height:20px;border-radius:9999px;background:#2563eb;border:3px solid #ffffff;box-shadow:0 0 14px rgba(37,99,235,0.9);display:flex;align-items:center;justify-content:center;color:#ffffff;font-size:10px;">▲</div>
-          </div>
-        `,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16]
-      });
+        const pA = validNavPts[seg];
+        const pB = validNavPts[seg + 1];
+        const curLat = pA[0] + (pB[0] - pA[0]) * localFrac;
+        const curLng = pA[1] + (pB[1] - pA[1]) * localFrac;
 
-      layerGroup.addLayer(L.marker([curLat, curLng], { icon: vehicleIcon }));
+        if (isValidLatLng([curLat, curLng])) {
+          const vehicleIcon = L.divIcon({
+            className: 'vehicle-nav-pin',
+            html: `
+              <div style="position:relative;display:flex;align-items:center;justify-content:center;">
+                <div style="position:absolute;width:32px;height:32px;border-radius:9999px;background:rgba(59,130,246,0.3);animation:ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+                <div style="width:20px;height:20px;border-radius:9999px;background:#2563eb;border:3px solid #ffffff;box-shadow:0 0 14px rgba(37,99,235,0.9);display:flex;align-items:center;justify-content:center;color:#ffffff;font-size:10px;">▲</div>
+              </div>
+            `,
+            iconSize: [32, 32],
+            iconAnchor: [16, 16]
+          });
+
+          layerGroup.addLayer(L.marker([curLat, curLng], { icon: vehicleIcon }));
+        }
+      }
     }
 
     // 9. Nearby Places (When toggled)
     if (showNearbyPlaces && nearbyPlaces.length > 0) {
       nearbyPlaces.forEach((place) => {
-        const placeLat = place.coords?.lat || endCoords[0] + 0.005;
-        const placeLng = place.coords?.lng || endCoords[1] + 0.005;
+        const defaultPos: [number, number] = [endCoords[0] + 0.005, endCoords[1] + 0.005];
+        const placePos = toValidLatLng(place.coords, defaultPos);
 
         const isSelected = selectedNearbyPlace?.id === place.id;
         const placeIcon = L.divIcon({
@@ -742,7 +806,7 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
           iconAnchor: [55, 13]
         });
 
-        const placeMarker = L.marker([placeLat, placeLng], { icon: placeIcon });
+        const placeMarker = L.marker(placePos, { icon: placeIcon });
         placeMarker.on('click', () => onSelectNearbyPlace(place));
         layerGroup.addLayer(placeMarker);
       });

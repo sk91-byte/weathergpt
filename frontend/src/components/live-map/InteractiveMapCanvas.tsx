@@ -18,7 +18,7 @@ import {
   CloudRain,
   Coffee
 } from '../Icons';
-import { LeafletMapView, LeafletMapHandle } from './LeafletMapView';
+import { LeafletMapView, LeafletMapHandle, toValidLatLng } from './LeafletMapView';
 
 interface InteractiveMapCanvasProps {
   routes: LiveMapRoute[];
@@ -78,8 +78,9 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
   const safeRoutes = Array.isArray(routes) ? routes : [];
   const activeRoute = safeRoutes.find((r) => r.id === activeRouteId) || safeRoutes[0];
 
-  const currentLat = gpsCoords ? gpsCoords[0] : originCoords ? originCoords[0] : 28.472;
-  const currentLon = gpsCoords ? gpsCoords[1] : originCoords ? originCoords[1] : 77.125;
+  const currentPos = toValidLatLng(gpsCoords || originCoords, [28.472, 77.125]);
+  const currentLat = currentPos[0];
+  const currentLon = currentPos[1];
   const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${currentLat},${currentLon}`;
 
   const handleZoomIn = () => {
