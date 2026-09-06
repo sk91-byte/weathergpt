@@ -180,23 +180,27 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
       map.removeLayer(baseLayerRef.current);
     }
 
-    let url = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-    let subdomains = 'abcd';
+    let url = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    let subdomains = 'abc';
     let maxZoom = 19;
+    let attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
     if (tileLayerType === 'satellite') {
       url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-      subdomains = 'abc';
+      subdomains = '';
       maxZoom = 18;
+      attribution = 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community';
     } else if (tileLayerType === 'dark') {
-      url = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+      url = 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png';
       subdomains = 'abcd';
       maxZoom = 19;
+      attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
     }
 
     const newLayer = L.tileLayer(url, {
       subdomains,
-      maxZoom
+      maxZoom,
+      attribution
     }).addTo(map);
 
     baseLayerRef.current = newLayer;
