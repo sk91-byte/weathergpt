@@ -273,7 +273,7 @@ def _asks_for_current_location(message: str) -> bool:
 
 def _asks_for_decision(message: str) -> bool:
     text = message.lower()
-    return any(phrase in text for phrase in ("should i", "can i travel", "is it safe", "carry an umbrella", "umbrella carry", "umbrella", "raincoat", "what should i carry", "what should i take", "what should i avoid", "work outside", "go outside", "wash my car", "wash the car", "irrigat", "what should i do", "risk", "why did the risk", "what changed", "kya mujhe", "carry karna", "chahiye", "chahie", "chaive", "kya carry", "carry karu", "le jana chahiye", "le jaana chahiye", "jana chahiye", "jaana chahiye", "office ke liye", "office jana", "office jaana", "jaana hai", "jana hai", "le jaun", "le jaaun", "ja sakta", "ja sakti", "bahar jana", "bahar jaana", "bahar ja sakta", "nikalna", "nikal sakta", "chata", "chhata", "safe hai", "surakshit", "क्या बाहर", "बाहर जाना", "सुरक्षित", "क्या ले जाऊँ", "क्या साथ ले", "क्या बचना", "सावधानी"))
+    return any(phrase in text for phrase in ("should i", "can i travel", "is it safe", "carry an umbrella", "umbrella carry", "umbrella", "raincoat", "what should i carry", "what should i take", "what should i avoid", "take it", "take with me", "so take", "then carry", "work outside", "go outside", "wash my car", "wash the car", "irrigat", "what should i do", "risk", "why did the risk", "what changed", "kya mujhe", "carry karna", "chahiye", "chahie", "chaive", "kya carry", "carry karu", "le jana chahiye", "le jaana chahiye", "jana chahiye", "jaana chahiye", "office ke liye", "office jana", "office jaana", "jaana hai", "jana hai", "le jaun", "le jaaun", "ja sakta", "ja sakti", "bahar jana", "bahar jaana", "bahar ja sakta", "nikalna", "nikal sakta", "chata", "chhata", "safe hai", "surakshit", "क्या बाहर", "बाहर जाना", "सुरक्षित", "क्या ले जाऊँ", "क्या साथ ले", "क्या बचना", "सावधानी"))
 
 
 def _is_why_followup(message: str) -> bool:
@@ -419,9 +419,9 @@ def _decision_response(message: str, decision: dict[str, Any], weather_data: dic
     except (TypeError, ValueError):
         rain = None
     try:
-        numeric_score = float(score)
+        numeric_score = float(score) if score is not None else None
     except (TypeError, ValueError):
-        numeric_score = 50
+        numeric_score = None
     question = message.lower()
     is_car_question = "wash" in question and "car" in question
     is_travel_question = any(word in question for word in ("travel", "trip", "drive", "journey", "jana", "jaana", "यात्रा", "जाना"))
@@ -430,16 +430,18 @@ def _decision_response(message: str, decision: dict[str, Any], weather_data: dic
         direct = "I’d hold off on washing the car for now—the rain may undo your hard work."
     elif is_rain_question and rain is not None and rain >= 40:
         direct = "Yes—keep an umbrella or raincoat with you, and allow extra time because wet roads can slow traffic."
-    elif is_travel_question and numeric_score >= 60:
+    elif is_travel_question and numeric_score is not None and numeric_score >= 60:
         direct = "I’d avoid the highest-risk time if you can. The trip may still be possible, but give yourself extra time and drive carefully."
     elif is_travel_question:
-        direct = "The trip looks reasonable from the available forecast, with normal care while travelling."
-    elif numeric_score >= 60:
+        direct = "The forecast is available, but I cannot calculate a complete route safety score yet. Keep checking the live forecast before travelling."
+    elif numeric_score is not None and numeric_score >= 60:
         direct = "I’d be a little careful about outdoor plans today."
-    elif numeric_score >= 40:
+    elif numeric_score is not None and numeric_score >= 40:
         direct = "You can go out, but keep a little weather backup with you."
-    else:
+    elif numeric_score is not None:
         direct = "Good news—normal outdoor plans look reasonable from the available forecast."
+    else:
+        direct = "I can share the live forecast, but a complete safety score is unavailable because the provider did not return enough hourly risk inputs."
     reasons = [str(item) for item in (decision.get("why") or [])]
     actions = [str(item) for item in (decision.get("recommended_actions") or [])]
     carry = [str(item) for item in (decision.get("what_to_carry") or [])]
@@ -453,14 +455,17 @@ def _decision_response(message: str, decision: dict[str, Any], weather_data: dic
             "I’d be a little careful about outdoor plans today.": "आज बाहर जाने की योजना में थोड़ी सावधानी रखें।",
             "You can go out, but keep a little weather backup with you.": "आप बाहर जा सकते हैं, लेकिन मौसम को देखते हुए थोड़ी तैयारी साथ रखें।",
             "Good news—normal outdoor plans look reasonable from the available forecast.": "अच्छी खबर है—मौजूदा पूर्वानुमान के आधार पर सामान्य बाहर जाने की योजना ठीक लगती है।",
+            "The forecast is available, but I cannot calculate a complete route safety score yet. Keep checking the live forecast before travelling.": "पूर्वानुमान उपलब्ध है, लेकिन अभी पूरा यात्रा सुरक्षा स्कोर नहीं निकाला जा सका। यात्रा से पहले लाइव मौसम फिर जांच लें।",
+            "I can share the live forecast, but a complete safety score is unavailable because the provider did not return enough hourly risk inputs.": "मैं लाइव पूर्वानुमान बता सकता हूँ, लेकिन प्रदाता से पर्याप्त घंटेवार जोखिम डेटा नहीं मिला, इसलिए पूरा सुरक्षा स्कोर उपलब्ध नहीं है।",
         }[direct]
-        reason_text = " ".join(_hindi_reasons(reasons)) or "मौसम का कोई बड़ा जोखिम संकेत नहीं मिला।"
+        reason_text = "प्रदाता से पर्याप्त घंटेवार जोखिम डेटा नहीं मिला।" if numeric_score is None else (" ".join(_hindi_reasons(reasons)) or "मौसम का कोई बड़ा जोखिम संकेत नहीं मिला।")
         action_text = " ".join(_hindi_actions(actions))
         details = []
         if carry: details.append("साथ रखें: " + ", ".join(_localized_items(carry, "hi")))
         if avoid: details.append("बचें: " + ", ".join(_localized_items(avoid, "hi")))
         rain_text = f" बारिश की संभावना {probability}% है।" if rain is not None else ""
-        return f"{_hindi_location(location)} में {direct_hi} कुल मौसम जोखिम {score}/100 ({_hindi_level(level)}) है।{rain_text} वजह: {reason_text} सलाह: {action_text} {' '.join(details)}".strip()
+        score_text = f"{score}/100 ({_hindi_level(level)})" if numeric_score is not None else "उपलब्ध नहीं"
+        return f"{_hindi_location(location)} में {direct_hi} कुल मौसम जोखिम: {score_text}।{rain_text} वजह: {reason_text} सलाह: {action_text} {' '.join(details)}".strip()
     if language == "gu":
         direct_gu = {
             "I’d hold off on washing the car for now—the rain may undo your hard work.": "હમણાં કાર ધોવાનું ટાળો—વરસાદથી તમારી મહેનત બગડી શકે છે.",
@@ -470,14 +475,17 @@ def _decision_response(message: str, decision: dict[str, Any], weather_data: dic
             "I’d be a little careful about outdoor plans today.": "આજે બહાર જવાની યોજનામાં થોડી સાવચેતી રાખો.",
             "You can go out, but keep a little weather backup with you.": "તમે બહાર જઈ શકો છો, પરંતુ હવામાન માટે થોડી તૈયારી સાથે રાખો.",
             "Good news—normal outdoor plans look reasonable from the available forecast.": "સારા સમાચાર—મળેલી આગાહી મુજબ સામાન્ય બહારની યોજનાઓ યોગ્ય લાગે છે.",
+            "The forecast is available, but I cannot calculate a complete route safety score yet. Keep checking the live forecast before travelling.": "આગાહી ઉપલબ્ધ છે, પરંતુ હમણાં સંપૂર્ણ મુસાફરી સુરક્ષા સ્કોર કાઢી શકાયો નથી. મુસાફરી પહેલાં લાઇવ હવામાન ફરી તપાસો.",
+            "I can share the live forecast, but a complete safety score is unavailable because the provider did not return enough hourly risk inputs.": "હું લાઇવ આગાહી આપી શકું છું, પરંતુ પ્રદાતાએ પૂરતો કલાકવાર જોખમ ડેટા આપ્યો નથી, તેથી સંપૂર્ણ સુરક્ષા સ્કોર ઉપલબ્ધ નથી.",
         }[direct]
-        reason_text = " ".join(reasons) or "મોટું હવામાન જોખમ મળ્યું નથી."
+        reason_text = "પ્રદાતાએ પૂરતો કલાકવાર જોખમ ડેટા આપ્યો નથી." if numeric_score is None else (" ".join(reasons) or "મોટું હવામાન જોખમ મળ્યું નથી.")
         action_text = " ".join(actions)
         details = []
         if carry: details.append("સાથે રાખો: " + ", ".join(carry))
         if avoid: details.append("ટાળો: " + ", ".join(avoid))
         rain_text = f" વરસાદની શક્યતા {probability}% છે." if rain is not None else ""
-        return f"{location}માં {direct_gu} કુલ હવામાન જોખમ {score}/100 ({level}) છે.{rain_text} કારણ: {reason_text} સલાહ: {action_text} {' '.join(details)}".strip()
+        score_text = f"{score}/100 ({level})" if numeric_score is not None else "ઉપલબ્ધ નથી"
+        return f"{location}માં {direct_gu} કુલ હવામાન જોખમ {score_text} છે.{rain_text} કારણ: {reason_text} સલાહ: {action_text} {' '.join(details)}".strip()
     if language == "hinglish":
         direct_hi = {
             "I’d hold off on washing the car for now—the rain may undo your hard work.": "Abhi car wash karna hold kar do—baarish tumhari mehnat kharab kar sakti hai.",
@@ -487,21 +495,25 @@ def _decision_response(message: str, decision: dict[str, Any], weather_data: dic
             "I’d be a little careful about outdoor plans today.": "Aaj outdoor plans mein thoda careful rehna better hoga.",
             "You can go out, but keep a little weather backup with you.": "Bahar ja sakte ho, bas weather backup saath rakhna.",
             "Good news—normal outdoor plans look reasonable from the available forecast.": "Good news—available forecast ke hisaab se normal outdoor plans theek lag rahe hain.",
+            "The forecast is available, but I cannot calculate a complete route safety score yet. Keep checking the live forecast before travelling.": "Forecast available hai, lekin abhi complete route safety score calculate nahi ho paaya. Travel se pehle live forecast phir check kar lena.",
+            "I can share the live forecast, but a complete safety score is unavailable because the provider did not return enough hourly risk inputs.": "Live forecast mil raha hai, lekin provider se enough hourly risk data nahi mila, isliye complete safety score available nahi hai.",
         }[direct]
-        reason_text = " ".join(_hinglish_reasons(reasons)) or "Koi bada weather risk signal nahi mila."
+        reason_text = "Provider se enough hourly risk data nahi mila." if numeric_score is None else (" ".join(_hinglish_reasons(reasons)) or "Koi bada weather risk signal nahi mila.")
         action_text = " ".join(_hinglish_actions(actions))
         details = []
         if carry: details.append("Saath rakhna: " + ", ".join(_localized_items(carry, "hinglish")))
         if avoid: details.append("Avoid karna: " + ", ".join(_localized_items(avoid, "hinglish")))
         rain_text = f" Baarish ke chances {probability}% hain." if rain is not None else ""
-        return f"{location} mein {direct_hi} Overall weather risk {score}/100 ({level}) hai.{rain_text} Reason: {reason_text} Advice: {action_text} {' '.join(details)}".strip()
-    reason_text = " ".join(reasons) or "No major weather risk signal crossed the advisory threshold."
+        score_text = f"{score}/100 ({level})" if numeric_score is not None else "available nahi hai"
+        return f"{location} mein {direct_hi} Overall weather risk {score_text} hai.{rain_text} Reason: {reason_text} Advice: {action_text} {' '.join(details)}".strip()
+    reason_text = "The provider did not return enough hourly risk inputs to calculate a safety score." if numeric_score is None else (" ".join(reasons) or "No major weather risk signal crossed the advisory threshold.")
     action_text = " ".join(actions)
     details = []
     if carry: details.append("Carry: " + ", ".join(carry))
     if avoid: details.append("Avoid: " + ", ".join(avoid))
     rain_text = f" Rain chance is {probability}%." if rain is not None else ""
-    return f"{location}: {direct} Overall weather risk is {score}/100 ({level}).{rain_text} The main reason is {reason_text} {action_text} {' '.join(details)}".strip()
+    score_text = f"{score}/100 ({level})" if numeric_score is not None else "unavailable"
+    return f"{location}: {direct} Overall weather risk is {score_text}.{rain_text} The main reason is {reason_text} {action_text} {' '.join(details)}".strip()
 
 
 def _condition_text(condition: Any, language: str) -> str:

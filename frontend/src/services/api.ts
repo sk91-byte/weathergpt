@@ -1,5 +1,6 @@
 // Compatibility layer between the Remix interface and the existing Render API.
 export interface ApiPoint { latitude: number; longitude: number; name?: string; }
+export interface ApiAutocompleteSuggestion { place_id: string; name: string; formatted_address: string; latitude: number; longitude: number; type?: string; }
 export interface ApiRouteResponse { route_id: string; origin: ApiPoint; destination: ApiPoint; travel_mode: string; distance_km: number; duration_minutes: number; geometry: [number, number][]; steps: any[]; is_live: boolean; data_source: string; }
 export interface ApiRouteWeatherResponse { safety_score: number | null; rain_risk: any; waterlogging_risk: any; wind_risk: any; fog_risk: any; thunderstorm_risk: any; timeline: any[]; risk_zones: any[]; is_live: boolean; source: string; }
 export interface ApiBestDepartureTimeResponse { route_id: string; current_safety_score: number | null; warning: boolean; warning_message: string; best_departure_time: string; best_option: any; options: any[]; }
@@ -21,8 +22,18 @@ export async function apiResolveLocation(query?: string, latitude?: number, long
   if (!query?.trim()) throw new Error('Please enter a location.'); const places = await apiAutocompleteLocations(query); if (!places.length) throw new Error('Location not found.'); return places[0];
 }
 
-export async function apiAutocompleteLocations(query: string): Promise<any[]> {
-  if (query.trim().length < 2) return []; const response = await fetchWithTimeout(`/places/autocomplete?input=${encodeURIComponent(query.trim())}`, {}, 20000); const payload = await response.json(); return (payload.suggestions || []).map((item:any) => ({ ...item, display_name:item.formatted_address || item.address || item.name }));
+export async function apiAutocompleteLocations(query: string, _latitude?: number, _longitude?: number, _signal?: AbortSignal, limit = 8): Promise<ApiAutocompleteSuggestion[]> {
+  if (query.trim().length < 2) return [];
+  const response = await fetchWithTimeout(`/places/autocomplete?input=${encodeURIComponent(query.trim())}`, {}, 20000);
+  const payload = await response.json();
+  return (payload.suggestions || []).slice(0, limit).map((item:any) => ({
+    place_id: String(item.place_id || item.id || item.name),
+    name: item.name || item.display_name?.split(',')[0] || 'Unnamed place',
+    formatted_address: item.formatted_address || item.display_name || item.address || item.name || 'Address unavailable',
+    latitude: Number(item.latitude ?? item.lat),
+    longitude: Number(item.longitude ?? item.lon ?? item.lng),
+    type: item.type
+  })).filter((item: ApiAutocompleteSuggestion) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
 }
 
 export async function apiCalculateRoute(origin: ApiPoint, destination: ApiPoint, travelMode = 'driving', onSlow?: () => void): Promise<ApiRouteResponse> {

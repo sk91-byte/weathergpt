@@ -166,10 +166,26 @@ def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> di
     except WeatherServiceError:
         fallback = _weatherapi_request(latitude, longitude, days)
         forecast = []
+        hourly_forecast = []
         for item in fallback["forecast"]["forecastday"]:
             day = item["day"]
             forecast.append({"date": item["date"], "temperature_max_c": day.get("maxtemp_c"), "temperature_min_c": day.get("mintemp_c"), "precipitation_sum_mm": day.get("totalprecip_mm"), "precipitation_probability_percent": day.get("daily_chance_of_rain"), "sunrise": item.get("astro", {}).get("sunrise"), "sunset": item.get("astro", {}).get("sunset"), "weather_code": None, "condition": (day.get("condition") or {}).get("text", "Unknown weather conditions")})
-        return {"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": [], "source": "WeatherAPI"}
+            for hour in item.get("hour", []):
+                condition = hour.get("condition") or {}
+                hourly_forecast.append({
+                    "time": hour.get("time"),
+                    "temperature_c": hour.get("temp_c"),
+                    "precipitation_probability_percent": hour.get("chance_of_rain"),
+                    "precipitation_mm": hour.get("precip_mm"),
+                    "rain_mm": hour.get("precip_mm"),
+                    "showers_mm": hour.get("precip_mm"),
+                    "weather_code": condition.get("code"),
+                    "wind_speed_kmh": hour.get("wind_kph"),
+                    "wind_gusts_kmh": hour.get("gust_kph"),
+                    "humidity_percent": hour.get("humidity"),
+                    "visibility_m": float(hour["vis_km"]) * 1000 if isinstance(hour.get("vis_km"), (int, float)) else None,
+                })
+        return {"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "WeatherAPI"}
     daily, hourly = payload.get("daily"), payload.get("hourly")
     daily_keys = ["time", "temperature_2m_max", "temperature_2m_min", "precipitation_sum", "precipitation_probability_max", "sunrise", "sunset", "weather_code"]
     if not isinstance(daily, dict) or not isinstance(hourly, dict) or any(not isinstance(daily.get(key), list) for key in daily_keys):

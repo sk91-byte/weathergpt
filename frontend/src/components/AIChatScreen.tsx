@@ -42,6 +42,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [serverSuggestions, setServerSuggestions] = useState<string[]>([]);
+  const [deviceCoordinates, setDeviceCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -82,6 +83,27 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
     localSuggestions.splice(0, localSuggestions.length, 'આજે વરસાદ પડશે?', 'શું કાલે કોલેજ જવું સુરક્ષિત છે?', 'આજે સિંચાઈ કરવી યોગ્ય છે?', 'શું છત્રી લઈ જવી જોઈએ?');
   }
   const suggestions = serverSuggestions.length ? serverSuggestions : localSuggestions;
+
+  const needsCurrentLocation = (text: string) => {
+    const value = text.toLowerCase();
+    return /(weather of my location|weather near me|weather around me|near me|my current location|where i am|mere paas|meri location|मेरे पास|मेरी लोकेशन|मेरे आसपास|અહીં|મારી લોકેશન)/i.test(value);
+  };
+
+  const requestDeviceCoordinates = () => new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Location is not supported by this browser.'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coordinates = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+        setDeviceCoordinates(coordinates);
+        resolve(coordinates);
+      },
+      () => reject(new Error('Location permission is required for weather near you.')),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+    );
+  });
 
   const toggleVoiceInput = () => {
     setVoiceError(null);
@@ -165,10 +187,16 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
     setLoading(true);
 
     try {
+      let coordinates = deviceCoordinates;
+      if (needsCurrentLocation(textToSend) && !coordinates) {
+        coordinates = await requestDeviceCoordinates();
+      }
       const data = await apiSendChat(textToSend, {
         conversation_id: conversationId,
         language: currentLanguage,
         role: userRole,
+        latitude: coordinates?.latitude,
+        longitude: coordinates?.longitude,
         route_context: { from: trip.from, to: trip.to, leave_by: trip.leaveBy }
       });
       if (data.conversation_id) setConversationId(data.conversation_id);
@@ -186,8 +214,16 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
       const botMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         sender: 'weathergpt',
-        text: currentLanguage === 'hi'
+        text: err instanceof Error && err.message.includes('Location permission')
+          ? (currentLanguage === 'hi'
+            ? 'आपके आसपास का मौसम बताने के लिए स्थान की अनुमति चाहिए। कृपया ब्राउज़र में Location Allow करें और फिर दोबारा पूछें।'
+            : currentLanguage === 'gu'
+            ? 'તમારા આસપાસનું હવામાન બતાવવા માટે લોકેશનની પરવાનગી જોઈએ. બ્રાઉઝરમાં Location Allow કરો અને ફરી પૂછો.'
+            : 'I need your location to answer that. Please allow Location access in your browser and ask again.')
+          : currentLanguage === 'hi'
           ? `अभी ${weather.city} के लिए लाइव मौसम सेवा उपलब्ध नहीं है। कृपया कुछ देर बाद फिर कोशिश करें।`
+          : currentLanguage === 'gu'
+          ? `હમણાં ${weather.city} માટે લાઇવ હવામાન સેવા ઉપલબ્ધ નથી. થોડા સમય પછી ફરી પ્રયાસ કરો.`
           : `Live weather data for ${weather.city} is temporarily unavailable. I won't guess the conditions—please try again shortly.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
