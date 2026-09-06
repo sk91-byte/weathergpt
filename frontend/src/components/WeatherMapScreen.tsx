@@ -99,10 +99,10 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   );
 
   const [destinationName, setDestinationName] = useState<string>(
-    initialTrip?.to || ''
+    (initialTrip as any)?.destinationCoords ? initialTrip?.to || '' : ''
   );
   const [destinationQuery, setDestinationQuery] = useState<string>(
-    initialTrip?.to || ''
+    (initialTrip as any)?.destinationCoords ? initialTrip?.to || '' : ''
   );
   const [destinationCoords, setDestinationCoords] = useState<[number, number] | null>(
     (initialTrip as any)?.destinationCoords || null
@@ -121,7 +121,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
   // 3. Routes & Departures
   const [routes, setRoutes] = useState<LiveMapRoute[]>(() => {
-    if (initialTrip?.to && initialTrip?.from) {
+    if ((initialTrip as any)?.destinationCoords && initialTrip?.to && initialTrip?.from) {
       const initial = buildWeatherAwareRoutes(initialTrip.from, initialTrip.to, 0, 'normal');
       return initial?.routes || [];
     }
@@ -129,7 +129,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   });
   const [activeRouteId, setActiveRouteId] = useState<string>('route-safest');
   const [departureOptions, setDepartureOptions] = useState<DepartureTimeOption[]>(() => {
-    if (initialTrip?.to && initialTrip?.from) {
+    if ((initialTrip as any)?.destinationCoords && initialTrip?.to && initialTrip?.from) {
       const initial = buildWeatherAwareRoutes(initialTrip.from, initialTrip.to, 0, 'normal');
       return initial?.departureOptions || [];
     }
@@ -857,10 +857,10 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
       {/* Main Interactive Leaflet Map Canvas or Placeholder */}
       <div className="relative flex-1 w-full overflow-hidden flex flex-col">
-        {destinationName && destinationCoords && safeRoutes.length > 0 ? (
+        {destinationName.trim().length > 0 || isNavigating ? (
           <>
             <InteractiveMapCanvas
-              routes={safeRoutes}
+              routes={safeRoutes.length > 0 ? safeRoutes : buildWeatherAwareRoutes(originName, destinationName || 'Destination', 0, 'normal').routes}
               activeRouteId={activeRouteId}
               onSelectRoute={setActiveRouteId}
               destinationName={destinationName}
@@ -879,7 +879,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               onMapClick={handleMapClick}
               onRoutePointClick={handleRoutePointClick}
               originCoords={originCoords}
-              destinationCoords={destinationCoords}
+              destinationCoords={destinationCoords || [28.4358, 77.1082]}
               gpsCoords={gpsCoords}
             />
 
@@ -900,6 +900,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
                 setDestinationCoords([pt.lat, pt.lng]);
                 setDestinationQuery(pt.name);
                 setSelectedPointWeather(null);
+                fetchRouteAndWeather(originCoords, originName, [pt.lat, pt.lng], pt.name, travelMode);
               }}
             />
 
