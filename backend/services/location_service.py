@@ -90,38 +90,133 @@ def get_location(location_name: str | None) -> dict[str, Any] | None:
 
 
 def reverse_geocode(latitude: float, longitude: float) -> dict[str, Any] | None:
-    """Resolve coordinates to a nearby place using OpenStreetMap Nominatim."""
+    """Resolve coordinates to a detailed nearby locality using OSM Nominatim and fallbacks."""
     try:
         response = requests.get(
             "https://nominatim.openstreetmap.org/reverse",
             params={"lat": latitude, "lon": longitude, "format": "jsonv2", "zoom": 18, "addressdetails": 1},
-            headers={"User-Agent": "WeatherGPT-development/1.0"},
+            headers={"User-Agent": "WeatherGPT-Locality/1.0"},
             timeout=10,
         )
         response.raise_for_status()
         payload = response.json()
         address = payload.get("address", {})
-        # Prefer the smallest useful locality so users see names such as
-        # "Vijay Vihar" instead of only the parent city "Delhi".
+
+        # If zoom 18 did not yield a specific sub-locality, query zoom 16 for broader locality/suburb
+        if not any(address.get(k) for k in ["neighbourhood", "quarter", "suburb", "residential", "city_district"]):
+            try:
+                resp16 = requests.get(
+                    "https://nominatim.openstreetmap.org/reverse",
+                    params={"lat": latitude, "lon": longitude, "format": "jsonv2", "zoom": 16, "addressdetails": 1},
+                    headers={"User-Agent": "WeatherGPT-Locality/1.0"},
+                    timeout=8,
+                )
+                if resp16.ok:
+                    addr16 = resp16.json().get("address", {})
+                    for k in ["neighbourhood", "quarter", "suburb", "residential", "city_district"]:
+                        if addr16.get(k):
+                            address[k] = addr16[k]
+            except Exception:
+                pass
+
+        neighbourhood = address.get("neighbourhood") or address.get("housing_estate") or ""
+        quarter = address.get("quarter") or address.get("subdivision") or ""
+        suburb = address.get("suburb") or ""
+        residential = address.get("residential") or ""
+        city_district = address.get("city_district") or address.get("district") or address.get("subdistrict") or ""
+        village = address.get("village") or address.get("hamlet") or ""
+        town = address.get("town") or ""
+        city = address.get("city") or address.get("municipality") or town or village or ""
+        state = address.get("state", "")
+
+        # Prefer the most specific useful locality (e.g., "Vijay Vihar" or "Rohini")
         area = (
-            address.get("neighbourhood")
-            or address.get("quarter")
-            or address.get("suburb")
-            or address.get("residential")
-            or address.get("village")
-            or address.get("town")
-            or address.get("city")
+            neighbourhood
+            or quarter
+            or suburb
+            or residential
+            or village
+            or town
+            or city_district
         )
-        city = address.get("city") or address.get("town") or address.get("village")
-        label = f"{area}, {city}" if area and city and area.lower() != city.lower() else (area or city)
+
+        display_name = payload.get("display_name", "")
+        # If area is missing or equals the parent city, parse leading segments from display_name
+        if not area or area.strip().lower() == city.strip().lower():
+            parts = [p.strip() for p in display_name.split(",") if p.strip()]
+            for p in parts:
+                p_lower = p.lower()
+                if (
+                    p_lower not in {city.lower(), state.lower(), "india"}
+                    and not p.replace(" ", "").isdigit()
+                    and not any(term in p_lower for term in ["district", "postal", "pin", "state"])
+                ):
+                    area = p
+                    break
+
+        if area and city and area.strip().lower() != city.strip().lower():
+            label = f"{area.strip()}, {city.strip()}"
+        elif area and state and area.strip().lower() != state.strip().lower():
+            label = f"{area.strip()}, {state.strip()}"
+        else:
+            label = area or city or state or "Current location"
+
         return {
             "name": label or "Current location",
-            "area": area or "Current area",
+            "area": area or city or "Current area",
+            "neighbourhood": neighbourhood,
+            "quarter": quarter,
+            "suburb": suburb,
+            "residential": residential,
+            "city_district": city_district,
+            "village": village,
+            "town": town,
             "city": city or "",
-            "state": address.get("state", ""),
+            "state": state,
             "latitude": latitude,
             "longitude": longitude,
-            "display_name": payload.get("display_name", label or "Current location"),
+            "display_name": display_name or label or "Current location",
         }
     except (requests.RequestException, ValueError, AttributeError):
+        # Fallback to BigDataCloud reverse geocode if Nominatim is rate-limited or unavailable
+        try:
+            bdc_resp = requests.get(
+                "https://api.bigdatacloud.net/data/reverse-geocode-client",
+                params={"latitude": latitude, "longitude": longitude, "localityLanguage": "en"},
+                headers={"User-Agent": "WeatherGPT-Locality/1.0"},
+                timeout=8,
+            )
+            if bdc_resp.ok:
+                bdc_data = bdc_resp.json()
+                locality = bdc_data.get("locality") or ""
+                city_name = bdc_data.get("city") or bdc_data.get("principalSubdivision") or ""
+                state_name = bdc_data.get("principalSubdivision") or ""
+                admin_items = bdc_data.get("localityInfo", {}).get("administrative", [])
+                sub_area = ""
+                if admin_items:
+                    sub_area = admin_items[-1].get("name", "")
+                chosen_area = sub_area or locality or city_name
+                label_bdc = (
+                    f"{chosen_area}, {city_name}"
+                    if chosen_area and city_name and chosen_area.lower() != city_name.lower()
+                    else (chosen_area or city_name)
+                )
+                return {
+                    "name": label_bdc or "Current location",
+                    "area": chosen_area or "",
+                    "neighbourhood": chosen_area if chosen_area != city_name else "",
+                    "quarter": "",
+                    "suburb": "",
+                    "residential": "",
+                    "city_district": locality,
+                    "village": "",
+                    "town": "",
+                    "city": city_name,
+                    "state": state_name,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "display_name": f"{chosen_area}, {city_name}, {state_name}, India",
+                }
+        except Exception:
+            pass
         return None

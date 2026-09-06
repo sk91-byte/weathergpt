@@ -125,7 +125,7 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
     setGpsNotice(null);
 
     if (typeof window === 'undefined' || !navigator.geolocation) {
-      setGpsNotice('Geolocation not supported. Please type your location.');
+      setGpsNotice('We could not detect your location. You can search for your area manually.');
       setIsLocatingOrigin(false);
       return;
     }
@@ -137,16 +137,18 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
           const lon = pos.coords.longitude;
           setOriginCoords([lat, lon]);
 
+          let placeLabel = `GPS Location (${lat.toFixed(3)}°N, ${lon.toFixed(3)}°E)`;
           try {
-            const pt = await apiGetPointWeather(lat, lon);
-            if (pt && pt.location_name) {
-              setOriginInput(`${pt.location_name} (Current GPS)`);
-            } else {
-              setOriginInput(`GPS Location (${lat.toFixed(3)}°N, ${lon.toFixed(3)}°E)`);
+            const res = await apiResolveLocation(undefined, lat, lon);
+            if (res && res.name) {
+              placeLabel = res.name;
             }
-          } catch {
-            setOriginInput(`GPS Location (${lat.toFixed(3)}°N, ${lon.toFixed(3)}°E)`);
+          } catch (err) {
+            if (import.meta.env.DEV) {
+              console.warn('Reverse geocode error in LiveMapPlanTripModal:', err);
+            }
           }
+          setOriginInput(placeLabel);
         } catch {
           setOriginInput('Current GPS Location');
         } finally {
@@ -154,11 +156,15 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
           setActiveField(null);
         }
       },
-      () => {
+      (err) => {
         setIsLocatingOrigin(false);
-        setGpsNotice('Location access denied or unavailable. Please search manually.');
+        if (err.code === 1) {
+          setGpsNotice('Location permission is blocked. Please allow location access in your browser settings.');
+        } else {
+          setGpsNotice('We could not detect your location. You can search for your area manually.');
+        }
       },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 

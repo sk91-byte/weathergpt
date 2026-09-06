@@ -42,10 +42,11 @@ export const Header: React.FC<HeaderProps> = ({
         {city && onOpenCitySelector && (
           <button
             onClick={onOpenCitySelector}
+            title={city}
             className="flex items-center space-x-1 px-2.5 py-1 bg-slate-200/70 hover:bg-slate-200 rounded-full text-xs font-semibold text-slate-800 transition cursor-pointer"
           >
-            <MapPin className="w-3 h-3 text-blue-600" />
-            <span className="truncate max-w-[110px]">{city}</span>
+            <MapPin className="w-3 h-3 text-blue-600 shrink-0" />
+            <span className="truncate max-w-[140px] sm:max-w-[180px]">{city}</span>
           </button>
         )}
       </div>

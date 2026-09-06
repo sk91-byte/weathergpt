@@ -140,20 +140,16 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
           const lon = pos.coords.longitude;
           setOriginCoords([lat, lon]);
 
-          // Attempt reverse geocoding for a human-readable place name
           let resolvedPlaceName = `Current Location (${lat.toFixed(3)}°N, ${lon.toFixed(3)}°E)`;
           try {
-            const pt = await apiGetPointWeather(lat, lon);
-            if (pt && pt.location_name) {
-              resolvedPlaceName = `${pt.location_name} (Current GPS)`;
-            } else {
-              const res = await apiResolveLocation(undefined, lat, lon);
-              if (res && res.name) {
-                resolvedPlaceName = `${res.name} (Current GPS)`;
-              }
+            const res = await apiResolveLocation(undefined, lat, lon);
+            if (res && res.name) {
+              resolvedPlaceName = res.name;
             }
           } catch (e) {
-            console.warn('Reverse geocode error:', e);
+            if (import.meta.env.DEV) {
+              console.warn('Reverse geocode error:', e);
+            }
           }
 
           setNewFrom(resolvedPlaceName);
@@ -161,7 +157,9 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
           setTimeout(() => setLocationSuccessBadge(null), 3500);
           setActiveSearchField(null);
         } catch (err) {
-          console.warn('GPS location handling error:', err);
+          if (import.meta.env.DEV) {
+            console.warn('GPS location handling error:', err);
+          }
         } finally {
           setIsLocatingOrigin(false);
         }
@@ -169,14 +167,12 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
       (err) => {
         setIsLocatingOrigin(false);
         if (err.code === 1) {
-          setGpsNotice('Location access was denied. You can search any city, campus, or landmark manually.');
-        } else if (err.code === 2) {
-          setGpsNotice('GPS signal unavailable. Please search your starting location.');
+          setGpsNotice('Location permission is blocked. Please allow location access in your browser settings.');
         } else {
-          setGpsNotice('Location request timed out. Please enter your location manually.');
+          setGpsNotice('We could not detect your location. You can search for your area manually.');
         }
       },
-      { enableHighAccuracy: true, timeout: 9000, maximumAge: 30000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 

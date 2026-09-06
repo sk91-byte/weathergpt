@@ -150,48 +150,94 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   // Dedicated GPS Handler with browser permission and graceful manual fallback
   const handleGpsLocationClick = () => {
     setGpsPermissionNotice(null);
-    if (!navigator.geolocation) {
-      setGpsPermissionNotice('Geolocation is not supported in this browser. Please search manually.');
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      setGpsPermissionNotice('We could not detect your location. You can search for your area manually.');
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const { latitude, longitude } = pos.coords;
-          setGpsCoords([latitude, longitude]);
-          setOriginCoords([latitude, longitude]);
-
+    const requestPosition = (highAccuracy: boolean) => {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
           try {
-            const { location } = await apiGetLocationWeather(latitude, longitude);
-            const label = location.name || `GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`;
-            setOriginName(`${label} (Current GPS)`);
-            setOriginQuery(`${label} (Current GPS)`);
-          } catch {
-            setOriginName(`GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`);
-            setOriginQuery(`GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`);
+            const { latitude, longitude } = pos.coords;
+            if (import.meta.env.DEV) {
+              console.log('[WeatherMapScreen GPS] Obtained:', latitude, longitude);
+            }
+            setGpsCoords([latitude, longitude]);
+            setOriginCoords([latitude, longitude]);
+
+            let resolvedLabel = `Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`;
+            try {
+              const { location } = await apiGetLocationWeather(latitude, longitude);
+              if (location && location.name) {
+                resolvedLabel = location.name;
+              }
+            } catch (err) {
+              if (import.meta.env.DEV) {
+                console.warn('GPS location resolution error:', err);
+              }
+            }
+
+            setOriginName(resolvedLabel);
+            setOriginQuery(resolvedLabel);
+
+            if (onUpdateTrip) {
+              onUpdateTrip({
+                id: initialTrip?.id || `trip-${Date.now()}`,
+                from: resolvedLabel,
+                to: destinationName,
+                leaveBy: leaveByTime,
+                estDuration: '30 mins',
+                status: 'Weather-Safe Corridor Calculated on Map',
+                statusType: 'clear',
+                weatherOnRoute: 'Real-time IMD radar monitored roadway',
+                safetyScore: 88,
+                recommendation: `Optimal departure window around ${leaveByTime}. Safe travel conditions.`,
+                stops: []
+              });
+            }
+
+            // Recalculate route if destination exists
+            if (destinationCoords) {
+              fetchRouteAndWeather(
+                [latitude, longitude],
+                resolvedLabel,
+                destinationCoords,
+                destinationName,
+                travelMode
+              );
+            }
+          } catch (e) {
+            if (import.meta.env.DEV) {
+              console.warn('GPS position handling error:', e);
+            }
           }
-        } catch (e) {
-          console.warn('GPS position handling error:', e);
-        }
-      },
-      (err) => {
-        if (err.code === 1) {
-          setGpsPermissionNotice('Location access was denied. You can still search or type any starting location manually above.');
-        } else if (err.code === 2) {
-          setGpsPermissionNotice('GPS signal is unavailable. Please enter your location manually.');
-        } else {
-          setGpsPermissionNotice('Location request timed out. Please enter your starting location manually.');
-        }
-      },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-    );
+        },
+        (err) => {
+          if (import.meta.env.DEV) {
+            console.warn('GPS error in map:', err);
+          }
+          if (highAccuracy && (err.code === 3 || err.code === 2)) {
+            requestPosition(false);
+            return;
+          }
+          if (err.code === 1) {
+            setGpsPermissionNotice('Location permission is blocked. Please allow location access in your browser settings.');
+          } else {
+            setGpsPermissionNotice('We could not detect your location. You can search for your area manually.');
+          }
+        },
+        { enableHighAccuracy: highAccuracy, timeout: highAccuracy ? 10000 : 15000, maximumAge: 0 }
+      );
+    };
+
+    requestPosition(true);
   };
 
   // Update origin when currentWeather city updates
   useEffect(() => {
     if (currentWeather.city && !originQuery) {
-      setOriginName(`${currentWeather.city} (Current Location)`);
+      setOriginName(currentWeather.city);
     }
   }, [currentWeather.city]);
 

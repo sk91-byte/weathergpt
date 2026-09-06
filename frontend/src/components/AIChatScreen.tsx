@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Mic, MicOff, Sparkles, Volume2, VolumeX, ArrowRight, Umbrella, CloudRain, RotateCcw, ChevronLeft, Bot, Loader2, AlertTriangle } from './Icons';
 import { ChatMessage, Language, WeatherData, RouteTrip } from '../types';
+import { apiSendChat } from '../services/api';
 
 interface AIChatScreenProps {
   weather: WeatherData;
@@ -156,27 +157,16 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
     setLoading(true);
 
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: textToSend,
-          language: currentLanguage,
+      const data = await apiSendChat(textToSend, {
+        language: currentLanguage,
+        role: 'citizen',
+        route_context: {
           city: weather.city,
-          role: 'citizen',
-          savedTrip: {
-            from: trip.from,
-            to: trip.to,
-            leaveBy: trip.leaveBy
-          }
-        })
+          from: trip.from,
+          to: trip.to,
+          leaveBy: trip.leaveBy
+        }
       });
-
-      if (!res.ok) {
-        throw new Error('API response failed');
-      }
-
-      const data = await res.json();
       const botMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         sender: 'weathergpt',

@@ -50,63 +50,73 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
     setLocationError(null);
 
     if (typeof window === 'undefined' || !navigator.geolocation) {
-      setLocationError('Geolocation is not supported by your browser. Please search your city below.');
+      setLocationError('We could not detect your location. You can search for your area manually.');
       setIsLocating(false);
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const { latitude, longitude } = pos.coords;
-          const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
-          if (liveWeather) {
-            setSelectedWeather({
-              ...selectedWeather,
-              city: location.name || 'Current location',
-              state: '',
-              country: 'India',
-              temperature: liveWeather.temperature,
-              feelsLike: liveWeather.feels_like,
-              condition: liveWeather.condition,
-              conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
-              humidity: liveWeather.humidity,
-              windSpeed: liveWeather.wind_speed,
-              windDirection: liveWeather.wind_direction,
-              rainChance: liveWeather.rain_probability,
-              lastUpdated: 'Just now'
-            });
-            setGpsDetected(true);
-            setLocationError(null);
-          } else {
-            throw new Error('Could not parse location data');
+    const requestPosition = (highAccuracy: boolean) => {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            const { latitude, longitude } = pos.coords;
+            if (import.meta.env.DEV) {
+              console.log('[Onboarding GPS] Coordinates:', latitude, longitude);
+            }
+            const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
+            if (liveWeather) {
+              const detectedCity = location.name || 'Current location';
+              setSelectedWeather({
+                ...selectedWeather,
+                city: detectedCity,
+                state: location.state || '',
+                country: 'India',
+                temperature: liveWeather.temperature,
+                feelsLike: liveWeather.feels_like,
+                condition: liveWeather.condition,
+                conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
+                humidity: liveWeather.humidity,
+                windSpeed: liveWeather.wind_speed,
+                windDirection: liveWeather.wind_direction,
+                rainChance: liveWeather.rain_probability,
+                lastUpdated: 'Live GPS'
+              });
+              setGpsDetected(true);
+              setLocationError(null);
+            } else {
+              throw new Error('Could not parse location data');
+            }
+          } catch (err: any) {
+            if (import.meta.env.DEV) {
+              console.warn('Live location API error in onboarding:', err);
+            }
+            setGpsDetected(false);
+            setLocationError('We could not detect your location. You can search for your area manually.');
+          } finally {
+            setIsLocating(false);
           }
-        } catch (err: any) {
-          console.warn('Live location API fallback:', err);
-          // Fallback to Gurugram / Delhi NCR if API is unreachable
-          const fallbackData = DEFAULT_WEATHER_DATA['New Delhi, Delhi NCR'] || INITIAL_WEATHER;
-          setSelectedWeather({
-            ...fallbackData,
-            city: 'Gurugram',
-            state: 'Haryana'
-          });
-          setGpsDetected(true);
-          setLocationError(null);
-        } finally {
+        },
+        (err) => {
+          if (import.meta.env.DEV) {
+            console.warn('Geolocation error in onboarding:', err);
+          }
+          if (highAccuracy && (err.code === 3 || err.code === 2)) {
+            requestPosition(false);
+            return;
+          }
           setIsLocating(false);
-        }
-      },
-      (err) => {
-        setIsLocating(false);
-        setGpsDetected(false);
-        if (err.code === 1) {
-          setLocationError('Location permission was denied. You can search your city manually below.');
-        } else {
-          setLocationError('Unable to detect GPS position. You can search your city manually below.');
-        }
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    );
+          setGpsDetected(false);
+          if (err.code === 1) {
+            setLocationError('Location permission is blocked. Please allow location access in your browser settings.');
+          } else {
+            setLocationError('We could not detect your location. You can search for your area manually.');
+          }
+        },
+        { timeout: highAccuracy ? 10000 : 15000, enableHighAccuracy: highAccuracy, maximumAge: 0 }
+      );
+    };
+
+    requestPosition(true);
   };
 
   // City selection from list

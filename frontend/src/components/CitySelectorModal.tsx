@@ -91,11 +91,10 @@ export const CitySelectorModal: React.FC<CitySelectorModalProps> = ({
           </button>
 
           {locationError && (
-            <div className="mt-2.5 p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start space-x-2">
+            <div className="mt-2.5 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start space-x-2">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
               <div className="flex-1">
-                <p className="font-semibold">{locationError}</p>
-                <p className="text-[10px] text-red-600 mt-0.5">Please allow location access in your browser or search your city below.</p>
+                <p className="font-semibold leading-relaxed">{locationError}</p>
               </div>
             </div>
           )}

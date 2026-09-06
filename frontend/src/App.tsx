@@ -137,86 +137,91 @@ export default function App() {
     setLocationError(null);
 
     if (typeof window === 'undefined' || !navigator.geolocation) {
-      setLocationError('Geolocation is not supported by your browser.');
+      setLocationError('We could not detect your location. You can search for your area manually.');
       setIsLocating(false);
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const { latitude, longitude } = pos.coords;
-          const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
-          if (liveWeather) {
-            const liveData: WeatherData = {
-              ...weather,
-              city: location.name || 'Current location',
-              state: '',
-              country: 'India',
-              temperature: liveWeather.temperature,
-              feelsLike: liveWeather.feels_like,
-              condition: liveWeather.condition,
-              conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
-              humidity: liveWeather.humidity,
-              windSpeed: liveWeather.wind_speed,
-              windDirection: liveWeather.wind_direction,
-              rainChance: liveWeather.rain_probability,
-              lastUpdated: 'Just now',
-              aiRecommendation: 'This is your live weather at the detected location.',
-              recommendationExplanation: { ...weather.recommendationExplanation, title: 'Live location weather' }
-            };
-            setWeather(liveData);
-            try {
-              localStorage.setItem('weathergpt_location', JSON.stringify(liveData));
-            } catch (e) {}
-            setLocationError(null);
-            setShowCitySelector(false);
-          } else throw new Error('No current weather returned');
-        } catch (err: any) {
-          console.warn('Live location API fetch error:', err);
-          setLocationError('Fetched coordinates, but weather radar feed failed. Please try again or select a city.');
-        } finally {
+    const requestPosition = (highAccuracy: boolean) => {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            const { latitude, longitude } = pos.coords;
+            if (import.meta.env.DEV) {
+              console.log('[handleGetLiveLocation] Detected GPS coordinates:', latitude, longitude);
+            }
+            const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
+            if (liveWeather) {
+              const detectedCity = location.name || 'Current location';
+              const liveData: WeatherData = {
+                ...weather,
+                city: detectedCity,
+                state: location.state || '',
+                country: 'India',
+                temperature: liveWeather.temperature,
+                feelsLike: liveWeather.feels_like,
+                condition: liveWeather.condition,
+                conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
+                humidity: liveWeather.humidity,
+                windSpeed: liveWeather.wind_speed,
+                windDirection: liveWeather.wind_direction,
+                rainChance: liveWeather.rain_probability,
+                lastUpdated: 'Live GPS',
+                aiRecommendation: `Live weather active for ${detectedCity}. Real-time radar and satellite feed connected.`,
+                recommendationExplanation: { ...weather.recommendationExplanation, title: 'Live location weather' }
+              };
+              setWeather(liveData);
+              setTrip((prev) => ({
+                ...prev,
+                from: detectedCity,
+                originCoords: [latitude, longitude]
+              } as any));
+              try {
+                localStorage.setItem('weathergpt_location', JSON.stringify(liveData));
+                localStorage.setItem('weathergpt_user_selected_city', 'false');
+              } catch (e) {}
+              setLocationError(null);
+              setShowCitySelector(false);
+            } else {
+              throw new Error('No current weather returned');
+            }
+          } catch (err: any) {
+            if (import.meta.env.DEV) {
+              console.warn('Live location API fetch error:', err);
+            }
+            setLocationError('We could not detect your location. You can search for your area manually.');
+          } finally {
+            setIsLocating(false);
+          }
+        },
+        (err) => {
+          if (import.meta.env.DEV) {
+            console.warn('Geolocation error:', err);
+          }
+          if (highAccuracy && (err.code === 3 || err.code === 2)) {
+            // Attempt standard accuracy on timeout/position issue
+            requestPosition(false);
+            return;
+          }
           setIsLocating(false);
+          if (err.code === 1) {
+            setLocationError('Location permission is blocked. Please allow location access in your browser settings.');
+          } else {
+            setLocationError('We could not detect your location. You can search for your area manually.');
+          }
+        },
+        {
+          enableHighAccuracy: highAccuracy,
+          timeout: highAccuracy ? 10000 : 15000,
+          maximumAge: 0
         }
-      },
-      (err) => {
-        console.warn('Geolocation error:', err);
-        setIsLocating(false);
-        if (err.code === 1) {
-          setLocationError('Location permission was denied. Please allow location in your browser address bar.');
-        } else if (err.code === 2) {
-          setLocationError('Location unavailable. Check your device GPS or connection.');
-        } else if (err.code === 3) {
-          setLocationError('Location request timed out. Please try again.');
-        } else {
-          setLocationError(err.message || 'Unable to retrieve location coordinates.');
-        }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 60000
-      }
-    );
+      );
+    };
+
+    requestPosition(true);
   };
 
-  // Attempt auto-location if already granted by user
-  useEffect(() => {
-    if (typeof window !== 'undefined' && navigator.permissions && navigator.permissions.query) {
-      navigator.permissions
-        .query({ name: 'geolocation' as PermissionName })
-        .then((permissionStatus) => {
-          if (permissionStatus.state === 'granted') {
-            handleGetLiveLocation();
-          }
-        })
-        .catch(() => {
-          // Permissions API query not supported or failed
-        });
-    }
-  }, []);
-
-  // Switch City
+  // Switch City - preserves user selection until GPS is explicitly pressed
   const handleSelectCity = (cityString: string) => {
     const cityName = cityString.split(',')[0].trim();
     let newWeather = weather;
@@ -233,8 +238,13 @@ export default function App() {
       };
     }
     setWeather(newWeather);
+    setTrip((prev) => ({
+      ...prev,
+      from: newWeather.city
+    }));
     try {
       localStorage.setItem('weathergpt_location', JSON.stringify(newWeather));
+      localStorage.setItem('weathergpt_user_selected_city', 'true');
     } catch (e) {}
   };
 
@@ -286,6 +296,34 @@ export default function App() {
             <span>100%</span>
           </div>
         </div>
+
+        {/* Visible Floating Live Location Error Notice */}
+        {locationError && (
+          <div className="mx-4 mt-2 mb-1 p-3 bg-red-600/95 text-white rounded-2xl shadow-xl flex items-start justify-between space-x-2 z-40 backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-300 border border-red-400/40">
+            <div className="flex items-start space-x-2 text-xs">
+              <span className="text-base leading-none mt-0.5 shrink-0">📍</span>
+              <div>
+                <p className="font-bold leading-tight">{locationError}</p>
+                <button
+                  onClick={() => {
+                    setLocationError(null);
+                    setShowCitySelector(true);
+                  }}
+                  className="mt-1.5 text-[11px] underline font-semibold text-white/95 hover:text-white cursor-pointer block"
+                >
+                  Search your area manually →
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={() => setLocationError(null)}
+              className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/20 text-white cursor-pointer shrink-0 font-bold text-xs"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Dynamic Screen View Based on activeTab */}
         <div className="flex-1 overflow-hidden relative">

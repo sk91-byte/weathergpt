@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Mic, MicOff, Volume2, VolumeX, Sparkles, CheckCircle2, RotateCcw, AlertTriangle, Loader2 } from './Icons';
 import { Language, WeatherData } from '../types';
+import { apiSendChat } from '../services/api';
 
 interface VoiceAssistantModalProps {
   weather: WeatherData;
@@ -178,21 +179,13 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const processVoiceQuery = async (queryText: string) => {
     setIsProcessing(true);
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: queryText,
-          language: currentLanguage,
-          city: weather.city,
-          role: 'citizen'
-        })
+      const data = await apiSendChat(queryText, {
+        language: currentLanguage,
+        role: 'citizen',
+        route_context: { city: weather.city }
       });
-
-      if (!res.ok) throw new Error('Failed to fetch AI voice response');
-
-      const data = await res.json();
-      const reply = data.response;
+      const reply = data.response || data.reply || data.message;
+      if (!reply) throw new Error('Empty voice response');
       setResponse(reply);
       speakText(reply);
     } catch (e) {

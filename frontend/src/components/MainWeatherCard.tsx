@@ -45,11 +45,14 @@ export const MainWeatherCard: React.FC<MainWeatherCardProps> = ({
                 e.stopPropagation();
                 onSelectCity();
               }}
+              title={weather.city}
               className="inline-flex items-center space-x-1.5 px-3 py-1 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-full text-xs font-semibold tracking-wide transition border border-white/25 cursor-pointer shadow-xs"
             >
-              <MapPin className="w-3.5 h-3.5 fill-white/80 stroke-white text-white" />
-              <span className="truncate max-w-[150px]">{weather.city}, {weather.country}</span>
-              <ChevronRight className="w-3.5 h-3.5 opacity-70" />
+              <MapPin className="w-3.5 h-3.5 fill-white/80 stroke-white text-white shrink-0" />
+              <span className="truncate max-w-[190px] sm:max-w-[230px]">
+                {weather.city.includes(',') ? weather.city : `${weather.city}, ${weather.country}`}
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 opacity-70 shrink-0" />
             </button>
 
             {onUseLiveLocation && (
