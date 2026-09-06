@@ -91,19 +91,21 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const [originName, setOriginName] = useState<string>(
     initialTrip?.from || (currentWeather.city ? `${currentWeather.city} (Current Location)` : 'DLF CyberCity, Gurgaon')
   );
-  const [originQuery, setOriginQuery] = useState<string>('');
+  const [originQuery, setOriginQuery] = useState<string>(
+    initialTrip?.from || (currentWeather.city ? `${currentWeather.city} (Current Location)` : 'DLF CyberCity, Gurgaon')
+  );
   const [originCoords, setOriginCoords] = useState<[number, number]>(
-    (initialTrip as any)?.originCoords || [28.4986, 77.0878] // CyberCity Gurgaon default
+    (initialTrip as any)?.originCoords || (currentWeather.latitude && currentWeather.longitude ? [currentWeather.latitude, currentWeather.longitude] : [28.4986, 77.0878])
   );
 
   const [destinationName, setDestinationName] = useState<string>(
-    initialTrip?.to || DESTINATION_PRESETS[0].name // Sushant University, Sector 55
+    initialTrip?.to || ''
   );
   const [destinationQuery, setDestinationQuery] = useState<string>(
-    initialTrip?.to || DESTINATION_PRESETS[0].name
+    initialTrip?.to || ''
   );
-  const [destinationCoords, setDestinationCoords] = useState<[number, number]>(
-    (initialTrip as any)?.destinationCoords || [28.4358, 77.1082]
+  const [destinationCoords, setDestinationCoords] = useState<[number, number] | null>(
+    (initialTrip as any)?.destinationCoords || null
   );
 
   const [travelMode, setTravelMode] = useState<string>('driving');
@@ -119,13 +121,19 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
   // 3. Routes & Departures
   const [routes, setRoutes] = useState<LiveMapRoute[]>(() => {
-    const initial = buildWeatherAwareRoutes(originName, destinationName, 0, 'normal');
-    return initial?.routes || [];
+    if (initialTrip?.to && initialTrip?.from) {
+      const initial = buildWeatherAwareRoutes(initialTrip.from, initialTrip.to, 0, 'normal');
+      return initial?.routes || [];
+    }
+    return [];
   });
   const [activeRouteId, setActiveRouteId] = useState<string>('route-safest');
   const [departureOptions, setDepartureOptions] = useState<DepartureTimeOption[]>(() => {
-    const initial = buildWeatherAwareRoutes(originName, destinationName, 0, 'normal');
-    return initial?.departureOptions || [];
+    if (initialTrip?.to && initialTrip?.from) {
+      const initial = buildWeatherAwareRoutes(initialTrip.from, initialTrip.to, 0, 'normal');
+      return initial?.departureOptions || [];
+    }
+    return [];
   });
   const [routeSteps, setRouteSteps] = useState<any[]>([]);
 
@@ -473,16 +481,18 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     []
   );
 
-  // Initial Route & on Origin / Destination changes
+  // Route calculation on Origin / Destination changes
   useEffect(() => {
-    fetchRouteAndWeather(
-      originCoords,
-      originName,
-      destinationCoords,
-      destinationName,
-      travelMode
-    );
-  }, [originCoords, destinationCoords, travelMode, fetchRouteAndWeather]);
+    if (originCoords && destinationCoords && destinationName.trim()) {
+      fetchRouteAndWeather(
+        originCoords,
+        originName,
+        destinationCoords,
+        destinationName,
+        travelMode
+      );
+    }
+  }, [originCoords, destinationCoords, destinationName, originName, travelMode, fetchRouteAndWeather]);
 
   // Click on Map -> Real Point Weather
   const handleMapClick = async (lat: number, lon: number) => {
@@ -739,6 +749,65 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         </div>
       )}
 
+      {/* 3-Step Flow Indicator Banner */}
+      {!isNavigating && (
+        <div className="relative z-20 bg-slate-900/95 px-3 sm:px-4 py-1.5 border-b border-slate-800 flex items-center justify-between text-[11px]">
+          <div className="flex items-center space-x-1.5 sm:space-x-2 w-full overflow-x-auto">
+            {/* Step 1: Start Location */}
+            <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-xl border font-bold shrink-0 transition ${
+              originName ? 'bg-emerald-950/70 border-emerald-500/60 text-emerald-300' : 'bg-slate-800/80 border-slate-700 text-slate-400'
+            }`}>
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${
+                originName ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-slate-300'
+              }`}>
+                1
+              </span>
+              <span>Start location</span>
+              {originName && <span className="text-emerald-400 text-xs">✓</span>}
+            </div>
+
+            <span className="text-slate-600 font-bold shrink-0">→</span>
+
+            {/* Step 2: Destination */}
+            <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-xl border font-bold shrink-0 transition ${
+              destinationName && destinationCoords
+                ? 'bg-emerald-950/70 border-emerald-500/60 text-emerald-300'
+                : !destinationName && originName
+                ? 'bg-sky-950/80 border-sky-500/70 text-sky-200 ring-1 ring-sky-500/40'
+                : 'bg-slate-800/80 border-slate-700 text-slate-400'
+            }`}>
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${
+                destinationName && destinationCoords
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'bg-sky-500 text-white'
+              }`}>
+                2
+              </span>
+              <span>Destination</span>
+              {destinationName && destinationCoords && <span className="text-emerald-400 text-xs">✓</span>}
+            </div>
+
+            <span className="text-slate-600 font-bold shrink-0">→</span>
+
+            {/* Step 3: View Route and Weather */}
+            <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-xl border font-bold shrink-0 transition ${
+              destinationName && destinationCoords && safeRoutes.length > 0
+                ? 'bg-blue-600/30 border-blue-500/60 text-sky-200'
+                : 'bg-slate-800/80 border-slate-700 text-slate-400'
+            }`}>
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${
+                destinationName && destinationCoords && safeRoutes.length > 0
+                  ? 'bg-blue-500 text-white shadow-xs'
+                  : 'bg-slate-700 text-slate-300'
+              }`}>
+                3
+              </span>
+              <span>View route and weather</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Dual Origin & Destination Search Bar */}
       {!isNavigating && (
         <SearchAndDestinations
@@ -747,7 +816,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           originCoords={originCoords}
           destinationQuery={destinationQuery}
           onDestinationChange={setDestinationQuery}
-          destinationCoords={destinationCoords}
+          destinationCoords={destinationCoords || undefined}
           isOpen={isSearchOpen}
           onOpen={() => setIsSearchOpen(true)}
           onClose={() => setIsSearchOpen(false)}
@@ -771,6 +840,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           onClearDestination={() => {
             setDestinationName('');
             setDestinationQuery('');
+            setDestinationCoords(null);
+            setRoutes([]);
           }}
           onUseGps={handleGpsLocationClick}
           isLocating={isLocating}
@@ -784,89 +855,93 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         />
       )}
 
-      {/* Main Interactive Leaflet Map Canvas */}
-      <div className="relative flex-1 w-full overflow-hidden">
-        <InteractiveMapCanvas
-          routes={safeRoutes}
-          activeRouteId={activeRouteId}
-          onSelectRoute={setActiveRouteId}
-          destinationName={destinationName}
-          originName={originName}
-          isNavigating={isNavigating}
-          vehicleProgress={vehicleProgress}
-          showNearbyPlaces={showNearbyPlaces}
-          onToggleNearbyPlaces={() => setShowNearbyPlaces(!showNearbyPlaces)}
-          nearbyPlaces={nearbyPlaces}
-          selectedNearbyPlace={selectedNearbyPlace}
-          onSelectNearbyPlace={setSelectedNearbyPlace}
-          showRadarOverlay={showRadarOverlay}
-          onToggleRadar={() => setShowRadarOverlay(!showRadarOverlay)}
-          weatherLayerType={weatherLayerType}
-          onChangeWeatherLayer={setWeatherLayerType}
-          onMapClick={handleMapClick}
-          onRoutePointClick={handleRoutePointClick}
-          originCoords={originCoords}
-          destinationCoords={destinationCoords}
-          gpsCoords={gpsCoords}
-        />
+      {/* Main Interactive Leaflet Map Canvas or Placeholder */}
+      <div className="relative flex-1 w-full overflow-hidden flex flex-col">
+        {destinationName && destinationCoords && safeRoutes.length > 0 ? (
+          <>
+            <InteractiveMapCanvas
+              routes={safeRoutes}
+              activeRouteId={activeRouteId}
+              onSelectRoute={setActiveRouteId}
+              destinationName={destinationName}
+              originName={originName}
+              isNavigating={isNavigating}
+              vehicleProgress={vehicleProgress}
+              showNearbyPlaces={showNearbyPlaces}
+              onToggleNearbyPlaces={() => setShowNearbyPlaces(!showNearbyPlaces)}
+              nearbyPlaces={nearbyPlaces}
+              selectedNearbyPlace={selectedNearbyPlace}
+              onSelectNearbyPlace={setSelectedNearbyPlace}
+              showRadarOverlay={showRadarOverlay}
+              onToggleRadar={() => setShowRadarOverlay(!showRadarOverlay)}
+              weatherLayerType={weatherLayerType}
+              onChangeWeatherLayer={setWeatherLayerType}
+              onMapClick={handleMapClick}
+              onRoutePointClick={handleRoutePointClick}
+              originCoords={originCoords}
+              destinationCoords={destinationCoords}
+              gpsCoords={gpsCoords}
+            />
 
-        {/* Floating Quick Destination Pill on Map */}
-        {!isNavigating && (
-          <div className="absolute top-2.5 right-2.5 z-20 pointer-events-auto">
-            <button
-              onClick={() => setShowPlanTripModal(true)}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700/80 shadow-lg backdrop-blur-md text-[11px] font-bold flex items-center space-x-1.5 transition active:scale-95 cursor-pointer"
-              title="Set or change destination"
-            >
-              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-slate-400 font-medium">To:</span>
-              <span className="text-white font-extrabold truncate max-w-[110px] sm:max-w-[160px]">
-                {destinationName.split(',')[0]}
-              </span>
-              <span className="text-sky-400 text-[10px] font-bold bg-sky-950/80 px-1.5 py-0.5 rounded-md border border-sky-800/60">
-                Change
-              </span>
-            </button>
+            {/* Map Point Weather Popup (When any point or waypoint is clicked) */}
+            <MapWeatherPopup
+              weather={selectedPointWeather}
+              isLoading={isFetchingPointWeather}
+              language={language}
+              onClose={() => setSelectedPointWeather(null)}
+              onSetAsOrigin={(pt) => {
+                setOriginName(pt.name);
+                setOriginCoords([pt.lat, pt.lng]);
+                setOriginQuery(pt.name);
+                setSelectedPointWeather(null);
+              }}
+              onSetAsDestination={(pt) => {
+                setDestinationName(pt.name);
+                setDestinationCoords([pt.lat, pt.lng]);
+                setDestinationQuery(pt.name);
+                setSelectedPointWeather(null);
+              }}
+            />
+
+            {/* Route-Specific Conversational Chat Drawer */}
+            <RouteChatDrawer
+              isOpen={isChatOpen}
+              onClose={() => setIsChatOpen(false)}
+              language={language}
+              routeContext={{
+                origin: originName,
+                destination: destinationName,
+                safetyScore: activeRoute?.safetyScore,
+                rainRisk: activeRoute?.rainRisk,
+                waterloggingRisk: activeRoute?.waterloggingRisk,
+                summaryCondition: activeRoute?.summaryCondition,
+                bestDepartureTime: departureOptions.find((d) => d.isRecommended)?.time,
+                distanceKm: activeRoute?.distanceKm,
+                durationMinutes: activeRoute?.durationMinutes
+              }}
+            />
+          </>
+        ) : (
+          /* Simple Map Placeholder before selecting destination */
+          <div className="relative flex-1 w-full flex flex-col items-center justify-center p-6 text-center select-none bg-slate-900">
+            <div className="max-w-md w-full p-8 rounded-3xl bg-slate-800/80 border border-slate-700/80 shadow-2xl backdrop-blur-md flex flex-col items-center animate-in fade-in zoom-in-95 duration-200">
+              <div className="w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-3xl mb-4 shadow-lg text-sky-400">
+                🗺️
+              </div>
+              <h2 className="text-lg font-black text-white tracking-wide mb-1.5">
+                Your map will appear here
+              </h2>
+              <p className="text-sm font-semibold text-slate-300 mb-5">
+                Choose a start and destination above.
+              </p>
+
+              <div className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-slate-900/80 border border-slate-700 text-xs text-slate-300 font-medium">
+                <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping inline-block" />
+                <span>Search an Indian location above and click <strong className="text-white">Show route</strong></span>
+              </div>
+            </div>
           </div>
         )}
-
-        {/* Map Point Weather Popup (When any point or waypoint is clicked) */}
-        <MapWeatherPopup
-          weather={selectedPointWeather}
-          isLoading={isFetchingPointWeather}
-          language={language}
-          onClose={() => setSelectedPointWeather(null)}
-          onSetAsOrigin={(pt) => {
-            setOriginName(pt.name);
-            setOriginCoords([pt.lat, pt.lng]);
-            setOriginQuery(pt.name);
-            setSelectedPointWeather(null);
-          }}
-          onSetAsDestination={(pt) => {
-            setDestinationName(pt.name);
-            setDestinationCoords([pt.lat, pt.lng]);
-            setDestinationQuery(pt.name);
-            setSelectedPointWeather(null);
-          }}
-        />
-
-        {/* Route-Specific Conversational Chat Drawer */}
-        <RouteChatDrawer
-          isOpen={isChatOpen}
-          onClose={() => setIsChatOpen(false)}
-          language={language}
-          routeContext={{
-            origin: originName,
-            destination: destinationName,
-            safetyScore: activeRoute?.safetyScore,
-            rainRisk: activeRoute?.rainRisk,
-            waterloggingRisk: activeRoute?.waterloggingRisk,
-            summaryCondition: activeRoute?.summaryCondition,
-            bestDepartureTime: departureOptions.find((d) => d.isRecommended)?.time,
-            distanceKm: activeRoute?.distanceKm,
-            durationMinutes: activeRoute?.durationMinutes
-          }}
-        />
       </div>
 
       {/* Sequential Route Analysis Loader */}
@@ -878,7 +953,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
       )}
 
       {/* Route Comparison Bottom Drawer */}
-      {destinationName && !isNavigating && !isAnalyzing && (
+      {destinationName && !isNavigating && !isAnalyzing && safeRoutes.length > 0 && (
         <RouteComparisonDrawer
           routes={safeRoutes}
           activeRouteId={activeRouteId}
@@ -889,6 +964,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           language={language}
           onChangeLanguage={setLanguage}
           userRole={userRole}
+          currentWeather={currentWeather}
           onStartNavigation={() => {
             setIsNavigating(true);
             setVehicleProgress(0);

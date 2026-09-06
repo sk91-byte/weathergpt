@@ -48,6 +48,7 @@ interface RouteComparisonDrawerProps {
   language?: AppLanguage;
   onChangeLanguage?: (lang: AppLanguage) => void;
   userRole?: string;
+  currentWeather?: any;
 }
 
 export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
@@ -74,7 +75,8 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
   destinationName = 'Destination',
   language = 'en',
   onChangeLanguage,
-  userRole = 'citizen'
+  userRole = 'citizen',
+  currentWeather
 }) => {
   const [showSteps, setShowSteps] = useState(false);
   const [viewMode, setViewMode] = useState<'overview' | 'comparison'>('overview');
@@ -224,25 +226,61 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
         ) : (
           /* VIEW 2: STANDARD DETAILED OVERVIEW */
           <>
-            {/* Friendly WeatherGPT Summary Card Below Map */}
+            {/* Friendly WeatherGPT Route & Weather Summary Card Below Map */}
             <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-850 via-slate-900 to-blue-950/40 border border-blue-500/30 shadow-lg">
-              <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-1.5">
                   <div className="w-5 h-5 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-[10px]">
                     W
                   </div>
                   <span className="text-xs font-black text-sky-300 tracking-wide">
-                    {language === 'hi' ? 'WeatherGPT मार्ग सारांश' : language === 'hinglish' ? 'WeatherGPT Route Summary' : 'WeatherGPT Route Summary'}
+                    {language === 'hi' ? 'मार्ग एवं मौसम सारांश' : 'Route & Weather Summary'}
                   </span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">
+                <span className="text-[11px] font-extrabold text-white">
                   {originName.split(',')[0]} → {destinationName.split(',')[0]}
                 </span>
               </div>
 
-              <p className="text-xs text-slate-200 leading-relaxed mb-3">
+              {/* Summary Metrics Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3 bg-slate-900/80 p-2.5 rounded-xl border border-slate-750">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-slate-400 font-semibold">Travel Time & Distance</span>
+                  <span className="text-xs font-black text-white">{activeRoute.durationMinutes} min ({activeRoute.distanceKm} km)</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-slate-400 font-semibold">Current Temperature</span>
+                  <span className="text-xs font-black text-amber-300">{currentWeather?.temperature ?? 28}°C</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-slate-400 font-semibold">Weather & Rain Probability</span>
+                  <span className="text-xs font-black text-sky-300">
+                    {activeRoute.summaryCondition || currentWeather?.condition || 'Clear'} • {activeRoute.waypoints?.[0]?.rainProb ?? (activeRoute.rainRisk === 'High' ? 80 : activeRoute.rainRisk === 'Moderate' ? 45 : 15)}%
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-slate-400 font-semibold">Wind & Route Safety</span>
+                  <div className="flex items-center space-x-1">
+                    <span className="text-xs font-bold text-slate-200">{currentWeather?.windSpeed ?? 14} km/h {currentWeather?.windDirection ?? 'NW'}</span>
+                    <span className="text-xs font-black text-emerald-400 bg-emerald-950/60 px-1 py-0.2 rounded-md border border-emerald-800/50">
+                      🛡️ {activeRoute.safetyScore}/100
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-200 leading-relaxed mb-2.5">
                 {summaryText}
               </p>
+
+              {/* Practical Weather Advice */}
+              <div className="p-2.5 rounded-xl bg-blue-950/60 border border-blue-800/60 text-xs text-sky-200 flex items-start space-x-2 mb-2.5">
+                <Sparkles className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-white font-bold block mb-0.5">Practical Weather Advice:</strong>
+                  <span>{activeRoute.departureAdvice || 'Elevated safe corridor avoids low-lying underpasses and maintains safe traction.'}</span>
+                </div>
+              </div>
 
               {/* Actionable Suggestions Checklist */}
               {actionableSuggestions.length > 0 && (
