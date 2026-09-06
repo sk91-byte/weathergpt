@@ -9,7 +9,6 @@ import {
   RouteTrip
 } from '../types';
 import { DESTINATION_PRESETS, DestinationPreset } from '../data/liveMapData';
-import { buildWeatherAwareRoutes, NEARBY_SAFE_PLACES } from '../data/liveMapData';
 import { AppLanguage } from '../utils/routeWeatherSummary';
 import { InteractiveMapCanvas } from './live-map/InteractiveMapCanvas';
 import { SearchAndDestinations } from './live-map/SearchAndDestinations';
@@ -57,19 +56,6 @@ interface WeatherMapScreenProps {
   initialLayer?: string;
   initialLanguage?: AppLanguage;
   userRole?: string;
-}
-
-// Generate realistic parallel corridor paths for alternative route options
-function createOffsetGeoPoints(basePts: [number, number][], lateralOffsetDeg: number): [number, number][] {
-  if (!basePts || basePts.length < 2) return basePts;
-  const n = basePts.length;
-  return basePts.map(([lat, lng], i) => {
-    const factor = Math.sin((Math.PI * i) / (n - 1));
-    return [
-      Number((lat + lateralOffsetDeg * factor * 0.75).toFixed(6)),
-      Number((lng + lateralOffsetDeg * factor).toFixed(6))
-    ];
-  });
 }
 
 export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
@@ -123,21 +109,9 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const [dataSource, setDataSource] = useState<string>('Open-Meteo & OSRM');
 
   // 3. Routes & Departures
-  const [routes, setRoutes] = useState<LiveMapRoute[]>(() => {
-    if ((initialTrip as any)?.destinationCoords && initialTrip?.to && initialTrip?.from) {
-      const initial = buildWeatherAwareRoutes(initialTrip.from, initialTrip.to, 0, 'normal');
-      return initial?.routes || [];
-    }
-    return [];
-  });
-  const [activeRouteId, setActiveRouteId] = useState<string>('route-safest');
-  const [departureOptions, setDepartureOptions] = useState<DepartureTimeOption[]>(() => {
-    if ((initialTrip as any)?.destinationCoords && initialTrip?.to && initialTrip?.from) {
-      const initial = buildWeatherAwareRoutes(initialTrip.from, initialTrip.to, 0, 'normal');
-      return initial?.departureOptions || [];
-    }
-    return [];
-  });
+  const [routes, setRoutes] = useState<LiveMapRoute[]>([]);
+  const [activeRouteId, setActiveRouteId] = useState<string>('');
+  const [departureOptions, setDepartureOptions] = useState<DepartureTimeOption[]>([]);
   const [routeSteps, setRouteSteps] = useState<any[]>([]);
 
   // 4. Navigation & Vehicle Progress
@@ -150,7 +124,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
   // 6. Nearby Safe Places
   const [showNearbyPlaces, setShowNearbyPlaces] = useState<boolean>(false);
-  const [nearbyPlaces, setNearbyPlaces] = useState<NearbySafePlace[]>(NEARBY_SAFE_PLACES);
+  const [nearbyPlaces, setNearbyPlaces] = useState<NearbySafePlace[]>([]);
   const [selectedNearbyPlace, setSelectedNearbyPlace] = useState<NearbySafePlace | null>(null);
 
   // 7. Modals & Drawers
@@ -161,8 +135,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
 
   // 8. Map Layers & Point Weather Popup
-  const [showRadarOverlay, setShowRadarOverlay] = useState<boolean>(true);
-  const [weatherLayerType, setWeatherLayerType] = useState<'rain' | 'temp' | 'rainfall' | 'wind' | 'alerts' | 'none'>('rain');
+  const [showRadarOverlay, setShowRadarOverlay] = useState<boolean>(false);
+  const [weatherLayerType, setWeatherLayerType] = useState<'rain' | 'temp' | 'rainfall' | 'wind' | 'alerts' | 'none'>('none');
   const [selectedPointWeather, setSelectedPointWeather] = useState<ApiPointWeatherResponse | null>(null);
   const [isFetchingPointWeather, setIsFetchingPointWeather] = useState<boolean>(false);
   const [gpsCoords, setGpsCoords] = useState<[number, number] | null>(null);
@@ -211,7 +185,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
                 estDuration: '30 mins',
                 status: 'Weather-Safe Corridor Calculated on Map',
                 statusType: 'clear',
-                weatherOnRoute: 'Real-time IMD radar monitored roadway',
+                weatherOnRoute: 'Live provider route analysis',
                 safetyScore: 88,
                 recommendation: `Optimal departure window around ${leaveByTime}. Safe travel conditions.`,
                 stops: []
@@ -325,26 +299,26 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         }
 
         // Map backend analysis into LiveMapRoute format
-        const calculatedDistanceKm = routeData.distance_km || 15;
-        const calculatedDurationMin = routeData.duration_minutes || 30;
+        const calculatedDistanceKm = routeData.distance_km;
+        const calculatedDurationMin = routeData.duration_minutes;
 
         const primaryRoute: LiveMapRoute = {
-          id: routeData.route_id || 'route-safest',
+          id: routeData.route_id,
           name: `${endName.split(',')[0]} via Corridor`,
-          badge: (weatherAnalysis.safety_score ?? 85) >= 80 ? 'SAFEST ROUTE' : 'WEATHER ALERT',
+          badge: weatherAnalysis.safety_score >= 80 ? 'LOWER WEATHER RISK' : 'WEATHER CAUTION',
           type: 'recommended',
           distanceKm: calculatedDistanceKm,
           durationMinutes: calculatedDurationMin,
-          safetyScore: weatherAnalysis.safety_score ?? 85,
-          summaryCondition: weatherAnalysis.timeline?.[0]?.weather_condition || 'Passing Showers',
-          rainRisk: (weatherAnalysis.rain_risk as any) || 'Moderate',
-          waterloggingRisk: (weatherAnalysis.waterlogging_risk as any) || 'Low',
-          thunderstormRisk: (weatherAnalysis.thunderstorm_risk as any) || 'Low',
+          safetyScore: weatherAnalysis.safety_score,
+          summaryCondition: weatherAnalysis.timeline?.[0]?.weather_condition || 'Unavailable',
+          rainRisk: (weatherAnalysis.rain_risk as any) || 'Unavailable',
+          waterloggingRisk: (weatherAnalysis.waterlogging_risk as any) || 'Unavailable',
+          thunderstormRisk: (weatherAnalysis.thunderstorm_risk as any) || 'Unavailable',
           hazardCount: weatherAnalysis.risk_zones?.length || 0,
-          color: (weatherAnalysis.safety_score ?? 85) >= 80 ? 'green' : 'orange',
-          strokeColor: (weatherAnalysis.safety_score ?? 85) >= 80 ? '#10b981' : '#f59e0b',
+          color: weatherAnalysis.safety_score >= 80 ? 'green' : 'orange',
+          strokeColor: weatherAnalysis.safety_score >= 80 ? '#10b981' : '#f59e0b',
           pathPoints: [],
-          geoPoints: geoPts.length > 0 ? geoPts : [[startCoords[0], startCoords[1]], [endCoords[0], endCoords[1]]],
+          geoPoints: geoPts,
           waypoints: (weatherAnalysis.timeline || []).map((tl, idx) => ({
             id: tl.id || `wp_${idx}`,
             name: tl.name,
@@ -369,86 +343,15 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             description: rz.description,
             icon: rz.icon || '⚠️'
           })),
-          departureAdvice: departures.warning_message || 'Safe to depart with raincoat',
+          departureAdvice: departures.warning_message || 'No additional live departure warning was returned.',
           whyThisRoute: 'Calculated using real-time Open-Meteo segment precipitation analysis and road grade risk',
-          whyWait: 'Rain precipitation is forecasted to decrease significantly over the next departure window'
+          whyWait: 'Check the live forecast again before leaving; conditions may change.'
         };
 
-        const baseGeo: [number, number][] = geoPts.length > 0
-          ? geoPts
-          : [[startCoords[0], startCoords[1]], [endCoords[0], endCoords[1]]];
-
-        // Route 1: Safest Route (High safety score, elevated corridor)
-        const safestRoute: LiveMapRoute = {
-          ...primaryRoute,
-          id: 'route-safest',
-          name: `${endName.split(',')[0]} via Elevated Safe Corridor`,
-          badge: '🟢 SAFEST ROUTE',
-          type: 'recommended',
-          routeOptionType: 'safest',
-          weatherImpactLabel: 'Elevated Corridor • Dry Pavement • 0 Flood Risk',
-          weatherImpactBadge: '🛡️ Flood Shielded',
-          strokeColor: '#10b981',
-          color: 'green',
-          summaryCondition: 'Dry Pavement & Safe Elevation',
-          rainRisk: 'Low',
-          waterloggingRisk: 'Low',
-          thunderstormRisk: 'Low',
-          departureAdvice: 'Optimal route! Elevated roadway shields from flood-prone underpasses and maintains safe tire friction.',
-          whyThisRoute: 'Elevated safe corridor avoids low-lying water pooling. High 92/100 safety rating makes it the safest choice despite a few extra minutes.',
-          geoPoints: baseGeo
-        };
-
-        // Route 2: Fastest Route (Saves time, moderate weather hazard)
-        const fasterRoute: LiveMapRoute = {
-          ...primaryRoute,
-          id: 'route-fastest',
-          name: `${endName.split(',')[0]} via Central Expressway`,
-          badge: '⚡ FASTEST ROUTE',
-          type: 'fastest',
-          routeOptionType: 'fastest',
-          weatherImpactLabel: 'Direct Line (-7m) • Slick Road • +8cm Ponding Hazard',
-          weatherImpactBadge: '⚠️ Ponding Hazard',
-          distanceKm: Math.max(1, Math.round(calculatedDistanceKm * 0.88 * 10) / 10),
-          durationMinutes: Math.max(5, calculatedDurationMin - 7),
-          safetyScore: Math.max(30, (weatherAnalysis.safety_score ?? 85) - 22),
-          color: 'orange',
-          strokeColor: '#f59e0b',
-          rainRisk: 'Moderate',
-          waterloggingRisk: 'High',
-          thunderstormRisk: 'Low',
-          summaryCondition: 'Slick Road & Underpass Spray',
-          departureAdvice: 'Cuts through 8cm standing water in the low underpass. Expect slippery asphalt and heavy tire spray.',
-          whyThisRoute: 'Fastest route saves ~7 minutes, but carries an elevated risk of hydroplaning and underpass slowdowns.',
-          geoPoints: createOffsetGeoPoints(baseGeo, -0.012)
-        };
-
-        // Route 3: Most Scenic Route (Lush green belt, lower wind shear)
-        const scenicRoute: LiveMapRoute = {
-          ...primaryRoute,
-          id: 'route-scenic',
-          name: `${endName.split(',')[0]} via Parkway & Green Belt`,
-          badge: '🌿 MOST SCENIC',
-          type: 'alternative',
-          routeOptionType: 'scenic',
-          weatherImpactLabel: 'Tree Canopy • 40% Lower Wind Shear • Mild Mist & 25°C',
-          weatherImpactBadge: '🌿 Canopy Sheltered',
-          distanceKm: Math.round(calculatedDistanceKm * 1.12 * 10) / 10,
-          durationMinutes: calculatedDurationMin + 5,
-          safetyScore: Math.min(96, Math.max(82, (weatherAnalysis.safety_score ?? 85) + 4)),
-          color: 'green',
-          strokeColor: '#06b6d4',
-          rainRisk: 'Low',
-          waterloggingRisk: 'Low',
-          thunderstormRisk: 'Low',
-          summaryCondition: 'Overcast & Refreshing Canopy',
-          departureAdvice: 'Lush tree canopy provides natural protection against crosswinds and keeps the asphalt cooler.',
-          whyThisRoute: 'Scenic corridor through green belts buffers crosswinds by 40% with calm pavement and pleasant ambiance.',
-          geoPoints: createOffsetGeoPoints(baseGeo, 0.014)
-        };
-
-        setRoutes([safestRoute, fasterRoute, scenicRoute]);
-        setActiveRouteId(safestRoute.id);
+        // Only show the route returned by OSRM and the live route-weather
+        // analysis. Do not manufacture alternative geometries or weather.
+        setRoutes([primaryRoute]);
+        setActiveRouteId(primaryRoute.id);
 
         if (departures?.options && departures.options.length > 0) {
           setDepartureOptions(
@@ -467,16 +370,15 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           );
         }
       } catch (err) {
-        console.warn('Backend route calculation fallback to local:', err);
+        console.warn('Live route calculation failed:', err);
         clearTimeout(wakeupTimer);
         setIsRenderWakingUp(false);
         setIsLive(false);
-        setDataSource('Local Sensor Model');
-
-        const fallback = buildWeatherAwareRoutes(startName, endName, 0, 'normal');
-        setRoutes(fallback.routes);
-        setDepartureOptions(fallback.departureOptions);
-        setActiveRouteId(fallback.routes[0].id);
+        setDataSource('Live data unavailable');
+        setRoutes([]);
+        setDepartureOptions([]);
+        setNearbyPlaces([]);
+        setActiveRouteId('');
       } finally {
         setIsAnalyzing(false);
       }
@@ -511,33 +413,34 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   };
 
   // Click on Route Waypoint -> Show waypoint weather popup
-  const handleRoutePointClick = (point: RouteSamplingPoint) => {
-    if (point.coords?.lat && point.coords?.lng) {
-      setSelectedPointWeather({
-        latitude: point.coords.lat,
-        longitude: point.coords.lng,
-        location_name: point.name,
-        temperature: point.temp,
-        feels_like: point.temp + 1,
-        condition: point.weatherCondition,
-        condition_icon: point.rainIntensity === 'Heavy' ? '🌧️' : point.rainIntensity === 'Moderate' ? '🌦️' : '⛅',
-        rain_probability: point.rainProb,
-        current_precipitation: point.rainIntensity === 'Heavy' ? 14 : point.rainIntensity === 'Moderate' ? 6 : 1,
-        humidity: 82,
-        wind_speed: 16,
-        wind_direction: 'NW',
-        weather_source: 'WeatherGPT Route Radar',
-        is_live: true,
-        route_point_info: {
-          section_name: point.name,
-          expected_time: point.expectedTime,
-          distance_km: point.distanceFromStartKm,
-          safety_score: point.safetyScore,
-          advice: point.hazard || (point.safetyScore >= 80 ? 'Safe road elevation, dry pavement with good tire traction.' : 'Caution: watch for standing water or low visibility.'),
-          waterlogging_risk: point.waterloggingRisk,
-          rain_intensity: point.rainIntensity
-        }
-      });
+  const handleRoutePointClick = async (point: RouteSamplingPoint) => {
+    const lat = point.coords?.lat;
+    const lon = point.coords?.lng;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    setIsFetchingPointWeather(true);
+    try {
+      const livePoint = await apiGetPointWeather(lat as number, lon as number);
+      if (livePoint) {
+        setSelectedPointWeather({
+          ...livePoint,
+          location_name: point.name || livePoint.location_name,
+          route_point_info: {
+            section_name: point.name,
+            expected_time: point.expectedTime,
+            distance_km: point.distanceFromStartKm,
+            safety_score: point.safetyScore,
+            advice: point.hazard || undefined,
+            waterlogging_risk: point.waterloggingRisk,
+            rain_intensity: point.rainIntensity
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('Live route-point weather unavailable:', error);
+      setSelectedPointWeather(null);
+    } finally {
+      setIsFetchingPointWeather(false);
     }
   };
 
@@ -588,7 +491,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         estDuration: '30 mins',
         status: 'Weather-Safe Corridor Calculated on Map',
         statusType: 'clear',
-        weatherOnRoute: 'Real-time IMD radar monitored roadway',
+            weatherOnRoute: 'Live provider route analysis',
         safetyScore: 88,
         recommendation: `Optimal departure window around ${params.leaveBy}. Safe travel conditions.`,
         stops: []
@@ -687,14 +590,14 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               <h1 className="text-xs font-black text-white tracking-wide">
                 WeatherGPT Live Map
               </h1>
-              <span
+            <span
                 className={`text-[9px] font-black px-1.5 py-0.2 rounded-xs uppercase tracking-wider ${
                   isLive
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                     : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                 }`}
               >
-                {isLive ? 'LIVE DATA' : 'DEMO'}
+                {isLive ? 'LIVE DATA' : 'DATA UNAVAILABLE'}
               </span>
             </div>
             <p className="text-[10px] text-slate-400 font-medium truncate max-w-[140px] sm:max-w-none">
@@ -863,7 +766,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         {destinationName.trim().length > 0 || isNavigating ? (
           <>
             <InteractiveMapCanvas
-              routes={safeRoutes.length > 0 ? safeRoutes : buildWeatherAwareRoutes(originName, destinationName || 'Destination', 0, 'normal').routes}
+              routes={safeRoutes}
               activeRouteId={activeRouteId}
               onSelectRoute={setActiveRouteId}
               destinationName={destinationName}
@@ -882,7 +785,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               onMapClick={handleMapClick}
               onRoutePointClick={handleRoutePointClick}
               originCoords={originCoords}
-              destinationCoords={destinationCoords || [28.4358, 77.1082]}
+              destinationCoords={destinationCoords || undefined}
               gpsCoords={gpsCoords}
             />
 

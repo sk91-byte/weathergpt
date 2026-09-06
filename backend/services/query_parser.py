@@ -50,6 +50,9 @@ def parse_weather_query(message: str, previous_context: dict[str, Any] | None = 
     if location_match and location is None:
         location = location_match.group(1).strip(" ?.,!")
         location = re.sub(r"\s+(today|tomorrow|tonight|now|right now|currently|outside|at the moment|this weekend|next week)\b.*$", "", location).strip(" ?.,!")
+        # The parser matches against normalized text, but API responses should
+        # preserve a human-readable place name for the UI and follow-up chat.
+        location = location.title()
     elif location is None:
         location_match = re.search(rf"\b({SUPPORTED_CITY_NAMES})\b", normalized, re.IGNORECASE)
         location = location_match.group(1) if location_match else None

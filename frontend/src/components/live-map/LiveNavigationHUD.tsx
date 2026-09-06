@@ -88,9 +88,9 @@ export const LiveNavigationHUD: React.FC<LiveNavigationHUDProps> = ({
   const currentManeuver = getManeuver(vehicleProgress);
 
   // Telemetry computations
-  const totalKm = route?.distanceKm ?? 15;
+  const totalKm = route?.distanceKm ?? 0;
   const remainingKm = Math.max(0, +(totalKm * (1 - vehicleProgress / 100)).toFixed(1));
-  const remainingMins = Math.max(1, Math.round((route?.durationMinutes ?? 30) * (1 - vehicleProgress / 100)));
+  const remainingMins = Math.max(1, Math.round((route?.durationMinutes ?? 0) * (1 - vehicleProgress / 100)));
 
   const now = new Date();
   const eta = new Date(now.getTime() + remainingMins * 60000);
@@ -233,7 +233,7 @@ export const LiveNavigationHUD: React.FC<LiveNavigationHUDProps> = ({
             <div className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-xs font-black">
-                {hasRerouted ? '91/100 🟢 LOW RISK' : `${route?.safetyScore ?? 88}/100 🟢 LOW RISK`}
+                {typeof route?.safetyScore === 'number' ? `${route.safetyScore}/100` : 'Unavailable'}
               </span>
             </div>
             <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
@@ -250,17 +250,17 @@ export const LiveNavigationHUD: React.FC<LiveNavigationHUDProps> = ({
               <span className="font-bold text-slate-800">
                 NEXT 10 MINUTES:
               </span>
-              <span className="text-slate-600">Mostly Cloudy</span>
+              <span className="text-slate-600">{route?.waypoints?.[0]?.weatherCondition || route?.summaryCondition || 'Unavailable'}</span>
             </div>
             <span className="text-[10px] font-black text-emerald-600 uppercase">
-              Weather Risk: LOW 🟢
+              Weather Risk: {route?.rainRisk || 'Unavailable'}
             </span>
           </div>
 
           <div className="p-2 rounded-xl bg-slate-50 border border-slate-100 text-[11px] text-slate-600 flex items-center justify-between">
             <div className="truncate">
               <span className="font-bold text-slate-800">UPCOMING ROUTE WEATHER:</span>{' '}
-              In 15 min: 🌧️ Light Rain Possible | In 25 min: ⚠️ Moderate Rain Risk
+              {route?.waypoints?.length ? route.waypoints.map((point) => `${point.expectedTime}: ${point.weatherCondition}`).join(' | ') : 'Live route forecast unavailable'}
             </div>
           </div>
         </div>
@@ -278,16 +278,6 @@ export const LiveNavigationHUD: React.FC<LiveNavigationHUDProps> = ({
             title={isPlaying ? 'Pause Navigation Simulation' : 'Resume Navigation'}
           >
             {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-          </button>
-
-          {/* Simulate Sudden Hazard Alert Button */}
-          <button
-            onClick={handleSimulateSuddenWeather}
-            className="flex-1 py-2.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 border border-amber-300/80 font-bold text-xs flex items-center justify-center space-x-1 transition cursor-pointer"
-            title="Simulate sudden downpour on route"
-          >
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-            <span>Simulate Weather Hazard</span>
           </button>
 
           {/* Timeline */}

@@ -222,12 +222,23 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
         'https://tilecache.rainviewer.com/v2/radar/nowcast_5/256/{z}/{x}/{y}/2/1_1.png',
         {
           opacity: 0.65,
-          maxZoom: 12,
+          maxNativeZoom: 12,
+          maxZoom: 19,
           zIndex: 400
         }
       ).addTo(map);
       weatherLayerRef.current = radar;
     }
+
+    // Do not render synthetic temperature, rainfall, wind or alert badges.
+    // Those values must come from a real provider before they are shown.
+    if (weatherLayerType !== 'rainfall' && weatherLayerType !== 'temp' && weatherLayerType !== 'wind' && weatherLayerType !== 'alerts') {
+      return;
+    }
+
+    // These layer types are intentionally disabled until a live provider is
+    // connected. An empty map is safer than displaying invented conditions.
+    return;
 
     if (weatherLayerType === 'rainfall') {
       // Rainfall accumulation and intensity badges across the corridor
@@ -381,18 +392,12 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
           polyline.on('click', () => onSelectRoute(route.id));
           layerGroup.addLayer(polyline);
 
+          /* Route detail labels are intentionally hidden until the user taps
+             the line. The map stays readable at every zoom level. */
           const midPt = getRouteLabelPoint(validGeoPoints, route.routeOptionType, route.id, rIdx);
-          if (midPt && isValidLatLng(midPt)) {
-            const badgeTitle = route.routeOptionType === 'safest'
-              ? '🟢 Safest'
-              : route.routeOptionType === 'fastest'
-              ? '⚡ Fastest'
-              : route.routeOptionType === 'scenic'
-              ? '🌿 Scenic'
-              : route.badge || route.name.split(' ')[0];
-
-            const weatherNote = route.weatherImpactBadge || route.weatherImpactLabel || route.summaryCondition || 'Normal';
-
+          if (false && midPt && isValidLatLng(midPt)) {
+            const badgeTitle = route.badge || 'Route';
+            const weatherNote = route.summaryCondition || 'Live weather';
             const badgeIcon = L.divIcon({
               className: 'route-weather-pill-inactive',
               html: `
@@ -471,33 +476,25 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
             const segmentPts = validActivePoints.slice(startIdx, endIdx);
 
             if (segmentPts.length >= 2) {
-              let segmentScore = activeRoute.safetyScore;
+              const liveWaypoint = activeRoute.waypoints?.[Math.min(s, (activeRoute.waypoints?.length || 1) - 1)];
+              let segmentScore = typeof liveWaypoint?.safetyScore === 'number'
+                ? liveWaypoint.safetyScore
+                : activeRoute.safetyScore;
               let sectionLabel =
                 s === 0
                   ? 'Departure Corridor'
                   : s === numSegments - 1
                   ? 'Destination Approach'
                   : `Corridor Sector ${s}`;
-              let sectionAdvice = 'Normal road conditions. Maintain safe speed.';
-              let sectionCondition = activeRoute.summaryCondition || 'Normal';
+              let sectionAdvice = liveWaypoint?.hazard || 'Tap this route section for live weather details.';
+              let sectionCondition = liveWaypoint?.weatherCondition || activeRoute.summaryCondition || 'Unavailable';
 
-              if (activeRoute.routeOptionType === 'fastest') {
-                if (s === 1 || s === 2) {
-                  segmentScore = Math.min(segmentScore, 52);
-                  sectionLabel = 'Low-Lying Underpass';
-                  sectionAdvice = '⚠️ Waterlogging hazard (+8cm ponding). Slow down under 30 km/h.';
-                  sectionCondition = 'Heavy Waterlogging';
-                }
-              } else if (activeRoute.riskZones && activeRoute.riskZones.length > 0 && s === 1) {
+              if (activeRoute.riskZones && activeRoute.riskZones.length > 0 && s === 1) {
                 const rz = activeRoute.riskZones[0];
                 segmentScore = rz.severity === 'High' ? 45 : 62;
                 sectionLabel = rz.title || 'Caution Area';
                 sectionAdvice = rz.description || 'Slippery surface, proceed cautiously.';
                 sectionCondition = rz.type || 'Ponding Risk';
-              } else if (s === 0) {
-                segmentScore = Math.min(96, activeRoute.safetyScore + 4);
-                sectionLabel = 'Departure Corridor';
-                sectionAdvice = 'High elevation roadway, dry pavement with good tire grip.';
               }
 
               // Route-wise weather color palette
@@ -553,7 +550,9 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
           layerGroup.addLayer(activeLine);
         }
 
-        // Active Route Real-Time Weather Impact Pill directly on the path
+        // Route labels stay hidden by default; tapping a colored segment opens
+        // the live point-weather details below the map controls.
+        /*
         const activeMidPt = getRouteLabelPoint(validActivePoints, activeRoute.routeOptionType, activeRoute.id, 0);
         if (activeMidPt && isValidLatLng(activeMidPt)) {
           const activeBadgeTitle = activeRoute.routeOptionType === 'safest'
@@ -626,6 +625,7 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
           const activeMarker = L.marker(toValidLatLng(activeMidPt), { icon: activeBadgeIcon, zIndexOffset: 600 });
           layerGroup.addLayer(activeMarker);
         }
+        */
 
         // Fit bounds when not actively navigating
         if (!isNavigating) {
@@ -641,22 +641,17 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
       }
     }
 
-    // 3. Render Route Segment Waypoints (Clickable for weather details)
+    // 3. Render route points as invisible click targets only. This prevents
+    // permanent weather boxes while keeping the route tappable.
     if (activeRoute && activeRoute.waypoints && activeRoute.waypoints.length > 0) {
       activeRoute.waypoints.forEach((wp) => {
         const wpPos = toValidLatLng(wp.coords, [28.5, 77.1]);
         if (isValidLatLng(wpPos)) {
           const wpIcon = L.divIcon({
-            className: 'waypoint-marker',
-            html: `
-              <div style="background:#0f172a;border:2px solid #38bdf8;border-radius:12px;padding:2px 6px;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;gap:3px;box-shadow:0 2px 8px rgba(0,0,0,0.4);cursor:pointer;white-space:nowrap;">
-                <span>${wp.rainIntensity === 'Heavy' ? '🌧️' : wp.rainIntensity === 'Moderate' ? '🌦️' : '☁️'}</span>
-                <span>${wp.name.split(' ')[0]}</span>
-                <span style="color:${wp.safetyScore >= 80 ? '#34d399' : '#f87171'};">${wp.temp}°C</span>
-              </div>
-            `,
-            iconSize: [90, 22],
-            iconAnchor: [45, 11]
+            className: 'waypoint-hit-target',
+            html: '<div style="width:18px;height:18px;border-radius:9999px;background:transparent;border:2px solid transparent;cursor:pointer;"></div>',
+            iconSize: [18, 18],
+            iconAnchor: [9, 9]
           });
 
           const marker = L.marker(wpPos, { icon: wpIcon });

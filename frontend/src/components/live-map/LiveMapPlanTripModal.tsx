@@ -386,7 +386,7 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
             <div>
               <span className="font-bold text-blue-950 block">Live Weather-Aware Navigation</span>
               <span className="text-[11px] text-blue-800/80">
-                Choose any starting point & destination across India. We calculate safest & fastest corridors with live IMD radar.
+                Choose any starting point and destination across India. We calculate a route using live weather-provider data.
               </span>
             </div>
           </div>

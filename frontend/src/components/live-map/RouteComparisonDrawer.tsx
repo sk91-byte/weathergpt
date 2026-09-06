@@ -147,7 +147,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                 : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
             }`}
           >
-            {isLive ? 'LIVE DATA' : 'DEMO'}
+            {isLive ? 'LIVE DATA' : 'DATA UNAVAILABLE'}
           </span>
         </div>
       </div>
@@ -250,18 +250,18 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[10px] text-slate-400 font-semibold">Current Temperature</span>
-                  <span className="text-xs font-black text-amber-300">{currentWeather?.temperature ?? 28}°C</span>
+                  <span className="text-xs font-black text-amber-300">{currentWeather?.temperature != null ? `${currentWeather.temperature}°C` : 'Unavailable'}</span>
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[10px] text-slate-400 font-semibold">Weather & Rain Probability</span>
                   <span className="text-xs font-black text-sky-300">
-                    {activeRoute.summaryCondition || currentWeather?.condition || 'Clear'} • {activeRoute.waypoints?.[0]?.rainProb ?? (activeRoute.rainRisk === 'High' ? 80 : activeRoute.rainRisk === 'Moderate' ? 45 : 15)}%
+                    {activeRoute.summaryCondition || currentWeather?.condition || 'Unavailable'} • {typeof activeRoute.waypoints?.[0]?.rainProb === 'number' ? `${activeRoute.waypoints[0].rainProb}%` : 'Unavailable'}
                   </span>
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[10px] text-slate-400 font-semibold">Wind & Route Safety</span>
                   <div className="flex items-center space-x-1">
-                    <span className="text-xs font-bold text-slate-200">{currentWeather?.windSpeed ?? 14} km/h {currentWeather?.windDirection ?? 'NW'}</span>
+                    <span className="text-xs font-bold text-slate-200">{currentWeather?.windSpeed != null ? `${currentWeather.windSpeed} km/h ${currentWeather.windDirection || ''}` : 'Unavailable'}</span>
                     <span className="text-xs font-black text-emerald-400 bg-emerald-950/60 px-1 py-0.2 rounded-md border border-emerald-800/50">
                       🛡️ {activeRoute.safetyScore}/100
                     </span>
@@ -278,7 +278,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                 <Sparkles className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
                 <div>
                   <strong className="text-white font-bold block mb-0.5">Practical Weather Advice:</strong>
-                  <span>{activeRoute.departureAdvice || 'Elevated safe corridor avoids low-lying underpasses and maintains safe traction.'}</span>
+                  <span>{activeRoute.departureAdvice || 'No live route advice is available yet.'}</span>
                 </div>
               </div>
 

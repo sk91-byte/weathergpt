@@ -279,7 +279,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
                 WeatherGPT AI Assistant
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               </h2>
-              <p className="text-[10px] text-slate-400 font-medium">Grounded in IMD Verified Data</p>
+              <p className="text-[10px] text-slate-400 font-medium">Grounded in live provider data</p>
             </div>
           </div>
         </div>

@@ -454,15 +454,16 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
         </div>
       )}
 
-      {/* Bottom Map Legend */}
+      {/* Bottom Map Legend: only explains the live route line; no weather
+          values are shown until a map point or route segment is tapped. */}
       <div className="absolute bottom-3 left-3 z-20 pointer-events-auto bg-slate-900/90 backdrop-blur-md rounded-xl px-2.5 py-1.5 border border-slate-700 text-[10px] text-slate-300 flex items-center space-x-3">
         <div className="flex items-center space-x-1">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-          <span>Safest Route</span>
+          <span>Lower live risk</span>
         </div>
         <div className="flex items-center space-x-1">
           <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-          <span>Fastest</span>
+          <span>Higher live risk</span>
         </div>
         {weatherLayerType !== 'none' && (
           <div className="flex items-center space-x-1 text-sky-400">
