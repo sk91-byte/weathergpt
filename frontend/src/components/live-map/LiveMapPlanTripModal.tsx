@@ -18,6 +18,23 @@ import {
 } from '../Icons';
 import { apiAutocompleteLocations, apiResolveLocation, apiGetPointWeather, ApiAutocompleteSuggestion } from '../../services/api';
 
+function formatCoordsBadge(coords: any): string | null {
+  if (!coords) return null;
+  let lat: number | undefined;
+  let lon: number | undefined;
+  if (Array.isArray(coords)) {
+    lat = coords[0];
+    lon = coords[1];
+  } else if (typeof coords === 'object') {
+    lat = coords.lat ?? coords.latitude;
+    lon = coords.lng ?? coords.lon ?? coords.longitude;
+  }
+  if (typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon)) {
+    return `${lat.toFixed(3)}°, ${lon.toFixed(3)}°`;
+  }
+  return null;
+}
+
 function getPlaceTypeBadge(type?: string) {
   const t = (type || '').toLowerCase();
   if (t === 'university' || t === 'college') return { label: 'University / College', icon: '🎓', color: 'bg-purple-100 text-purple-800 border-purple-200' };
@@ -401,9 +418,9 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
               <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center space-x-1">
                 <span>🟢 Origin (Start Point)</span>
               </label>
-              {originCoords && (
+              {formatCoordsBadge(originCoords) && (
                 <span className="text-[9.5px] font-mono text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md">
-                  {originCoords[0].toFixed(3)}°, {originCoords[1].toFixed(3)}°
+                  {formatCoordsBadge(originCoords)}
                 </span>
               )}
             </div>
@@ -503,7 +520,7 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
                                   {badge.label}
                                 </span>
                                 <span className="text-[9px] text-slate-400 font-mono">
-                                  {item.latitude.toFixed(2)}°, {item.longitude.toFixed(2)}°
+                                  {typeof item.latitude === 'number' && typeof item.longitude === 'number' ? `${item.latitude.toFixed(2)}°, ${item.longitude.toFixed(2)}°` : ''}
                                 </span>
                               </div>
                             </div>
@@ -582,9 +599,9 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
               <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center space-x-1">
                 <span>📍 Destination (Target Point)</span>
               </label>
-              {destinationCoords && (
+              {formatCoordsBadge(destinationCoords) && (
                 <span className="text-[9.5px] font-mono text-red-700 font-bold bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-md">
-                  {destinationCoords[0].toFixed(3)}°, {destinationCoords[1].toFixed(3)}°
+                  {formatCoordsBadge(destinationCoords)}
                 </span>
               )}
             </div>
@@ -667,7 +684,7 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
                                   {badge.label}
                                 </span>
                                 <span className="text-[9px] text-slate-400 font-mono">
-                                  {item.latitude.toFixed(2)}°, {item.longitude.toFixed(2)}°
+                                  {typeof item.latitude === 'number' && typeof item.longitude === 'number' ? `${item.latitude.toFixed(2)}°, ${item.longitude.toFixed(2)}°` : ''}
                                 </span>
                               </div>
                             </div>

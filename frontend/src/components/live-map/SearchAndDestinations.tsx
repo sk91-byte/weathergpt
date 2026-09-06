@@ -81,6 +81,23 @@ interface SearchAndDestinationsProps {
   onSubmitDestination?: (destQuery: string) => void;
 }
 
+function formatCoordsBadge(coords: any): string | null {
+  if (!coords) return null;
+  let lat: number | undefined;
+  let lon: number | undefined;
+  if (Array.isArray(coords)) {
+    lat = coords[0];
+    lon = coords[1];
+  } else if (typeof coords === 'object') {
+    lat = coords.lat ?? coords.latitude;
+    lon = coords.lng ?? coords.lon ?? coords.longitude;
+  }
+  if (typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon)) {
+    return `${lat.toFixed(3)}°N, ${lon.toFixed(3)}°E`;
+  }
+  return null;
+}
+
 export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
   originQuery,
   onOriginChange,
@@ -114,6 +131,9 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [lang, setLang] = useState<MapLanguage>('en');
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const originCoordsBadge = formatCoordsBadge(originCoords);
+  const destCoordsBadge = formatCoordsBadge(destinationCoords);
 
   // Friendly bilingual labels
   const labels = {
@@ -311,9 +331,9 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
               <span>📍</span>
               <span>{labels.originTitle}</span>
             </label>
-            {originCoords && (
+            {originCoordsBadge && (
               <span className="text-[9px] font-mono text-emerald-300/80 bg-emerald-950/60 border border-emerald-800/50 px-1.5 py-0.2 rounded-md">
-                {originCoords[0].toFixed(3)}°N, {originCoords[1].toFixed(3)}°E
+                {originCoordsBadge}
               </span>
             )}
           </div>
@@ -372,9 +392,9 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
               <span>🎯</span>
               <span>{labels.destTitle}</span>
             </label>
-            {destinationCoords && (
+            {destCoordsBadge && (
               <span className="text-[9px] font-mono text-sky-300/80 bg-sky-950/60 border border-sky-800/50 px-1.5 py-0.2 rounded-md">
-                {destinationCoords[0].toFixed(3)}°N, {destinationCoords[1].toFixed(3)}°E
+                {destCoordsBadge}
               </span>
             )}
           </div>
@@ -573,9 +593,11 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${badge.color}`}>
                               {badge.label}
                             </span>
-                            <span className="text-[9px] font-mono text-slate-400 bg-slate-900/80 px-1.5 py-0.5 rounded-md border border-slate-700/50">
-                              {item.latitude?.toFixed(3)}°, {item.longitude?.toFixed(3)}°
-                            </span>
+                            {typeof item.latitude === 'number' && typeof item.longitude === 'number' && (
+                              <span className="text-[9px] font-mono text-slate-400 bg-slate-900/80 px-1.5 py-0.5 rounded-md border border-slate-700/50">
+                                {item.latitude.toFixed(3)}°, {item.longitude.toFixed(3)}°
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="text-[11px] text-slate-300 line-clamp-1 mt-0.5">
@@ -651,9 +673,11 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                     <span className="text-[10px] font-bold text-slate-400 block">
                       {preset.typicalMinutes}m
                     </span>
-                    <span className="text-[9px] text-sky-400 font-mono">
-                      {preset.coords.lat.toFixed(2)}°, {preset.coords.lng.toFixed(2)}°
-                    </span>
+                    {preset.coords && typeof preset.coords.lat === 'number' && typeof preset.coords.lng === 'number' && (
+                      <span className="text-[9px] text-sky-400 font-mono">
+                        {preset.coords.lat.toFixed(2)}°, {preset.coords.lng.toFixed(2)}°
+                      </span>
+                    )}
                   </div>
                 </button>
               ))}
