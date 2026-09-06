@@ -632,7 +632,15 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
           try {
             const bounds = L.latLngBounds(validActivePoints);
             if (bounds.isValid()) {
-              map.fitBounds(bounds, { padding: [50, 50] });
+              // Start with a complete route overview instead of zooming into
+              // the nearest segment. The extra bottom padding keeps the line
+              // visible above the route details drawer.
+              map.fitBounds(bounds, {
+                paddingTopLeft: [48, 88],
+                paddingBottomRight: [48, 150],
+                maxZoom: 11,
+                animate: false
+              });
             }
           } catch (e) {
             console.warn('fitBounds error:', e);
