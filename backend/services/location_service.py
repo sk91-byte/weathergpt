@@ -94,13 +94,34 @@ def reverse_geocode(latitude: float, longitude: float) -> dict[str, Any] | None:
     try:
         response = requests.get(
             "https://nominatim.openstreetmap.org/reverse",
-            params={"lat": latitude, "lon": longitude, "format": "jsonv2", "zoom": 10},
+            params={"lat": latitude, "lon": longitude, "format": "jsonv2", "zoom": 18, "addressdetails": 1},
             headers={"User-Agent": "WeatherGPT-development/1.0"},
             timeout=10,
         )
         response.raise_for_status()
-        address = response.json().get("address", {})
-        name = address.get("city") or address.get("town") or address.get("village")
-        return {"name": name or "Current location", "latitude": latitude, "longitude": longitude}
+        payload = response.json()
+        address = payload.get("address", {})
+        # Prefer the smallest useful locality so users see names such as
+        # "Vijay Vihar" instead of only the parent city "Delhi".
+        area = (
+            address.get("neighbourhood")
+            or address.get("quarter")
+            or address.get("suburb")
+            or address.get("residential")
+            or address.get("village")
+            or address.get("town")
+            or address.get("city")
+        )
+        city = address.get("city") or address.get("town") or address.get("village")
+        label = f"{area}, {city}" if area and city and area.lower() != city.lower() else (area or city)
+        return {
+            "name": label or "Current location",
+            "area": area or "Current area",
+            "city": city or "",
+            "state": address.get("state", ""),
+            "latitude": latitude,
+            "longitude": longitude,
+            "display_name": payload.get("display_name", label or "Current location"),
+        }
     except (requests.RequestException, ValueError, AttributeError):
         return None

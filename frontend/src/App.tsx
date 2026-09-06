@@ -30,6 +30,7 @@ import { CitySelectorModal } from './components/CitySelectorModal';
 import { NotificationsModal } from './components/NotificationsModal';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
 import { getWeatherTheme } from './utils/weatherGradients';
+import { apiGetLocationWeather } from './services/api';
 
 import {
   DEFAULT_WEATHER_DATA,
@@ -145,19 +146,32 @@ export default function App() {
       async (pos) => {
         try {
           const { latitude, longitude } = pos.coords;
-          const res = await fetch(`/api/weather/live-location?lat=${latitude}&lon=${longitude}`);
-          if (!res.ok) {
-            throw new Error(`Weather service responded with ${res.status}`);
-          }
-          const liveData = await res.json();
-          if (liveData && liveData.city) {
+          const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
+          if (liveWeather) {
+            const liveData: WeatherData = {
+              ...weather,
+              city: location.name || 'Current location',
+              state: '',
+              country: 'India',
+              temperature: liveWeather.temperature,
+              feelsLike: liveWeather.feels_like,
+              condition: liveWeather.condition,
+              conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
+              humidity: liveWeather.humidity,
+              windSpeed: liveWeather.wind_speed,
+              windDirection: liveWeather.wind_direction,
+              rainChance: liveWeather.rain_probability,
+              lastUpdated: 'Just now',
+              aiRecommendation: 'This is your live weather at the detected location.',
+              recommendationExplanation: { ...weather.recommendationExplanation, title: 'Live location weather' }
+            };
             setWeather(liveData);
             try {
               localStorage.setItem('weathergpt_location', JSON.stringify(liveData));
             } catch (e) {}
             setLocationError(null);
             setShowCitySelector(false);
-          }
+          } else throw new Error('No current weather returned');
         } catch (err: any) {
           console.warn('Live location API fetch error:', err);
           setLocationError('Fetched coordinates, but weather radar feed failed. Please try again or select a city.');

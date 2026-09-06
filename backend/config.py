@@ -33,7 +33,7 @@ class Settings:
     database_url: str | None = os.getenv("DATABASE_URL") or None
     storage_mode: str = os.getenv("STORAGE_MODE", "postgres" if os.getenv("DATABASE_URL") else "json")
     json_data_file: str = os.getenv("JSON_DATA_FILE", str(Path(__file__).resolve().parent / "data" / "weathergpt.json"))
-    cors_allowed_origins: tuple[str, ...] = tuple(item.strip() for item in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if item.strip())
+    cors_allowed_origins: tuple[str, ...] = tuple(item.strip() for item in os.getenv("CORS_ALLOWED_ORIGINS", "https://weathergpt.sakshamgautam10230.workers.dev").split(",") if item.strip())
 
 
 settings = Settings()

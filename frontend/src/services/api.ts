@@ -42,4 +42,13 @@ export async function apiGetNearbyPlaces(latitude:number,longitude:number,radius
 
 export async function apiGetPointWeather(latitude:number,longitude:number,onSlow?:()=>void):Promise<ApiPointWeatherResponse|null>{const response=await fetchWithTimeout(`/weather/current?latitude=${latitude}&longitude=${longitude}`,{},20000,onSlow);const payload=await response.json();const c=payload.current||{};return {latitude,longitude,location_name:'Selected map location',temperature:Number(c.temperature_c||0),feels_like:Number(c.apparent_temperature_c||c.temperature_c||0),condition:c.condition||'Current conditions',condition_icon:'partly-cloudy',rain_probability:0,current_precipitation:Number(c.rain_mm||c.precipitation_mm||0),humidity:Number(c.humidity_percent||0),wind_speed:Number(c.wind_speed_kmh||0),wind_direction:'Live',weather_source:payload.source||'Render backend',is_live:true};}
 
+export async function apiGetLocationWeather(latitude:number, longitude:number, onSlow?:()=>void){
+  const [weather, location] = await Promise.all([
+    apiGetPointWeather(latitude, longitude, onSlow),
+    apiResolveLocation(undefined, latitude, longitude, onSlow).catch(() => ({ name: 'Current location', latitude, longitude }))
+  ]);
+  if (!weather) throw new Error('Current weather is unavailable.');
+  return { weather, location };
+}
+
 export async function apiSendChat(query:string,options:any={},onSlow?:()=>void){const context=options.route_context?` Route context: ${JSON.stringify(options.route_context)}`:'';const response=await fetchWithTimeout('/chat',{method:'POST',body:JSON.stringify({message:query+context,conversation_id:options.conversation_id,language:options.language||'en',profile:options.role||'citizen'})},30000,onSlow);return response.json();}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { WeatherData, Language } from '../types';
 import { DEFAULT_WEATHER_DATA, INDIAN_CITIES, INITIAL_WEATHER } from '../data/weatherData';
+import { apiGetLocationWeather } from '../services/api';
 import {
   MapPin,
   LocateFixed,
@@ -58,13 +59,23 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
       async (pos) => {
         try {
           const { latitude, longitude } = pos.coords;
-          const res = await fetch(`/api/weather/live-location?lat=${latitude}&lon=${longitude}`);
-          if (!res.ok) {
-            throw new Error(`Weather service returned ${res.status}`);
-          }
-          const liveData = await res.json();
-          if (liveData && liveData.city) {
-            setSelectedWeather(liveData);
+          const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
+          if (liveWeather) {
+            setSelectedWeather({
+              ...selectedWeather,
+              city: location.name || 'Current location',
+              state: '',
+              country: 'India',
+              temperature: liveWeather.temperature,
+              feelsLike: liveWeather.feels_like,
+              condition: liveWeather.condition,
+              conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
+              humidity: liveWeather.humidity,
+              windSpeed: liveWeather.wind_speed,
+              windDirection: liveWeather.wind_direction,
+              rainChance: liveWeather.rain_probability,
+              lastUpdated: 'Just now'
+            });
             setGpsDetected(true);
             setLocationError(null);
           } else {

@@ -29,6 +29,7 @@ import {
   apiGetRouteExplanation,
   apiGetNearbyPlaces,
   apiGetPointWeather,
+  apiGetLocationWeather,
   apiResolveLocation,
   ApiPointWeatherResponse
 } from '../services/api';
@@ -162,14 +163,10 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           setOriginCoords([latitude, longitude]);
 
           try {
-            const pt = await apiGetPointWeather(latitude, longitude);
-            if (pt && pt.location_name) {
-              setOriginName(`${pt.location_name} (Current GPS)`);
-              setOriginQuery(`${pt.location_name} (Current GPS)`);
-            } else {
-              setOriginName(`GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`);
-              setOriginQuery(`GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`);
-            }
+            const { location } = await apiGetLocationWeather(latitude, longitude);
+            const label = location.name || `GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`;
+            setOriginName(`${label} (Current GPS)`);
+            setOriginQuery(`${label} (Current GPS)`);
           } catch {
             setOriginName(`GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`);
             setOriginQuery(`GPS Location (${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E)`);
