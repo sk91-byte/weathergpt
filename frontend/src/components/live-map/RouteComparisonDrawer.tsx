@@ -238,7 +238,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                   </span>
                 </div>
                 <span className="text-[11px] font-extrabold text-white">
-                  {originName.split(',')[0]} → {destinationName.split(',')[0]}
+                  {(originName || 'Origin').split(',')[0]} → {(destinationName || 'Destination').split(',')[0]}
                 </span>
               </div>
 
@@ -374,7 +374,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                               {isSafest ? '🟢' : isFastest ? '⚡' : isScenic ? '🌿' : '🚗'}
                             </span>
                             <span className="text-xs font-black">
-                              {isSafest ? 'Safest' : isFastest ? 'Fastest' : isScenic ? 'Scenic' : route.name.split(' ')[0]}
+                              {isSafest ? 'Safest' : isFastest ? 'Fastest' : isScenic ? 'Scenic' : (route?.name || '').split(' ')[0]}
                             </span>
                           </div>
                           <span

@@ -89,13 +89,16 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
   // 1. Origin & Destination state
   const [originName, setOriginName] = useState<string>(
-    initialTrip?.from || (currentWeather.city ? `${currentWeather.city} (Current Location)` : 'DLF CyberCity, Gurgaon')
+    initialTrip?.from || (currentWeather?.city ? `${currentWeather.city} (Current Location)` : 'DLF CyberCity, Gurgaon')
   );
   const [originQuery, setOriginQuery] = useState<string>(
-    initialTrip?.from || (currentWeather.city ? `${currentWeather.city} (Current Location)` : 'DLF CyberCity, Gurgaon')
+    initialTrip?.from || (currentWeather?.city ? `${currentWeather.city} (Current Location)` : 'DLF CyberCity, Gurgaon')
   );
   const [originCoords, setOriginCoords] = useState<[number, number]>(
-    (initialTrip as any)?.originCoords || (currentWeather.latitude && currentWeather.longitude ? [currentWeather.latitude, currentWeather.longitude] : [28.4986, 77.0878])
+    (initialTrip as any)?.originCoords ||
+    ((currentWeather as any)?.latitude && (currentWeather as any)?.longitude
+      ? [(currentWeather as any).latitude, (currentWeather as any).longitude]
+      : [28.4986, 77.0878])
   );
 
   const [destinationName, setDestinationName] = useState<string>(

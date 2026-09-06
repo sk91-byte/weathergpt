@@ -17,6 +17,7 @@ import { ExploreMoreSection } from './components/ExploreMoreSection';
 import { BottomNavigation, TabType } from './components/BottomNavigation';
 import { AIChatScreen } from './components/AIChatScreen';
 import { WeatherMapScreen } from './components/WeatherMapScreen';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OnboardingScreen } from './components/OnboardingScreen';
 import { DailyBriefingModal } from './components/DailyBriefingModal';
@@ -435,18 +436,20 @@ export default function App() {
           )}
 
           {activeTab === 'map' && (
-            <WeatherMapScreen
-              initialLayer={mapInitialLayer}
-              onSelectCity={handleSelectCity}
-              onBackToHome={() => setActiveTab('home')}
-              onUseLiveLocation={handleGetLiveLocation}
-              isLocating={isLocating}
-              currentWeather={weather}
-              initialTrip={trip}
-              onUpdateTrip={(updatedTrip) => setTrip(updatedTrip)}
-              initialLanguage={language === 'hi' ? 'hi' : 'en'}
-              userRole={userRole}
-            />
+            <ErrorBoundary onReset={() => setActiveTab('home')}>
+              <WeatherMapScreen
+                initialLayer={mapInitialLayer}
+                onSelectCity={handleSelectCity}
+                onBackToHome={() => setActiveTab('home')}
+                onUseLiveLocation={handleGetLiveLocation}
+                isLocating={isLocating}
+                currentWeather={weather}
+                initialTrip={trip}
+                onUpdateTrip={(updatedTrip) => setTrip(updatedTrip)}
+                initialLanguage={language === 'hi' ? 'hi' : 'en'}
+                userRole={userRole}
+              />
+            </ErrorBoundary>
           )}
 
           {activeTab === 'chat' && (

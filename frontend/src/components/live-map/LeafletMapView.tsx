@@ -620,7 +620,7 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
         <div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;">
           <div style="width:20px;height:20px;border-radius:9999px;background:#10b981;border:3px solid #ffffff;box-shadow:0 0 12px rgba(16,185,129,0.9);display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:900;">A</div>
           <span style="background:rgba(15,23,42,0.9);color:#34d399;font-size:9px;font-weight:800;padding:2px 6px;border-radius:4px;margin-top:2px;border:1px solid #10b981;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);">
-            ${originName.split(',')[0]}
+            ${(originName || 'Origin').split(',')[0]}
           </span>
         </div>
       `,
@@ -641,7 +641,7 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
         <div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;">
           <div style="width:22px;height:22px;border-radius:9999px;background:#ef4444;border:3px solid #ffffff;box-shadow:0 0 14px rgba(239,68,68,0.9);display:flex;align-items:center;justify-content:center;color:#ffffff;font-size:11px;font-weight:900;">B</div>
           <span style="background:rgba(15,23,42,0.9);color:#fca5a5;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;margin-top:2px;border:1px solid #ef4444;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);">
-            ${destinationName.split(',')[0]}
+            ${(destinationName || 'Destination').split(',')[0]}
           </span>
         </div>
       `,
