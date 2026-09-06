@@ -84,7 +84,7 @@ export const CitySelectorModal: React.FC<CitySelectorModalProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                  {isLocating ? 'Fetching live satellites & local radar...' : 'Automatic weather & rainfall radar for where you are'}
+                  {isLocating ? 'Fetching live provider weather...' : 'Fetch weather for your current GPS location'}
                 </p>
               </div>
             </div>

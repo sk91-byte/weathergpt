@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { User, Settings, Bell, MapPin, Navigation, ShieldAlert, CheckCircle2, ChevronRight, Sparkles } from './Icons';
+import { User, Settings, Bell, MapPin, Navigation, ShieldAlert, CheckCircle2, Sparkles } from './Icons';
 import { Language, UserRole, DemoScenario } from '../types';
-import { DEMO_SCENARIOS } from '../data/weatherData';
 
 interface ProfileScreenProps {
   userName?: string;
@@ -86,45 +85,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <span className="text-[10px] text-slate-500 leading-tight block mt-0.5">
                   {r.desc}
                 </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Hackathon Demo Scenarios Switcher */}
-        <div className="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-3xl border border-indigo-200 shadow-xs space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold text-indigo-950 uppercase tracking-wider flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-              Demo Presentation Scenarios
-            </span>
-            <span className="text-[9px] font-extrabold bg-indigo-200 text-indigo-800 px-2 py-0.5 rounded-full">
-              Hackathon Ready
-            </span>
-          </div>
-          <p className="text-[11px] text-indigo-900/80 leading-normal">
-            Switch scenarios in 1 click to test extreme weather conditions & actionable advice:
-          </p>
-
-          <div className="space-y-1.5 pt-1">
-            {DEMO_SCENARIOS.map((scenario) => (
-              <button
-                key={scenario.id}
-                onClick={() => {
-                  onSelectDemoScenario(scenario);
-                  onBackToHome();
-                }}
-                className="w-full p-2.5 bg-white hover:bg-indigo-100/60 rounded-2xl border border-indigo-100 text-left transition cursor-pointer flex items-center justify-between group shadow-2xs"
-              >
-                <div>
-                  <span className="text-xs font-bold text-slate-800 block group-hover:text-indigo-700">
-                    {scenario.title}
-                  </span>
-                  <span className="text-[10px] text-slate-500 line-clamp-1">
-                    {scenario.tagline}
-                  </span>
-                </div>
-                <ChevronRight className="w-4 h-4 text-indigo-400 group-hover:text-indigo-600" />
               </button>
             ))}
           </div>

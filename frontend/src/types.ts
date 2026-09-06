@@ -85,14 +85,14 @@ export interface RouteTrip {
   statusType: 'rain' | 'clear' | 'alert';
   recommendation: string;
   weatherOnRoute?: string;
-  safetyScore?: number;
+  safetyScore?: number | null;
   stops: {
     time: string;
     pointName: string;
     condition: string;
-    rainProb: number;
-    temp: number;
-    windSpeed: number;
+    rainProb: number | null;
+    temp: number | null;
+    windSpeed: number | null;
     hazard?: string;
   }[];
   alternativeAdvice: string;
@@ -162,6 +162,7 @@ export interface RouteSamplingPoint {
   weatherCondition: string;
   temp: number;
   rainProb: number;
+  windSpeed?: number;
   rainIntensity: 'None' | 'Light' | 'Moderate' | 'Heavy';
   waterloggingRisk: 'None' | 'Low' | 'Moderate' | 'High';
   safetyScore: number;
@@ -194,9 +195,9 @@ export interface LiveMapRoute {
   durationMinutes: number;
   safetyScore: number; // 0 to 100
   summaryCondition: string;
-  rainRisk: 'Low' | 'Moderate' | 'High';
-  waterloggingRisk: 'Low' | 'Moderate' | 'High';
-  thunderstormRisk?: 'Low' | 'Moderate' | 'High';
+  rainRisk: 'Low' | 'Moderate' | 'High' | 'Unavailable';
+  waterloggingRisk: 'Low' | 'Moderate' | 'High' | 'Unavailable';
+  thunderstormRisk?: 'Low' | 'Moderate' | 'High' | 'Unavailable';
   hazardCount: number;
   color: 'green' | 'orange' | 'red';
   strokeColor: string;
@@ -220,7 +221,7 @@ export interface DepartureTimeOption {
   statusNote: string;
   isRecommended?: boolean;
   tag?: string;
-  rainRisk: 'Low' | 'Moderate' | 'High';
+  rainRisk: 'Low' | 'Moderate' | 'High' | 'Unavailable';
   conditionIcon: string;
 }
 

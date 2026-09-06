@@ -17,7 +17,6 @@ import { ExploreMoreSection } from './components/ExploreMoreSection';
 import { BottomNavigation, TabType } from './components/BottomNavigation';
 import { AIChatScreen } from './components/AIChatScreen';
 import { WeatherMapScreen } from './components/WeatherMapScreen';
-import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OnboardingScreen } from './components/OnboardingScreen';
 import { DailyBriefingModal } from './components/DailyBriefingModal';
@@ -31,17 +30,15 @@ import { CitySelectorModal } from './components/CitySelectorModal';
 import { NotificationsModal } from './components/NotificationsModal';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
 import { getWeatherTheme } from './utils/weatherGradients';
-import { apiGetLocationWeather } from './services/api';
+import { apiGetLocationWeather, apiResolveLocation } from './services/api';
 
 import {
-  DEFAULT_WEATHER_DATA,
   DEFAULT_HOURLY_FORECAST,
   DEFAULT_DAILY_FORECAST,
   DEFAULT_ROUTE_TRIP,
   DEFAULT_SAVED_TRIPS,
   DEFAULT_ALERTS,
   DEFAULT_FARMER_ADVISORY,
-  CITY_WEATHER_DATABASE,
   INITIAL_WEATHER
 } from './data/weatherData';
 import { WeatherData, Language, UserRole, DemoScenario, RouteTrip } from './types';
@@ -138,128 +135,130 @@ export default function App() {
     setLocationError(null);
 
     if (typeof window === 'undefined' || !navigator.geolocation) {
-      setLocationError('We could not detect your location. You can search for your area manually.');
+      setLocationError('Geolocation is not supported by your browser.');
       setIsLocating(false);
       return;
     }
 
-    const requestPosition = (highAccuracy: boolean) => {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          try {
-            const { latitude, longitude } = pos.coords;
-            if (import.meta.env.DEV) {
-              console.log('[handleGetLiveLocation] Detected GPS coordinates:', latitude, longitude);
-            }
-            const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
-            if (liveWeather) {
-              const detectedCity = location.name || 'Current location';
-              const liveData: WeatherData = {
-                ...weather,
-                city: detectedCity,
-                state: location.state || '',
-                country: 'India',
-                temperature: liveWeather.temperature,
-                feelsLike: liveWeather.feels_like,
-                condition: liveWeather.condition,
-                conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
-                humidity: liveWeather.humidity,
-                windSpeed: liveWeather.wind_speed,
-                windDirection: liveWeather.wind_direction,
-                rainChance: liveWeather.rain_probability,
-                lastUpdated: 'Live GPS',
-                aiRecommendation: `Live weather active for ${detectedCity}. Real-time radar and satellite feed connected.`,
-                recommendationExplanation: { ...weather.recommendationExplanation, title: 'Live location weather' }
-              };
-              setWeather(liveData);
-              setTrip((prev) => ({
-                ...prev,
-                from: detectedCity,
-                originCoords: [latitude, longitude]
-              } as any));
-              try {
-                localStorage.setItem('weathergpt_location', JSON.stringify(liveData));
-                localStorage.setItem('weathergpt_user_selected_city', 'false');
-              } catch (e) {}
-              setLocationError(null);
-              setShowCitySelector(false);
-            } else {
-              throw new Error('No current weather returned');
-            }
-          } catch (err: any) {
-            if (import.meta.env.DEV) {
-              console.warn('Live location API fetch error:', err);
-            }
-            setLocationError('We could not detect your location. You can search for your area manually.');
-          } finally {
-            setIsLocating(false);
-          }
-        },
-        (err) => {
-          if (import.meta.env.DEV) {
-            console.warn('Geolocation error:', err);
-          }
-          if (highAccuracy && (err.code === 3 || err.code === 2)) {
-            // Attempt standard accuracy on timeout/position issue
-            requestPosition(false);
-            return;
-          }
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
+          if (liveWeather) {
+            const liveData: WeatherData = {
+              ...weather,
+              city: location.name || 'Current location',
+              state: '',
+              country: 'India',
+              temperature: liveWeather.temperature,
+              feelsLike: liveWeather.feels_like,
+              condition: liveWeather.condition,
+              conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
+              humidity: liveWeather.humidity,
+              windSpeed: liveWeather.wind_speed,
+              windDirection: liveWeather.wind_direction,
+              rainChance: liveWeather.rain_probability,
+              lastUpdated: 'Just now',
+              aiRecommendation: 'This is your live weather at the detected location.',
+              recommendationExplanation: { ...weather.recommendationExplanation, title: 'Live location weather' }
+            };
+            setWeather(liveData);
+            try {
+              localStorage.setItem('weathergpt_location', JSON.stringify(liveData));
+            } catch (e) {}
+            setLocationError(null);
+            setShowCitySelector(false);
+          } else throw new Error('No current weather returned');
+        } catch (err: any) {
+          console.warn('Live location API fetch error:', err);
+          setLocationError('Fetched coordinates, but weather radar feed failed. Please try again or select a city.');
+        } finally {
           setIsLocating(false);
-          if (err.code === 1) {
-            setLocationError('Location permission is blocked. Please allow location access in your browser settings.');
-          } else {
-            setLocationError('We could not detect your location. You can search for your area manually.');
-          }
-        },
-        {
-          enableHighAccuracy: highAccuracy,
-          timeout: highAccuracy ? 10000 : 15000,
-          maximumAge: 0
         }
-      );
-    };
-
-    requestPosition(true);
+      },
+      (err) => {
+        console.warn('Geolocation error:', err);
+        setIsLocating(false);
+        if (err.code === 1) {
+          setLocationError('Location permission was denied. Please allow location in your browser address bar.');
+        } else if (err.code === 2) {
+          setLocationError('Location unavailable. Check your device GPS or connection.');
+        } else if (err.code === 3) {
+          setLocationError('Location request timed out. Please try again.');
+        } else {
+          setLocationError(err.message || 'Unable to retrieve location coordinates.');
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      }
+    );
   };
 
-  // Switch City - preserves user selection until GPS is explicitly pressed
-  const handleSelectCity = (cityString: string) => {
-    const cityName = cityString.split(',')[0].trim();
-    let newWeather = weather;
-    if (CITY_WEATHER_DATABASE[cityString]) {
-      newWeather = CITY_WEATHER_DATABASE[cityString];
-    } else if (CITY_WEATHER_DATABASE[cityName]) {
-      newWeather = CITY_WEATHER_DATABASE[cityName];
-    } else if (DEFAULT_WEATHER_DATA[cityString]) {
-      newWeather = DEFAULT_WEATHER_DATA[cityString];
-    } else {
-      newWeather = {
-        ...weather,
-        city: cityName
-      };
+  // Attempt auto-location if already granted by user
+  useEffect(() => {
+    if (typeof window !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+      navigator.permissions
+        .query({ name: 'geolocation' as PermissionName })
+        .then((permissionStatus) => {
+          if (permissionStatus.state === 'granted') {
+            handleGetLiveLocation();
+          }
+        })
+        .catch(() => {
+          // Permissions API query not supported or failed
+        });
     }
-    setWeather(newWeather);
-    setTrip((prev) => ({
-      ...prev,
-      from: newWeather.city
-    }));
+  }, []);
+
+  // Switch City
+  const handleSelectCity = async (cityString: string) => {
+    const cityName = cityString.split(',')[0].trim();
     try {
-      localStorage.setItem('weathergpt_location', JSON.stringify(newWeather));
-      localStorage.setItem('weathergpt_user_selected_city', 'true');
-    } catch (e) {}
+      const resolved = await apiResolveLocation(cityString);
+      const latitude = Number(resolved?.latitude ?? resolved?.lat);
+      const longitude = Number(resolved?.longitude ?? resolved?.lon ?? resolved?.lng);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error('Location coordinates unavailable');
+      const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
+      const liveData: WeatherData = {
+        ...weather,
+        city: location?.name || resolved?.name || cityName,
+        state: resolved?.state || '',
+        country: resolved?.country || 'India',
+        temperature: liveWeather.temperature,
+        feelsLike: liveWeather.feels_like,
+        condition: liveWeather.condition,
+        conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
+        humidity: liveWeather.humidity,
+        windSpeed: liveWeather.wind_speed,
+        windDirection: liveWeather.wind_direction,
+        rainChance: liveWeather.rain_probability,
+        lastUpdated: 'Just now',
+        aiRecommendation: 'Live weather fetched for your selected location.',
+        recommendationExplanation: { ...weather.recommendationExplanation, title: 'Live location weather' }
+      };
+      setWeather(liveData);
+      localStorage.setItem('weathergpt_location', JSON.stringify(liveData));
+    } catch (error) {
+      console.warn('Live city weather unavailable:', error);
+      setLocationError('Live weather could not be loaded for that city. Your previous verified weather is still shown. Please try again.');
+    }
   };
 
   // Hackathon Demo Scenario Handler
-  const handleSelectDemoScenario = (scenario: DemoScenario) => {
+  const handleSelectDemoScenario = async (scenario: DemoScenario) => {
     if (scenario.id === 'dehradun_rain') {
-      setWeather(CITY_WEATHER_DATABASE['Dehradun'] || DEFAULT_WEATHER_DATA);
+      await handleSelectCity('Dehradun, Uttarakhand');
     } else if (scenario.id === 'delhi_heatwave') {
-      setWeather(CITY_WEATHER_DATABASE['Delhi NCR']);
+      await handleSelectCity('Delhi NCR, India');
     } else if (scenario.id === 'kisan_irrigation') {
-      setWeather(CITY_WEATHER_DATABASE['Ludhiana']);
+      await handleSelectCity('Ludhiana, Punjab');
       setShowFarmerMode(true);
     } else if (scenario.id === 'bhubaneswar_cyclone') {
-      setWeather(CITY_WEATHER_DATABASE['Bhubaneswar']);
+      await handleSelectCity('Bhubaneswar, Odisha');
       setShowWeatherAlerts(true);
     }
   };
@@ -298,36 +297,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Visible Floating Live Location Error Notice */}
-        {locationError && (
-          <div className="mx-4 mt-2 mb-1 p-3 bg-red-600/95 text-white rounded-2xl shadow-xl flex items-start justify-between space-x-2 z-40 backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-300 border border-red-400/40">
-            <div className="flex items-start space-x-2 text-xs">
-              <span className="text-base leading-none mt-0.5 shrink-0">📍</span>
-              <div>
-                <p className="font-bold leading-tight">{locationError}</p>
-                <button
-                  onClick={() => {
-                    setLocationError(null);
-                    setShowCitySelector(true);
-                  }}
-                  className="mt-1.5 text-[11px] underline font-semibold text-white/95 hover:text-white cursor-pointer block"
-                >
-                  Search your area manually →
-                </button>
-              </div>
-            </div>
-            <button
-              onClick={() => setLocationError(null)}
-              className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/20 text-white cursor-pointer shrink-0 font-bold text-xs"
-              title="Dismiss"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
         {/* Dynamic Screen View Based on activeTab */}
-        <div className="flex-1 overflow-hidden relative">
+        <div className="flex-1 min-h-0 overflow-y-auto relative">
           {activeTab === 'home' && (
             <div className="h-full overflow-y-auto pb-24 scroll-smooth">
               {/* 1. Header */}
@@ -436,20 +407,16 @@ export default function App() {
           )}
 
           {activeTab === 'map' && (
-            <ErrorBoundary onReset={() => setActiveTab('home')}>
-              <WeatherMapScreen
-                initialLayer={mapInitialLayer}
-                onSelectCity={handleSelectCity}
-                onBackToHome={() => setActiveTab('home')}
-                onUseLiveLocation={handleGetLiveLocation}
-                isLocating={isLocating}
-                currentWeather={weather}
-                initialTrip={trip}
-                onUpdateTrip={(updatedTrip) => setTrip(updatedTrip)}
-                initialLanguage={language === 'hi' ? 'hi' : 'en'}
-                userRole={userRole}
-              />
-            </ErrorBoundary>
+            <WeatherMapScreen
+              initialLayer={mapInitialLayer}
+              onSelectCity={handleSelectCity}
+              onBackToHome={() => setActiveTab('home')}
+              onUseLiveLocation={handleGetLiveLocation}
+              isLocating={isLocating}
+              currentWeather={weather}
+              initialTrip={trip}
+              onUpdateTrip={(updatedTrip) => setTrip(updatedTrip)}
+            />
           )}
 
           {activeTab === 'chat' && (
@@ -463,6 +430,7 @@ export default function App() {
                 setActiveTab('home');
               }}
               initialQuery={chatInitialQuery}
+              userRole={userRole}
             />
           )}
 
@@ -596,6 +564,7 @@ export default function App() {
             onClose={() => setShowVoiceAssistant(false)}
             currentLanguage={language}
             onLanguageChange={setLanguage}
+            userRole={userRole}
           />
         )}
       </div>

@@ -365,24 +365,20 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
         weatherData = await apiGetRouteWeather(routeData.geometry, 'driving');
       }
 
-      const calculatedScore = weatherData?.safety_score ?? Math.floor(75 + Math.random() * 20);
-      const estDuration = routeData?.duration_minutes ? `${Math.round(routeData.duration_minutes)} mins` : '35 mins';
+      const calculatedScore = typeof weatherData?.safety_score === 'number' ? weatherData.safety_score : null;
+      const estDuration = routeData?.duration_minutes ? `${Math.round(routeData.duration_minutes)} mins` : 'Unavailable';
 
       const timelineStops = weatherData?.timeline && weatherData.timeline.length > 0
         ? weatherData.timeline.map((t) => ({
             time: t.expected_time || newLeaveBy,
             pointName: t.name || 'Waypoint',
-            condition: t.weather_condition || 'Clear',
-            rainProb: t.rain_prob ?? 20,
-            temp: t.temp_c ?? 28,
-            windSpeed: t.wind_speed_kmh ?? 12,
+            condition: t.weather_condition || 'Unavailable',
+            rainProb: typeof t.rain_prob === 'number' ? t.rain_prob : null,
+            temp: typeof t.temp_c === 'number' ? t.temp_c : null,
+            windSpeed: typeof t.wind_speed_kmh === 'number' ? t.wind_speed_kmh : null,
             hazard: t.hazard || undefined
           }))
-        : [
-            { time: newLeaveBy, pointName: newFrom.trim(), condition: 'Clear', rainProb: 15, temp: 28, windSpeed: 10 },
-            { time: 'Midway', pointName: 'Transit Corridor', condition: 'Passing Clouds', rainProb: 25, temp: 27, windSpeed: 12 },
-            { time: 'Arrival', pointName: newTo.trim(), condition: calculatedScore > 80 ? 'Clear' : 'Scattered Rain', rainProb: 35, temp: 27, windSpeed: 14 }
-          ];
+        : [];
 
       const newTripObj: RouteTrip = {
         id: `trip-${Date.now()}`,
@@ -390,13 +386,15 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
         to: newTo.trim(),
         leaveBy: newLeaveBy,
         estDuration,
-        status: calculatedScore >= 80 ? 'Favorable commute corridor with low weather risk' : 'Precaution advised: wet road conditions possible',
-        statusType: calculatedScore >= 80 ? 'clear' : 'rain',
-        weatherOnRoute: calculatedScore >= 80 ? 'Mostly dry roadways with light ambient breeze' : 'Scattered showers along highway corridors',
+        status: typeof calculatedScore === 'number' ? (calculatedScore >= 80 ? 'Favorable commute corridor with low weather risk' : 'Precaution advised: wet road conditions possible') : 'Route calculated; weather data unavailable',
+        statusType: typeof calculatedScore === 'number' ? (calculatedScore >= 80 ? 'clear' : 'rain') : 'alert',
+        weatherOnRoute: typeof calculatedScore === 'number' ? (calculatedScore >= 80 ? 'Mostly dry roadway conditions from the live provider' : 'Wet-weather risk reported by the live provider') : 'Live route weather is currently unavailable',
         safetyScore: calculatedScore,
-        recommendation: `Optimal departure window around ${newLeaveBy} provides safest transit conditions.`,
+        recommendation: typeof calculatedScore === 'number'
+          ? 'The live route weather was used for this summary. Recheck before leaving because conditions can change.'
+          : 'No departure recommendation is shown because live route weather was unavailable.',
         stops: timelineStops,
-        alternativeAdvice: 'Departing on schedule avoids forecasted peak precipitation.'
+        alternativeAdvice: typeof calculatedScore === 'number' ? 'Recheck the live forecast before departure because conditions can change.' : 'Try again when live route weather is available; no safety score is being estimated.'
       };
 
       if (onSaveTrip) onSaveTrip(newTripObj);
@@ -412,7 +410,7 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
     }
   };
 
-  const safetyScore = trip.safetyScore ?? 78;
+  const safetyScore = trip.safetyScore;
 
   if (!isOpen) return null;
 
@@ -527,18 +525,18 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
                 <div>
                   <span className="text-xs font-bold text-slate-800 block">Weather Safety Score</span>
                   <span className="text-[11px] text-slate-500">
-                    {safetyScore >= 80 ? 'Safe conditions with low risk' : 'Moderate precautions advised'}
+                    {typeof safetyScore === 'number' ? (safetyScore >= 80 ? 'Safe conditions with low risk' : 'Moderate precautions advised') : 'Live weather score unavailable'}
                   </span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-emerald-500 rounded-full"
-                      style={{ width: `${safetyScore}%` }}
+                      style={{ width: `${safetyScore ?? 0}%` }}
                     />
                   </div>
                   <span className="text-sm font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
-                    {safetyScore}/100
+                    {typeof safetyScore === 'number' ? `${safetyScore}/100` : 'Unavailable'}
                   </span>
                 </div>
               </div>
@@ -604,8 +602,8 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
                           </div>
                           <div className="flex items-center space-x-3 text-[11px] text-slate-500 mt-0.5 font-medium">
                             <span>{stop.condition}</span>
-                            <span>Rain: {stop.rainProb}%</span>
-                            <span>Wind: {stop.windSpeed} km/h</span>
+                            <span>Rain: {stop.rainProb === null ? 'Unavailable' : `${stop.rainProb}%`}</span>
+                            <span>Wind: {stop.windSpeed === null ? 'Unavailable' : `${stop.windSpeed} km/h`}</span>
                           </div>
                           {stop.hazard && (
                             <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-red-50 text-red-700 border border-red-200/60">
@@ -613,7 +611,7 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
                             </span>
                           )}
                         </div>
-                        <span className="font-bold text-slate-700 text-sm">{stop.temp}°C</span>
+                        <span className="font-bold text-slate-700 text-sm">{stop.temp === null ? 'Unavailable' : `${stop.temp}°C`}</span>
                       </div>
                     ))}
                   </div>
@@ -1137,7 +1135,7 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
                     </p>
                     <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
                       <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200">
-                        Score: {st.safetyScore ?? 78}/100
+                        Score: {typeof st.safetyScore === 'number' ? `${st.safetyScore}/100` : 'Unavailable'}
                       </span>
                       <span className="text-blue-600 font-bold">
                         {trip.id === st.id ? '✓ Active' : 'Tap to switch'}

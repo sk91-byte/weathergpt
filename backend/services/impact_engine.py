@@ -3,7 +3,7 @@
 from typing import Any
 
 
-PROFILES = {"general_public", "traveller", "farmer", "student", "outdoor_worker", "construction_worker", "delivery_worker", "commuter", "event_organizer", "aviation", "marine", "smart_city", "worker"}
+PROFILES = {"general_public", "traveller", "farmer", "student", "researcher", "outdoor_worker", "construction_worker", "delivery_worker", "commuter", "event_organizer", "aviation", "marine", "smart_city", "worker"}
 
 
 def impacts_and_actions(profile: str, risks: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -46,6 +46,8 @@ def impacts_and_actions(profile: str, risks: dict[str, dict[str, Any]]) -> dict[
         actions.append("Review irrigation timing against the expected rainfall and your crop conditions.")
     if profile in {"aviation", "marine"}:
         actions.append("Use this only as decision support; follow official operational guidance.")
+    if profile == "researcher":
+        actions.append("Review the source, retrieval time, and uncertainty before using this information in analysis.")
     if not actions:
         precautions = ["Normal outdoor plans appear reasonable based on the available forecast; continue monitoring updates."]
     why = [

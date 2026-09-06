@@ -16,9 +16,72 @@ from backend.services.decision_engine import analyze_decision
 
 def _language_from_message(message: str) -> str | None:
     text = message.lower()
-    if "hindi" in text or "हिंदी" in text:
+    if "hinglish" in text:
+        return "en"
+    if "gujarati" in text or "ગુજરાતી" in text or any("\u0a80" <= character <= "\u0aff" for character in message):
+        return "gu"
+    if "hindi" in text or "हिंदी" in text or any("\u0900" <= character <= "\u097f" for character in message):
         return "hi"
+    if "english" in text:
+        return "en"
     return None
+
+
+def _normalise_profile(profile: str | None) -> str:
+    aliases = {
+        "citizen": "general_public", "general_public": "general_public", "student": "student",
+        "farmer": "farmer", "traveller": "traveller", "researcher": "researcher",
+        "commuter": "commuter", "worker": "worker", "outdoor_worker": "outdoor_worker",
+    }
+    return aliases.get((profile or "general_public").strip().lower(), "general_public")
+
+
+def _follow_up_suggestions(language: str, profile: str, intent: str, has_route: bool = False) -> list[str]:
+    sets = {
+        "en": {
+            "general_public": ["Will it rain in the next 3 hours?", "What should I carry?", "Is it safe to go outside?", "Explain the main risk."],
+            "farmer": ["Should I irrigate today?", "Is it safe to spray crops?", "What should I do if rain starts?", "Explain the crop risk."],
+            "traveller": ["Should I leave now?", "What should I carry for the journey?", "Will rain slow the route?", "Show the safest travel advice."],
+            "student": ["Is it safe to go to college?", "Should I carry an umbrella?", "What time is better to leave?", "What should I keep in my bag?"],
+            "researcher": ["Show the data source.", "What is the forecast confidence?", "What changed from the last update?", "Explain the uncertainty."],
+        },
+        "hi": {
+            "general_public": ["अगले 3 घंटे में बारिश होगी?", "क्या साथ लेकर निकलूं?", "क्या बाहर जाना सुरक्षित है?", "मुख्य जोखिम समझाइए।"],
+            "farmer": ["आज सिंचाई करूं?", "क्या फसल पर स्प्रे करना सुरक्षित है?", "बारिश शुरू हो तो क्या करूं?", "फसल का जोखिम समझाइए।"],
+            "traveller": ["अभी निकलना चाहिए?", "यात्रा में क्या साथ रखूं?", "क्या बारिश से रास्ता धीमा होगा?", "सबसे सुरक्षित यात्रा सलाह दें।"],
+            "student": ["क्या कॉलेज जाना सुरक्षित है?", "क्या छाता ले जाऊं?", "किस समय निकलना बेहतर है?", "बैग में क्या रखूं?"],
+            "researcher": ["डेटा का स्रोत बताइए।", "पूर्वानुमान का भरोसा कितना है?", "पिछले अपडेट से क्या बदला?", "अनिश्चितता समझाइए।"],
+        },
+        "gu": {
+            "general_public": ["આગામી 3 કલાકમાં વરસાદ પડશે?", "શું સાથે લઈને નીકળું?", "બહાર જવું સલામત છે?", "મુખ્ય જોખમ સમજાવો."],
+            "farmer": ["આજે સિંચાઈ કરું?", "પાક પર છંટકાવ કરવો સલામત છે?", "વરસાદ શરૂ થાય તો શું કરું?", "પાકનું જોખમ સમજાવો."],
+            "traveller": ["હમણાં નીકળવું જોઈએ?", "મુસાફરીમાં શું સાથે રાખું?", "વરસાદથી રસ્તો ધીમો થશે?", "સૌથી સલામત મુસાફરી સલાહ આપો."],
+            "student": ["કોલેજ જવું સલામત છે?", "છત્રી લઈ જાઉં?", "કયા સમયે નીકળવું સારું?", "બેગમાં શું રાખું?"],
+            "researcher": ["ડેટાનો સ્ત્રોત જણાવો.", "આગાહી પર કેટલો વિશ્વાસ રાખી શકાય?", "છેલ્લા અપડેટથી શું બદલાયું?", "અનિશ્ચિતતા સમજાવો."],
+        },
+        "hinglish": {
+            "general_public": ["Agale 3 ghante mein baarish hogi?", "Kya saath lekar niklun?", "Kya bahar jaana safe hai?", "Main risk samjhao."],
+            "farmer": ["Aaj irrigation karun?", "Crop spray karna safe hai?", "Baarish shuru ho to kya karun?", "Crop risk samjhao."],
+            "traveller": ["Abhi nikalna chahiye?", "Journey mein kya carry karun?", "Kya baarish se route slow hoga?", "Safest travel advice do."],
+            "student": ["College jaana safe hai?", "Kya chhata le jaun?", "Kis time nikalna better hai?", "Bag mein kya rakhu?"],
+            "researcher": ["Data source batao.", "Forecast confidence kitna hai?", "Last update se kya badla?", "Uncertainty samjhao."],
+        },
+    }
+    mode = language if language in {"hi", "gu", "hinglish"} else "en"
+    values = list(sets[mode].get(profile, sets[mode]["general_public"]))
+    if has_route:
+        values[0] = {"en": "Should I leave now for this route?", "hi": "इस रास्ते के लिए अभी निकलना चाहिए?", "gu": "આ રસ્તા માટે હમણાં નીકળવું જોઈએ?", "hinglish": "Is route ke liye abhi nikalna chahiye?"}[mode]
+    return values
+
+
+def _query_analysis(query: WeatherQuery, response_mode: str, profile: str, message: str) -> dict[str, Any]:
+    return {
+        "intent": query.intent, "request_type": query.request_type, "location": query.location,
+        "location_mode": query.location_mode, "time_reference": query.time_reference,
+        "response_language": response_mode, "persona": profile,
+        "understood_as": "decision_support" if query.request_type in {"rain", "forecast"} or _asks_for_decision(message) else "weather_information",
+        "confidence": "high" if query.intent != "unknown" and (query.location or query.location_mode == "current_location") else "needs_clarification",
+    }
 
 
 def _is_hinglish(message: str) -> bool:
@@ -53,14 +116,17 @@ def _small_talk_response(message: str, language: str) -> str | None:
     capabilities = ("what can you do", "help me", "आप क्या कर सकते", "क्या कर सकते")
     if text in greetings:
         if language == "hi": return "नमस्ते! मैं WeatherGPT हूँ। अपने शहर का मौसम, बारिश, पूर्वानुमान या बाहर जाने की सलाह पूछिए।"
+        if language == "gu": return "નમસ્તે! હું WeatherGPT છું. તમારા શહેરનું હવામાન, વરસાદ, આગાહી અથવા બહાર જવાની સલાહ પૂછો."
         if language == "hinglish": return "Namaste! Main WeatherGPT hoon. Apne city ka weather, baarish, forecast ya bahar jaane ki advice poochho."
         return "Hey! I’m WeatherGPT. Ask me about your city’s weather, rain, forecast, or whether it’s a good time to go out."
     if text in thanks:
         if language == "hi": return "खुशी हुई मदद करके! मौसम से जुड़ा कुछ और पूछना हो तो बताइए।"
+        if language == "gu": return "મદદ કરીને આનંદ થયો! હવામાન વિશે બીજું કંઈ પૂછવું હોય તો કહો."
         if language == "hinglish": return "Khushi hui help karke! Weather se related kuch aur poochna ho to batao."
         return "Anytime! If you want, I can also check rain, a forecast, or whether it’s a good time to head out."
     if any(phrase in text for phrase in capabilities):
         if language == "hi": return "मैं लाइव मौसम, बारिश का मौका, पूर्वानुमान और मौसम के हिसाब से बाहर जाने, यात्रा करने या क्या साथ रखने की सलाह दे सकता हूँ।"
+        if language == "gu": return "હું લાઇવ હવામાન, વરસાદની શક્યતા, આગાહી અને બહાર જવા અથવા મુસાફરી માટે વ્યવહારુ સલાહ આપી શકું છું."
         if language == "hinglish": return "Main live weather, baarish ke chances, forecast aur weather ke hisaab se travel ya kya saath rakhna hai—sab mein help kar sakta hoon."
         return "I can check live weather, rain chances, forecasts, and practical advice for going out, travelling, or deciding what to carry."
     return None
@@ -134,6 +200,8 @@ def _route_point_summary(name: str, data: dict[str, Any], forecast: bool, langua
             return f"{display_name}: अधिकतम {high}°C, न्यूनतम {low}°C, बारिश की संभावना {probability}%"
         if language == "hinglish":
             return f"{display_name}: maximum {high}°C, minimum {low}°C, baarish ke chances {probability}%"
+        if language == "gu":
+            return f"{display_name}: મહત્તમ {high}°C, લઘુત્તમ {low}°C, વરસાદની શક્યતા {probability}%"
         return f"{display_name}: high {high}°C, low {low}°C, rain chance {probability}%"
     current = data.get("current", {})
     return f"{display_name}: {current.get('temperature_c', '--')}°C, {_condition_text(current.get('condition'), language)}"
@@ -185,6 +253,16 @@ def _route_response(message: str, origin: dict[str, Any], destination: dict[str,
             advice_hinglish = f"Point forecast ke hisaab se safety score {safety_score}/100 hai, isliye possible ho to baarish kam hone ke baad nikalna better rahega. " + advice_hinglish
         limit_hinglish = "Main origin aur destination ka weather compare kar sakta hoon, lekin beech ke har kilometre ka road-level data available nahi hai."
         return f"Trip update: {origin_summary}. {destination_summary}. {advice_hinglish} {limit_hinglish}"
+    if language == "gu":
+        advice_gu = {
+            "wettest": "શક્ય હોય તો સૌથી વધુ વરસાદના સમયથી બચો. વરસાદથી બચવાનું સામાન રાખો, થોડો વધારાનો સમય રાખો અને લપસણા અથવા પાણી ભરાયેલા રસ્તાઓ પર સાવચેતીથી વાહન ચલાવો.",
+            "possible_rain": "મુસાફરી કરી શકાય છે, પરંતુ છત્રી અથવા રેનકોટ સાથે રાખો અને ભીના રસ્તાઓ માટે થોડો વધારાનો સમય રાખો.",
+            "reasonable": "મળેલા સ્થળ-આધારિત આગાહી મુજબ સામાન્ય સાવચેતી સાથે મુસાફરી યોગ્ય લાગે છે.",
+            "check_again": "નીકળતા પહેલાં ફરી હવામાન તપાસો, કારણ કે રસ્તામાં હવામાન બદલાઈ શકે છે.",
+        }[advice_key]
+        if safety_score < 80:
+            advice_gu = f"સ્થળ-આધારિત સુરક્ષા સ્કોર {safety_score}/100 છે, તેથી શક્ય હોય તો વરસાદ ઓછો થયા પછી નીકળવું સારું. " + advice_gu
+        return f"તમારી મુસાફરી અપડેટ: {origin_summary}. {destination_summary}. {advice_gu} હું શરૂઆત અને અંતિમ સ્થળનું હવામાન સરખાવી શકું છું, પરંતુ રસ્તાના દરેક કિલોમીટર માટે અલગ ડેટા ઉપલબ્ધ નથી."
     return f"Trip update: {origin_summary}. {destination_summary}. {advice} {route_limit}"
 
 
@@ -383,6 +461,23 @@ def _decision_response(message: str, decision: dict[str, Any], weather_data: dic
         if avoid: details.append("बचें: " + ", ".join(_localized_items(avoid, "hi")))
         rain_text = f" बारिश की संभावना {probability}% है।" if rain is not None else ""
         return f"{_hindi_location(location)} में {direct_hi} कुल मौसम जोखिम {score}/100 ({_hindi_level(level)}) है।{rain_text} वजह: {reason_text} सलाह: {action_text} {' '.join(details)}".strip()
+    if language == "gu":
+        direct_gu = {
+            "I’d hold off on washing the car for now—the rain may undo your hard work.": "હમણાં કાર ધોવાનું ટાળો—વરસાદથી તમારી મહેનત બગડી શકે છે.",
+            "Yes—keep an umbrella or raincoat with you, and allow extra time because wet roads can slow traffic.": "હા, છત્રી અથવા રેનકોટ સાથે રાખો અને થોડો વધારાનો સમય રાખો—ભીના રસ્તાઓ પર ટ્રાફિક ધીમો થઈ શકે છે.",
+            "I’d avoid the highest-risk time if you can. The trip may still be possible, but give yourself extra time and drive carefully.": "શક્ય હોય તો સૌથી વધુ જોખમનો સમય ટાળો. મુસાફરી શક્ય છે, પરંતુ વધારાનો સમય રાખો અને સાવચેતીથી વાહન ચલાવો.",
+            "The trip looks reasonable from the available forecast, with normal care while travelling.": "મળેલી આગાહી મુજબ સામાન્ય સાવચેતી સાથે મુસાફરી યોગ્ય લાગે છે.",
+            "I’d be a little careful about outdoor plans today.": "આજે બહાર જવાની યોજનામાં થોડી સાવચેતી રાખો.",
+            "You can go out, but keep a little weather backup with you.": "તમે બહાર જઈ શકો છો, પરંતુ હવામાન માટે થોડી તૈયારી સાથે રાખો.",
+            "Good news—normal outdoor plans look reasonable from the available forecast.": "સારા સમાચાર—મળેલી આગાહી મુજબ સામાન્ય બહારની યોજનાઓ યોગ્ય લાગે છે.",
+        }[direct]
+        reason_text = " ".join(reasons) or "મોટું હવામાન જોખમ મળ્યું નથી."
+        action_text = " ".join(actions)
+        details = []
+        if carry: details.append("સાથે રાખો: " + ", ".join(carry))
+        if avoid: details.append("ટાળો: " + ", ".join(avoid))
+        rain_text = f" વરસાદની શક્યતા {probability}% છે." if rain is not None else ""
+        return f"{location}માં {direct_gu} કુલ હવામાન જોખમ {score}/100 ({level}) છે.{rain_text} કારણ: {reason_text} સલાહ: {action_text} {' '.join(details)}".strip()
     if language == "hinglish":
         direct_hi = {
             "I’d hold off on washing the car for now—the rain may undo your hard work.": "Abhi car wash karna hold kar do—baarish tumhari mehnat kharab kar sakti hai.",
@@ -421,6 +516,11 @@ def _condition_text(condition: Any, language: str) -> str:
             "thunderstorm with slight hail": "garaj-chamak ke saath halke ole", "thunderstorm": "garaj-chamak",
             "mainly clear": "aasman zyada tar saaf", "partly cloudy": "thode baadal", "clear sky": "aasman saaf",
             "overcast": "baadal chhaye hue", "rain": "baarish", "precipitation": "baarish ya boondabaandi", "fog": "kohra",
+        },
+        "gu": {
+            "thunderstorm with slight hail": "હળવા કરા સાથે ગાજવીજ", "thunderstorm": "ગાજવીજ",
+            "mainly clear": "આકાશ મોટાભાગે સાફ", "partly cloudy": "થોડા વાદળો", "clear sky": "આકાશ સાફ",
+            "overcast": "વાદળછાયું", "rain": "વરસાદ", "precipitation": "વરસાદ અથવા ઝરમર", "fog": "ધુમ્મસ",
         },
     }
     return translations.get(language, {}).get(condition, condition)
@@ -470,6 +570,15 @@ def _practical_forecast_advice(max_temperature: Any, min_temperature: Any, rain_
         if cold_advice:
             parts.append("Halki jacket ya warm layer saath rakhna.")
         return " ".join(parts) or "Weather ke hisaab se normal outdoor plans theek lag rahe hain; nikalne se pehle ek quick update dekh lena."
+    if language == "gu":
+        parts = []
+        if rain_advice:
+            parts.append("છત્રી અથવા રેનકોટ સાથે રાખો અને થોડું વહેલું નીકળો—ભીના રસ્તાઓ પર ટ્રાફિક ધીમો થઈ શકે છે.")
+        if heat_advice:
+            parts.append("પાણી અને સનસ્ક્રીન સાથે રાખો, અને બપોરની સૌથી વધુ ગરમીમાં બહાર ઓછું રહો.")
+        if cold_advice:
+            parts.append("હળવું જાકેટ અથવા ગરમ કપડાં સાથે રાખો.")
+        return " ".join(parts) or "મળેલી આગાહી મુજબ સામાન્ય બહારની યોજના યોગ્ય લાગે છે; નીકળતા પહેલાં ફરી એકવાર અપડેટ તપાસો."
     parts = []
     if rain_advice:
         parts.append("Carry an umbrella or raincoat and leave a little early—wet roads can slow traffic.")
@@ -500,6 +609,10 @@ def _fallback_weather(language: str, location: str, weather_data: dict[str, Any]
             now = "abhi baarish ho rahi hai" if raining_now else f"abhi temperature {temperature}°C hai aur weather {condition} hai"
             advice = "Chhata lekar nikalna aur geeli sadkon par thoda sambhalna." if raining_now else ("Paani saath rakhna aur dopahar ki dhoop se bachna." if isinstance(temperature, (int, float)) and temperature > 35 else "Bahar jaane ke liye weather theek lag raha hai.")
             return f"{location} mein {now}. Humidity {humidity}% hai aur hawa {wind} km/h ki speed se chal rahi hai. {advice}"
+        if language == "gu":
+            now = "હમણાં વરસાદ પડી રહ્યો છે" if raining_now else f"હમણાં તાપમાન {temperature}°C છે અને હવામાન {condition} છે"
+            advice = "છત્રી લઈને નીકળો અને ભીના રસ્તાઓ પર સાવધાની રાખો." if raining_now else "બહાર જતાં પહેલાં તાજું અપડેટ ચકાસો."
+            return f"{location}માં {now}. ભેજ {humidity}% છે અને પવન {wind} km/h છે. {advice}"
         now = "it is raining right now" if raining_now else f"it is {temperature}°C with {condition} conditions"
         advice = "Take an umbrella and be careful on wet roads." if raining_now else ("Keep water handy and avoid the hottest hours." if isinstance(temperature, (int, float)) and temperature > 35 else "It looks comfortable for normal outdoor plans.")
         return f"Right now in {location}, {now}. Humidity is {humidity}% and wind is {wind} km/h. {advice}"
@@ -510,6 +623,8 @@ def _fallback_weather(language: str, location: str, weather_data: dict[str, Any]
         return f"{location} का पूर्वानुमान: अधिकतम {high}°C, न्यूनतम {low}°C और बारिश की संभावना {rain_probability}% है। {advice}"
     if language == "hinglish":
         return f"{location} ka forecast: maximum {high}°C, minimum {low}°C, aur baarish ke chances {rain_probability}% hain. {advice}"
+    if language == "gu":
+        return f"{location} માટે આગાહી: મહત્તમ {high}°C, લઘુત્તમ {low}°C અને વરસાદની શક્યતા {rain_probability}% છે. બહાર જતાં પહેલાં તાજું અપડેટ ચકાસો."
     return f"Here’s the outlook for {location}: a high of {high}°C, a low of {low}°C, and a {rain_probability}% chance of rain. {advice}"
 
 
@@ -526,13 +641,13 @@ def _localize_hindi_response(response: str) -> str:
     return response
 
 
-def process_chat_message(message: str, latitude: float | None = None, longitude: float | None = None, language: str | None = None, conversation_id: str | None = None, profile: str = "general_public") -> dict[str, Any]:
+def process_chat_message(message: str, latitude: float | None = None, longitude: float | None = None, language: str | None = None, conversation_id: str | None = None, profile: str = "general_public", route_context: dict[str, Any] | None = None) -> dict[str, Any]:
     """Select a trusted location, retrieve weather, and generate an answer."""
     conversation = get_conversation(conversation_id) if conversation_id else None
     if conversation is None:
         conversation = create_conversation(conversation_id)
     conversation_id = conversation["conversation_id"]
-    previous_context = conversation_context(conversation)
+    previous_context = {**conversation_context(conversation), **({"route_context": route_context} if route_context else {})}
     ai_used = True
     fallback_used = False
     try:
@@ -573,12 +688,15 @@ def process_chat_message(message: str, latitude: float | None = None, longitude:
     ):
         query = query.model_copy(update={"intent": previous_context["last_intent"]})
     saved_language = get_profile().get("preferences", {}).get("language")
-    selected_language = get_language(language or _language_from_message(message) or saved_language)
+    profile = _normalise_profile(profile)
+    selected_language = get_language(_language_from_message(message) or language or saved_language)
     if language is None and previous_context.get("preferred_language") == "hi":
         selected_language = get_language("hi")
     response_mode = _response_mode(message, selected_language)
-    result: dict[str, Any] = {"message": message, "intent": query.intent, "conversation_id": conversation_id, "ai_used": ai_used, "fallback_used": fallback_used, "data_source": "none"}
+    result: dict[str, Any] = {"message": message, "intent": query.intent, "conversation_id": conversation_id, "ai_used": ai_used, "fallback_used": fallback_used, "data_source": "none", "persona": profile}
     result["language"] = selected_language
+    result["analysis"] = _query_analysis(query, response_mode, profile, message)
+    result["suggestions"] = _follow_up_suggestions(response_mode, profile, query.intent, bool(route_context))
     small_talk = _small_talk_response(message, response_mode)
     if small_talk:
         result["response"] = small_talk
@@ -587,6 +705,7 @@ def process_chat_message(message: str, latitude: float | None = None, longitude:
         return result
     route_places = _extract_route_places(message)
     if route_places:
+        result["suggestions"] = _follow_up_suggestions(response_mode, profile, query.intent, True)
         origin_name, destination_name = route_places
         origin = get_location(origin_name)
         destination = get_location(destination_name)
@@ -753,7 +872,7 @@ def process_chat_message(message: str, latitude: float | None = None, longitude:
 
     try:
         response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
-        result["response"] = generate_weather_response(message, query, weather_data, response_language, previous_context)
+        result["response"] = generate_weather_response(message, query, weather_data, response_language, previous_context, profile)
         if response_mode == "hi":
             result["response"] = _localize_hindi_response(result["response"])
     except LLMServiceError:

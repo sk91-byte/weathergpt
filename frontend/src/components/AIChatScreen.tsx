@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Mic, MicOff, Sparkles, Volume2, VolumeX, ArrowRight, Umbrella, CloudRain, RotateCcw, ChevronLeft, Bot, Loader2, AlertTriangle } from './Icons';
-import { ChatMessage, Language, WeatherData, RouteTrip } from '../types';
+import { ChatMessage, Language, WeatherData, RouteTrip, UserRole } from '../types';
 import { apiSendChat } from '../services/api';
 
 interface AIChatScreenProps {
@@ -10,6 +10,7 @@ interface AIChatScreenProps {
   onLanguageChange: (lang: Language) => void;
   onBackToHome: () => void;
   initialQuery?: string;
+  userRole: UserRole;
 }
 
 export const AIChatScreen: React.FC<AIChatScreenProps> = ({
@@ -18,7 +19,8 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   currentLanguage,
   onLanguageChange,
   onBackToHome,
-  initialQuery
+  initialQuery,
+  userRole
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -38,6 +40,8 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [isListeningVoice, setIsListeningVoice] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const [serverSuggestions, setServerSuggestions] = useState<string[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -68,12 +72,16 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
     };
   }, []);
 
-  const suggestions = [
+  const localSuggestions = [
     currentLanguage === 'hi' ? 'कल बारिश होगी?' : 'Will it rain today?',
     currentLanguage === 'hi' ? 'क्या कल कॉलेज जाना सुरक्षित है?' : 'Should I travel to college tomorrow morning?',
     currentLanguage === 'hi' ? 'क्या आज फसलों की सिंचाई करूँ?' : 'Can I irrigate my crops today?',
     currentLanguage === 'hi' ? 'क्या छाता ले जाना चाहिए?' : 'Should I carry an umbrella?'
   ];
+  if (currentLanguage === 'gu') {
+    localSuggestions.splice(0, localSuggestions.length, 'આજે વરસાદ પડશે?', 'શું કાલે કોલેજ જવું સુરક્ષિત છે?', 'આજે સિંચાઈ કરવી યોગ્ય છે?', 'શું છત્રી લઈ જવી જોઈએ?');
+  }
+  const suggestions = serverSuggestions.length ? serverSuggestions : localSuggestions;
 
   const toggleVoiceInput = () => {
     setVoiceError(null);
@@ -158,15 +166,13 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
 
     try {
       const data = await apiSendChat(textToSend, {
+        conversation_id: conversationId,
         language: currentLanguage,
-        role: 'citizen',
-        route_context: {
-          city: weather.city,
-          from: trip.from,
-          to: trip.to,
-          leaveBy: trip.leaveBy
-        }
+        role: userRole,
+        route_context: { from: trip.from, to: trip.to, leave_by: trip.leaveBy }
       });
+      if (data.conversation_id) setConversationId(data.conversation_id);
+      if (Array.isArray(data.suggestions)) setServerSuggestions(data.suggestions);
       const botMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         sender: 'weathergpt',
@@ -176,14 +182,13 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
       };
       setMessages((prev) => [...prev, botMsg]);
     } catch (err) {
-      console.warn('Chat request failed, using intelligent offline agent:', err);
-      // Fallback
+      console.warn('Chat request failed:', err);
       const botMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         sender: 'weathergpt',
         text: currentLanguage === 'hi'
-          ? `हाँ, ${weather.city} में शाम 4:30 के बाद भारी बारिश (85% संभावना) है। अपनी यात्रा शाम 4 बजे से पहले पूरी करें या छाता अवश्य साथ रखें।`
-          : `Based on verified IMD data for ${weather.city}, intense rain is expected later today with 85% probability. Waterlogging is anticipated on low-lying routes. Please leave before 8:15 AM if commuting, or postpone evening travel.`,
+          ? `अभी ${weather.city} के लिए लाइव मौसम सेवा उपलब्ध नहीं है। कृपया कुछ देर बाद फिर कोशिश करें।`
+          : `Live weather data for ${weather.city} is temporarily unavailable. I won't guess the conditions—please try again shortly.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages((prev) => [...prev, botMsg]);

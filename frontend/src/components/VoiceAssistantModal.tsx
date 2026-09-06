@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Mic, MicOff, Volume2, VolumeX, Sparkles, CheckCircle2, RotateCcw, AlertTriangle, Loader2 } from './Icons';
-import { Language, WeatherData } from '../types';
+import { Language, WeatherData, UserRole } from '../types';
 import { apiSendChat } from '../services/api';
 
 interface VoiceAssistantModalProps {
@@ -9,6 +9,7 @@ interface VoiceAssistantModalProps {
   onClose: () => void;
   currentLanguage: Language;
   onLanguageChange: (lang: Language) => void;
+  userRole: UserRole;
 }
 
 export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
@@ -16,7 +17,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   isOpen,
   onClose,
   currentLanguage,
-  onLanguageChange
+  onLanguageChange,
+  userRole
 }) => {
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -24,6 +26,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const [transcript, setTranscript] = useState('');
   const [typedInput, setTypedInput] = useState('');
   const [response, setResponse] = useState('');
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
   const [waveHeights, setWaveHeights] = useState<number[]>([12, 18, 24, 16, 28, 20, 14, 22, 10]);
 
@@ -180,19 +183,19 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     setIsProcessing(true);
     try {
       const data = await apiSendChat(queryText, {
+        conversation_id: conversationId,
         language: currentLanguage,
-        role: 'citizen',
-        route_context: { city: weather.city }
+        role: userRole
       });
-      const reply = data.response || data.reply || data.message;
-      if (!reply) throw new Error('Empty voice response');
+      if (data.conversation_id) setConversationId(data.conversation_id);
+      const reply = data.response;
       setResponse(reply);
       speakText(reply);
     } catch (e) {
       const fallbackReply =
         currentLanguage === 'hi'
-          ? `मौसम अवलोकन के अनुसार, ${weather.city} में वर्तमान तापमान ${weather.temperature}°C (${weather.condition}) है। शाम को भारी बारिश की संभावना है। कृपया छाता साथ रखें और सुरक्षित यात्रा करें।`
-          : `Based on verified weather data for ${weather.city}, temperature is ${weather.temperature}°C (${weather.condition}) with a rain probability of ${weather.rainChance}%. Please carry rain gear and plan travel accordingly.`;
+          ? `अभी ${weather.city} के लिए लाइव मौसम सेवा उपलब्ध नहीं है। मैं अनुमान नहीं लगाऊंगा—कृपया थोड़ी देर बाद फिर पूछें।`
+          : `Live weather data for ${weather.city} is temporarily unavailable. I won't guess the conditions—please try again shortly.`;
       setResponse(fallbackReply);
       speakText(fallbackReply);
     } finally {

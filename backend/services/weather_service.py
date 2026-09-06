@@ -104,6 +104,11 @@ def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
         payload = _request_weather({
             "latitude": latitude, "longitude": longitude,
             "current": "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m",
+            # Open-Meteo has no "current precipitation chance" field.  Include
+            # the hourly forecast so the client can show the probability for the
+            # current hour instead of inventing a value such as 0%.
+            "hourly": "precipitation_probability",
+            "forecast_days": 1,
             "timezone": "auto",
         })
     except WeatherServiceError:
@@ -121,6 +126,15 @@ def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
         condition = "Rain"
     elif isinstance(precipitation, (int, float)) and precipitation > 0.1:
         condition = "Precipitation"
+    hourly = payload.get("hourly") if isinstance(payload.get("hourly"), dict) else {}
+    times = hourly.get("time") if isinstance(hourly.get("time"), list) else []
+    probabilities = hourly.get("precipitation_probability") if isinstance(hourly.get("precipitation_probability"), list) else []
+    probability = None
+    current_time = current.get("time")
+    if isinstance(current_time, str) and current_time in times:
+        index = times.index(current_time)
+        if index < len(probabilities) and isinstance(probabilities[index], (int, float)):
+            probability = probabilities[index]
     return {
         "location": {"latitude": latitude, "longitude": longitude},
         "current": {
@@ -133,6 +147,8 @@ def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
             "wind_direction_degrees": current.get("wind_direction_10m"),
             "weather_code": code,
             "condition": condition,
+            "precipitation_probability_percent": probability,
+            "observed_at": current.get("time"),
         },
         "source": "Open-Meteo",
     }

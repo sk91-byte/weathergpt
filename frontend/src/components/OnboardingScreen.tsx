@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { WeatherData, Language } from '../types';
-import { DEFAULT_WEATHER_DATA, INDIAN_CITIES, INITIAL_WEATHER } from '../data/weatherData';
-import { apiGetLocationWeather } from '../services/api';
+import { INDIAN_CITIES, INITIAL_WEATHER } from '../data/weatherData';
+import { apiGetLocationWeather, apiResolveLocation } from '../services/api';
 import {
   MapPin,
   LocateFixed,
@@ -31,6 +31,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
 
   // Step 1: Location States
   const [selectedWeather, setSelectedWeather] = useState<WeatherData>(INITIAL_WEATHER);
+  const [hasLiveWeather, setHasLiveWeather] = useState(false);
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [gpsDetected, setGpsDetected] = useState<boolean>(false);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -50,104 +51,98 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
     setLocationError(null);
 
     if (typeof window === 'undefined' || !navigator.geolocation) {
-      setLocationError('We could not detect your location. You can search for your area manually.');
+      setLocationError('Geolocation is not supported by your browser. Please search your city below.');
       setIsLocating(false);
       return;
     }
 
-    const requestPosition = (highAccuracy: boolean) => {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          try {
-            const { latitude, longitude } = pos.coords;
-            if (import.meta.env.DEV) {
-              console.log('[Onboarding GPS] Coordinates:', latitude, longitude);
-            }
-            const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
-            if (liveWeather) {
-              const detectedCity = location.name || 'Current location';
-              setSelectedWeather({
-                ...selectedWeather,
-                city: detectedCity,
-                state: location.state || '',
-                country: 'India',
-                temperature: liveWeather.temperature,
-                feelsLike: liveWeather.feels_like,
-                condition: liveWeather.condition,
-                conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
-                humidity: liveWeather.humidity,
-                windSpeed: liveWeather.wind_speed,
-                windDirection: liveWeather.wind_direction,
-                rainChance: liveWeather.rain_probability,
-                lastUpdated: 'Live GPS'
-              });
-              setGpsDetected(true);
-              setLocationError(null);
-            } else {
-              throw new Error('Could not parse location data');
-            }
-          } catch (err: any) {
-            if (import.meta.env.DEV) {
-              console.warn('Live location API error in onboarding:', err);
-            }
-            setGpsDetected(false);
-            setLocationError('We could not detect your location. You can search for your area manually.');
-          } finally {
-            setIsLocating(false);
-          }
-        },
-        (err) => {
-          if (import.meta.env.DEV) {
-            console.warn('Geolocation error in onboarding:', err);
-          }
-          if (highAccuracy && (err.code === 3 || err.code === 2)) {
-            requestPosition(false);
-            return;
-          }
-          setIsLocating(false);
-          setGpsDetected(false);
-          if (err.code === 1) {
-            setLocationError('Location permission is blocked. Please allow location access in your browser settings.');
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
+          if (liveWeather) {
+            setSelectedWeather({
+              ...selectedWeather,
+              city: location.name || 'Current location',
+              state: '',
+              country: 'India',
+              temperature: liveWeather.temperature,
+              feelsLike: liveWeather.feels_like,
+              condition: liveWeather.condition,
+              conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
+              humidity: liveWeather.humidity,
+              windSpeed: liveWeather.wind_speed,
+              windDirection: liveWeather.wind_direction,
+              rainChance: liveWeather.rain_probability,
+              lastUpdated: 'Just now'
+            });
+            setGpsDetected(true);
+            setHasLiveWeather(true);
+            setLocationError(null);
           } else {
-            setLocationError('We could not detect your location. You can search for your area manually.');
+            throw new Error('Could not parse location data');
           }
-        },
-        { timeout: highAccuracy ? 10000 : 15000, enableHighAccuracy: highAccuracy, maximumAge: 0 }
-      );
-    };
-
-    requestPosition(true);
+        } catch (err: any) {
+          console.warn('Live location API failed:', err);
+          setGpsDetected(false);
+          setLocationError('Live weather could not be loaded. Please try again or choose a city and wait for its live weather.');
+        } finally {
+          setIsLocating(false);
+        }
+      },
+      (err) => {
+        setIsLocating(false);
+        setGpsDetected(false);
+        if (err.code === 1) {
+          setLocationError('Location permission was denied. You can search your city manually below.');
+        } else {
+          setLocationError('Unable to detect GPS position. You can search your city manually below.');
+        }
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
   };
 
   // City selection from list
-  const handleSelectCity = (cityName: string) => {
-    let matched = DEFAULT_WEATHER_DATA[cityName];
-    if (!matched) {
-      const pureCity = cityName.split(',')[0].trim();
-      const foundKey = Object.keys(DEFAULT_WEATHER_DATA).find((k) =>
-        k.toLowerCase().includes(pureCity.toLowerCase())
-      );
-      if (foundKey) matched = DEFAULT_WEATHER_DATA[foundKey];
-    }
-
-    if (!matched) {
-      // Create fallback city object
-      const parts = cityName.split(',');
-      matched = {
-        ...INITIAL_WEATHER,
-        city: parts[0]?.trim() || cityName,
-        state: parts[1]?.trim() || 'India'
-      };
-    }
-
-    setSelectedWeather(matched);
-    setGpsDetected(false);
+  const handleSelectCity = async (cityName: string) => {
+    setIsLocating(true);
     setLocationError(null);
-    setSearchQuery('');
+    try {
+      const resolved = await apiResolveLocation(cityName);
+      const latitude = Number(resolved?.latitude ?? resolved?.lat);
+      const longitude = Number(resolved?.longitude ?? resolved?.lon ?? resolved?.lng);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error('Location coordinates unavailable');
+      const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
+      setSelectedWeather({
+        ...selectedWeather,
+        city: location?.name || resolved?.name || cityName.split(',')[0].trim(),
+        state: resolved?.state || '', country: resolved?.country || 'India',
+        temperature: liveWeather.temperature ?? selectedWeather.temperature,
+        feelsLike: liveWeather.feels_like ?? selectedWeather.feelsLike,
+        condition: liveWeather.condition, conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
+        humidity: liveWeather.humidity ?? selectedWeather.humidity,
+        windSpeed: liveWeather.wind_speed ?? selectedWeather.windSpeed,
+        windDirection: liveWeather.wind_direction, rainChance: liveWeather.rain_probability ?? selectedWeather.rainChance,
+        lastUpdated: 'Just now'
+      });
+      setGpsDetected(false);
+      setHasLiveWeather(true);
+      setSearchQuery('');
+    } catch (error) {
+      console.warn('Live city weather failed:', error);
+      setLocationError('Live weather could not be loaded for this city. Please try again.');
+    } finally {
+      setIsLocating(false);
+    }
   };
 
   // Step Navigation Handlers
   const handleNextFromStep1 = () => {
+    if (!hasLiveWeather) {
+      setLocationError('Choose a location and wait for live weather before continuing.');
+      return;
+    }
     setCurrentStep(2);
   };
 
@@ -313,7 +308,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
               )}
 
               {/* Selected Location Confirmation Card */}
-              {selectedWeather && (
+              {hasLiveWeather && selectedWeather && (
                 <div className="p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700/80 shadow-md">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
@@ -650,13 +645,13 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
                   Live Preview:
                 </span>
                 {selectedLanguage === 'en' && (
-                  <p>🌤️ "Partly cloudy in {selectedWeather.city} today with 28°C. Mild rain expected in the evening."</p>
+                  <p>🌤️ "{selectedWeather.condition} in {selectedWeather.city} at {Math.round(selectedWeather.temperature)}°C. Rain chance: {selectedWeather.rainChance}%."</p>
                 )}
                 {selectedLanguage === 'hi' && (
-                  <p>🌤️ "आज {selectedWeather.city} में बादल छाए रहेंगे, तापमान 28°C रहेगा। शाम को बारिश की संभावना है।"</p>
+                  <p>🌤️ "{selectedWeather.city} में अभी {selectedWeather.condition}, तापमान {Math.round(selectedWeather.temperature)}°C है। बारिश की संभावना {selectedWeather.rainChance}% है।"</p>
                 )}
                 {selectedLanguage === 'gu' && (
-                  <p>🌤️ "આજે {selectedWeather.city}માં વાદળછાયું વાતાવરણ રહેશે, તાપમાન 28°C રહેશે. સાંજે વરસાદની શક્યતા છે."</p>
+                  <p>🌤️ "{selectedWeather.city}માં અત્યારે {selectedWeather.condition}, તાપમાન {Math.round(selectedWeather.temperature)}°C છે. વરસાદની શક્યતા {selectedWeather.rainChance}% છે."</p>
                 )}
               </div>
             </div>

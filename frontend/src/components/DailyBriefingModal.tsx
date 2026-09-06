@@ -15,7 +15,7 @@ export const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
 
-  const speechScript = `Good morning Anmol! Here is your WeatherGPT morning intelligence briefing for ${weather.city}, ${weather.country}. Currently it is ${Math.round(weather.temperature)} degrees Celsius with ${weather.condition}. Morning commute until 12 PM will be pleasant and dry. However, rainfall probability jumps sharply after 4 PM, peaking around 85% by evening with high risk of road waterlogging. Please carry an umbrella, wrap electronic gear, and consider completing essential travel before 4:30 PM. Have a safe day!`;
+  const speechScript = `Here is the current WeatherGPT observation for ${weather.city}, ${weather.country}. It is ${Math.round(weather.temperature)} degrees Celsius with ${weather.condition}. This briefing only uses the latest loaded observation; open the forecast for time-based predictions.`;
 
   const handleToggleSpeech = () => {
     if (!('speechSynthesis' in window)) return;
@@ -72,7 +72,7 @@ export const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
           <div className="p-4 bg-blue-50/70 border border-blue-100 rounded-2xl flex items-center justify-between">
             <div>
               <span className="text-[11px] font-bold text-blue-600 uppercase tracking-wider">
-                TODAY • 4 SEP 2026
+                TODAY • {new Date().toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}
               </span>
               <h4 className="text-lg font-extrabold text-slate-900 font-heading">
                 GOOD MORNING, ANMOL 👋
@@ -96,21 +96,21 @@ export const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
             </button>
           </div>
 
-          {/* Timeline Breakdown */}
+          {/* Current observation only. Time-based claims require a live forecast response. */}
           <div className="space-y-2.5">
             <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-start space-x-3 text-xs">
               <Sun className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold text-slate-800">☀️ Morning (8 AM - 12 PM):</span>
-                <p className="text-slate-600 mt-0.5">Clear and comfortable (28°C). Ideal window for smooth commute and college transit.</p>
+                <span className="font-bold text-slate-800">Current observation:</span>
+                <p className="text-slate-600 mt-0.5">{weather.condition}, {Math.round(weather.temperature)}°C, humidity {weather.humidity}%. Forecast details are shown only when the live forecast request succeeds.</p>
               </div>
             </div>
 
             <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-start space-x-3 text-xs">
               <CloudRain className="w-4 h-4 text-sky-500 shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold text-slate-800">🌧 Afternoon (12 PM - 4 PM):</span>
-                <p className="text-slate-600 mt-0.5">Cloud buildup. Humidity climbs to 75%; rain probability increases sharply after 3:30 PM.</p>
+                <span className="font-bold text-slate-800">Live-data policy:</span>
+                <p className="text-slate-600 mt-0.5">WeatherGPT does not invent rainfall, flood risk, or departure advice when the provider has not returned it.</p>
               </div>
             </div>
 
@@ -118,7 +118,7 @@ export const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
               <Navigation className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
               <div>
                 <span className="font-bold text-slate-800">🚗 Travel & Commute:</span>
-                <p className="text-slate-600 mt-0.5">Evening travel between 5 PM and 8 PM may be affected by waterlogging on main junctions.</p>
+                <p className="text-slate-600 mt-0.5">For route-specific conditions, use Plan a route and wait for the live route-weather analysis to finish.</p>
               </div>
             </div>
 
@@ -126,7 +126,7 @@ export const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
               <Umbrella className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <div>
                 <span className="font-bold text-amber-900">☂️ Action Recommendation:</span>
-                <p className="text-slate-700 mt-0.5 font-medium">Carry an umbrella and water-resistant gear. Complete return transit before 5 PM if possible.</p>
+                <p className="text-slate-700 mt-0.5 font-medium">Use the current observation and the live forecast before making travel decisions.</p>
               </div>
             </div>
           </div>

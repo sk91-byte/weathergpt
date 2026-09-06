@@ -20,8 +20,9 @@ export const ExplainableAIModal: React.FC<ExplainableAIModalProps> = ({
   const isWhyRoute = mode === 'why-route';
 
   return (
-    <div className="absolute inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 pointer-events-auto">
-      <div className="bg-white rounded-3xl p-6 shadow-2xl border border-blue-100 max-w-md w-full mx-auto animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-xs pointer-events-auto">
+      <div className="mx-auto my-4 flex min-h-[calc(100vh-2rem)] max-w-md items-center justify-center">
+      <div className="max-h-[calc(100vh-2rem)] w-full overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl border border-blue-100 animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center space-x-2.5">
@@ -71,23 +72,23 @@ export const ExplainableAIModal: React.FC<ExplainableAIModalProps> = ({
           </div>
 
           <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-            <span className="text-slate-600">Precipitation Exposure:</span>
+            <span className="text-slate-600">Rain risk:</span>
             <span className="font-extrabold text-slate-900">
-              {route.rainRisk === 'Low' ? 'Reduced by 70%' : 'High Intensity'}
+              {route.rainRisk}
             </span>
           </div>
 
           <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-            <span className="text-slate-600">Underpass Waterlogging:</span>
+            <span className="text-slate-600">Waterlogging risk:</span>
             <span className="font-extrabold text-emerald-600">
-              {route.waterloggingRisk === 'Low' ? '0 Underpasses at Risk' : 'High Risk In Subways'}
+              {route.waterloggingRisk}
             </span>
           </div>
 
           <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-            <span className="text-slate-600">Forecast Confidence:</span>
+            <span className="text-slate-600">Current condition:</span>
             <span className="font-extrabold text-blue-600">
-              88% High • Live Doppler Radar Sync
+              {route.summaryCondition || 'Unavailable'}
             </span>
           </div>
         </div>
@@ -98,6 +99,7 @@ export const ExplainableAIModal: React.FC<ExplainableAIModalProps> = ({
         >
           Got it
         </button>
+      </div>
       </div>
     </div>
   );

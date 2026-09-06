@@ -25,6 +25,7 @@ class ChatRequest(BaseModel):
     language: str | None = Field(default=None, description="Language code such as en, hi, or ta")
     conversation_id: str | None = Field(default=None, min_length=1, max_length=100)
     profile: str = Field(default="general_public", max_length=40)
+    route_context: dict[str, Any] | None = None
 
     @field_validator("message")
     @classmethod
@@ -51,7 +52,7 @@ class ChatRequest(BaseModel):
 def chat(request: ChatRequest) -> dict[str, Any]:
     """Answer a basic weather question using the existing weather service."""
     try:
-        return process_chat_message(request.message, request.latitude, request.longitude, request.language, request.conversation_id, request.profile)
+        return process_chat_message(request.message, request.latitude, request.longitude, request.language, request.conversation_id, request.profile, request.route_context)
     except LLMServiceError as exc:
         logger.warning("LLM chat request failed: %s", exc)
         detail = "Gemini API key is not configured" if "not configured" in str(exc) else "Gemini service is currently unavailable"

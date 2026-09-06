@@ -311,28 +311,38 @@ def nearby_places(latitude: float, longitude: float, radius_km: float = 5, limit
     saved = cache.get(key)
     if saved is not None:
         return saved
-    # Nominatim's public endpoint is deliberately queried once with a broad
-    # amenity expression to keep the feature lightweight and rate-limit friendly.
+    # Nearby amenities need a geographic query.  Nominatim's text search does
+    # not support boolean amenity queries reliably, so use OpenStreetMap's
+    # public Overpass endpoint.  Results are actual mapped places, never seeds.
     try:
-        delta_lat = radius_km / 111.0
-        delta_lon = radius_km / max(1.0, 111.0 * cos(radians(latitude)))
-        response = requests.get(f"{NominatimPlaceProvider.base_url}/search", params={
-            "q": "cafe OR restaurant OR hotel OR fuel OR hospital OR convenience",
-            "format": "jsonv2", "addressdetails": 1, "limit": min(limit, 20),
-            "viewbox": f"{longitude - delta_lon},{latitude + delta_lat},{longitude + delta_lon},{latitude - delta_lat}", "bounded": 1,
-        }, headers={"User-Agent": "WeatherGPT/1.0 nearby-places"}, timeout=10)
+        radius_m = max(250, min(int(radius_km * 1000), 10000))
+        query = f'''[out:json][timeout:20];
+          (nwr(around:{radius_m},{latitude},{longitude})["amenity"~"^(cafe|restaurant|fast_food|fuel|hospital|pharmacy)$"];
+           nwr(around:{radius_m},{latitude},{longitude})["tourism"="hotel"];
+           nwr(around:{radius_m},{latitude},{longitude})["shop"="convenience"];
+          ); out center {min(limit * 3, 50)};'''
+        response = requests.post("https://overpass-api.de/api/interpreter", data={"data": query}, headers={"User-Agent": "WeatherGPT/1.0 nearby-places"}, timeout=25)
         response.raise_for_status()
-        values = response.json()
+        values = response.json().get("elements", [])
     except (requests.RequestException, ValueError) as exc:
         raise PlaceSearchError("Nearby place search is temporarily unavailable") from exc
     result: list[dict[str, Any]] = []
     for item in values if isinstance(values, list) else []:
-        if not isinstance(item, dict) or not item.get("lat") or not item.get("lon"): continue
-        normalized = NominatimPlaceProvider._normalize(item)
-        tags = item.get("type", "").lower()
-        category = "cafe" if "cafe" in tags else "restaurant" if "restaurant" in tags else "petrol" if "fuel" in tags else "hospital" if "hospital" in tags else "hotel" if "hotel" in tags else "convenience"
-        distance = sqrt(((float(item["lat"]) - latitude) * 111) ** 2 + ((float(item["lon"]) - longitude) * 111 * cos(radians(latitude))) ** 2)
-        result.append({**normalized, "category": category, "distance_km": round(distance, 2)})
+        if not isinstance(item, dict):
+            continue
+        point = item.get("center") if isinstance(item.get("center"), dict) else item
+        if point.get("lat") is None or point.get("lon") is None:
+            continue
+        tags = item.get("tags") if isinstance(item.get("tags"), dict) else {}
+        amenity, tourism, shop = tags.get("amenity"), tags.get("tourism"), tags.get("shop")
+        category = "cafe" if amenity == "cafe" else "restaurant" if amenity in {"restaurant", "fast_food"} else "petrol" if amenity == "fuel" else "hospital" if amenity in {"hospital", "pharmacy"} else "hotel" if tourism == "hotel" else "convenience"
+        place_lat, place_lon = float(point["lat"]), float(point["lon"])
+        distance = sqrt(((place_lat - latitude) * 111) ** 2 + ((place_lon - longitude) * 111 * cos(radians(latitude))) ** 2)
+        name = tags.get("name")
+        if not name:
+            continue
+        address_parts = [tags.get(key) for key in ("addr:housenumber", "addr:street", "addr:city") if tags.get(key)]
+        result.append({"place_id": f"{item.get('type', 'node')}-{item.get('id')}", "name": name, "address": ", ".join(address_parts), "formatted_address": ", ".join(address_parts) or "Address unavailable", "latitude": place_lat, "longitude": place_lon, "category": category, "distance_km": round(distance, 2)})
     result.sort(key=lambda item: item["distance_km"])
     result = result[:limit]
     cache.set(key, result, ttl_seconds=120)

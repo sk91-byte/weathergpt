@@ -27,26 +27,10 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
 
   const notifications: NotificationItem[] = [
     {
-      id: 'n1',
-      title: 'Smart Forecast Change Detected',
-      message: 'Rain probability jumped significantly from 40% to 85% for afternoon hours. Commute schedule update advised.',
-      time: '15m ago',
-      type: 'change',
-      read: false
-    },
-    {
-      id: 'n2',
-      title: 'Severe Flash Flood Alert Issued',
-      message: 'Doppler radar indicates cloudburst potential over foothill drainages near Rispana river.',
-      time: '1h ago',
-      type: 'alert',
-      read: false
-    },
-    {
-      id: 'n3',
-      title: 'Morning AI Briefing Ready',
-      message: 'Your personalized weather roadmap is prepared. Tap to review commute windows.',
-      time: '3h ago',
+      id: 'live-status',
+      title: 'Live alerts are not loaded yet',
+      message: 'No alert is shown until an authoritative live warning feed returns data for your selected location.',
+      time: 'Now',
       type: 'briefing',
       read: true
     }
