@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { LiveMapRoute, DepartureTimeOption } from '../../types';
 import { SideBySideRouteComparison } from './SideBySideRouteComparison';
+import { AppLanguage, generateRouteWeatherSummary, getActionableSuggestions } from '../../utils/routeWeatherSummary';
 import { Scale } from 'lucide-react';
 import {
   ShieldAlert,
@@ -18,7 +19,8 @@ import {
   Zap,
   CheckCircle2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Languages
 } from '../Icons';
 
 interface RouteComparisonDrawerProps {
@@ -41,6 +43,11 @@ interface RouteComparisonDrawerProps {
   thunderstormRisk?: string;
   recommendedWaitPlaceName?: string;
   routeSteps?: { instruction: string; name: string; distance_m: number; duration_s?: number }[];
+  originName?: string;
+  destinationName?: string;
+  language?: AppLanguage;
+  onChangeLanguage?: (lang: AppLanguage) => void;
+  userRole?: string;
 }
 
 export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
@@ -62,7 +69,12 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
   fogRisk = 'Low',
   thunderstormRisk = 'Low',
   recommendedWaitPlaceName,
-  routeSteps = []
+  routeSteps = [],
+  originName = 'Origin',
+  destinationName = 'Destination',
+  language = 'en',
+  onChangeLanguage,
+  userRole = 'citizen'
 }) => {
   const [showSteps, setShowSteps] = useState(false);
   const [viewMode, setViewMode] = useState<'overview' | 'comparison'>('overview');
@@ -74,6 +86,44 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
   if (!activeRoute) return null;
 
   const isLowSafety = activeRoute?.safetyScore !== undefined && activeRoute.safetyScore !== null && activeRoute.safetyScore < 80;
+
+  // Generate dynamic multilingual AI summary
+  const summaryText = generateRouteWeatherSummary(
+    {
+      originName,
+      destinationName,
+      distanceKm: activeRoute.distanceKm,
+      durationMinutes: activeRoute.durationMinutes,
+      safetyScore: activeRoute.safetyScore,
+      rainRisk: activeRoute.rainRisk,
+      waterloggingRisk: activeRoute.waterloggingRisk,
+      fogRisk,
+      windRisk,
+      thunderstormRisk,
+      summaryCondition: activeRoute.summaryCondition,
+      userRole
+    },
+    language
+  );
+
+  // Generate actionable suggestions
+  const actionableSuggestions = getActionableSuggestions(
+    {
+      originName,
+      destinationName,
+      distanceKm: activeRoute.distanceKm,
+      durationMinutes: activeRoute.durationMinutes,
+      safetyScore: activeRoute.safetyScore,
+      rainRisk: activeRoute.rainRisk,
+      waterloggingRisk: activeRoute.waterloggingRisk,
+      fogRisk,
+      windRisk,
+      thunderstormRisk,
+      summaryCondition: activeRoute.summaryCondition,
+      userRole
+    },
+    language
+  );
 
   return (
     <div className="absolute bottom-0 left-0 right-0 z-30 bg-slate-900/98 backdrop-blur-md text-white rounded-t-3xl shadow-2xl border-t border-slate-700/80 pointer-events-auto transition-all duration-300 max-h-[82vh] flex flex-col">
@@ -100,39 +150,65 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
         </div>
       </div>
 
-      {/* View Mode Switcher: Route Overview vs Side-by-Side Weather Comparison */}
-      {safeRoutes.length > 1 && (
-        <div className="px-4 py-1.5 shrink-0">
-          <div className="flex items-center p-1 bg-slate-850 rounded-2xl border border-slate-750/90 shadow-inner">
+      {/* Language Switcher & View Mode Toolbar */}
+      <div className="px-4 py-1.5 shrink-0 flex items-center justify-between gap-2">
+        {/* Language Selection Pills */}
+        <div className="flex items-center space-x-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700">
+          <Languages className="w-3.5 h-3.5 text-sky-400 ml-1" />
+          <button
+            onClick={() => onChangeLanguage && onChangeLanguage('en')}
+            className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold transition cursor-pointer ${
+              language === 'en' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            English
+          </button>
+          <button
+            onClick={() => onChangeLanguage && onChangeLanguage('hi')}
+            className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold transition cursor-pointer ${
+              language === 'hi' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            हिंदी
+          </button>
+          <button
+            onClick={() => onChangeLanguage && onChangeLanguage('hinglish')}
+            className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold transition cursor-pointer ${
+              language === 'hinglish' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Hinglish
+          </button>
+        </div>
+
+        {/* View Mode Switcher */}
+        {safeRoutes.length > 1 && (
+          <div className="flex items-center p-0.5 bg-slate-800/90 rounded-xl border border-slate-700">
             <button
               onClick={() => setViewMode('overview')}
-              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center space-x-1.5 ${
+              className={`py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
                 viewMode === 'overview'
-                  ? 'bg-blue-600 text-white shadow-md'
+                  ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Navigation className="w-3.5 h-3.5" />
-              <span>Route Overview</span>
+              <span>Overview</span>
             </button>
 
             <button
               onClick={() => setViewMode('comparison')}
-              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center space-x-1.5 relative ${
+              className={`py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
                 viewMode === 'comparison'
-                  ? 'bg-blue-600 text-white shadow-md'
+                  ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-300 hover:text-white'
               }`}
             >
-              <Scale className="w-3.5 h-3.5 text-sky-400" />
-              <span>Side-by-Side Comparison ({safeRoutes.length})</span>
-              {viewMode !== 'comparison' && (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 absolute top-1.5 right-2 ring-2 ring-slate-900 animate-pulse" />
-              )}
+              <Scale className="w-3 h-3 text-sky-400" />
+              <span>Compare ({safeRoutes.length})</span>
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="overflow-y-auto px-4 pb-6 space-y-3">
         {/* VIEW 1: SIDE-BY-SIDE WEATHER COMPARISON VIEW */}
@@ -148,22 +224,67 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
         ) : (
           /* VIEW 2: STANDARD DETAILED OVERVIEW */
           <>
+            {/* Friendly WeatherGPT Summary Card Below Map */}
+            <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-850 via-slate-900 to-blue-950/40 border border-blue-500/30 shadow-lg">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center space-x-1.5">
+                  <div className="w-5 h-5 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-[10px]">
+                    W
+                  </div>
+                  <span className="text-xs font-black text-sky-300 tracking-wide">
+                    {language === 'hi' ? 'WeatherGPT मार्ग सारांश' : language === 'hinglish' ? 'WeatherGPT Route Summary' : 'WeatherGPT Route Summary'}
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-400">
+                  {originName.split(',')[0]} → {destinationName.split(',')[0]}
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-200 leading-relaxed mb-3">
+                {summaryText}
+              </p>
+
+              {/* Actionable Suggestions Checklist */}
+              {actionableSuggestions.length > 0 && (
+                <div>
+                  <span className="text-[9.5px] font-black uppercase text-slate-400 tracking-wider block mb-1.5">
+                    {language === 'hi' ? 'उपयोगी सुझाव व सावधानियां' : language === 'hinglish' ? 'Actionable Tips' : 'Actionable Suggestions'}
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {actionableSuggestions.map((sug) => (
+                      <div
+                        key={sug.id}
+                        className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl text-[10.5px] font-bold border transition ${
+                          sug.priority === 'high'
+                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                            : 'bg-slate-800 border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        <span>{sug.icon}</span>
+                        <span>{sug.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Safety Alert Warning Banner if score < 80 */}
             {isLowSafety && (
               <div className="p-3 rounded-2xl bg-red-950/80 border border-red-500/50 text-red-200 text-xs shadow-lg animate-pulse flex items-start space-x-2.5">
                 <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <div className="font-black text-red-100 flex items-center justify-between">
-                    <span>⚠️ Safety Warning: Score is {activeRoute.safetyScore}/100 (&lt; 80)</span>
+                    <span>⚠️ Safety Score: {activeRoute.safetyScore}/100</span>
                   </div>
                   <p className="text-[11px] text-red-200/90 mt-0.5">
-                    Significant weather hazard detected on this corridor. We strongly advise waiting or departing around{' '}
-                    <strong className="text-white font-black underline">{waitOption?.time || 'in 20 mins'}</strong> for safer pavement conditions.
+                    Weather risks detected along this corridor. Consider departing around{' '}
+                    <strong className="text-white font-black underline">{waitOption?.time || 'in 20 mins'}</strong> or taking the Safest route.
                   </p>
                   {recommendedWaitPlaceName && (
                     <div className="mt-2 flex items-center justify-between bg-red-900/40 p-2 rounded-xl border border-red-500/30">
                       <span className="text-[10px] text-red-200">
-                        Recommended wait shelter: <strong>{recommendedWaitPlaceName}</strong>
+                        Shelter nearby: <strong>{recommendedWaitPlaceName}</strong>
                       </span>
                       <button
                         onClick={onOpenNearby}
@@ -177,17 +298,17 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
               </div>
             )}
 
-            {/* Route Option Switcher & Comparison Grid */}
+            {/* Route Option Switcher Grid */}
             {safeRoutes.length > 1 && (
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 px-1">
-                  <span>SELECT ROUTE OPTION</span>
+                  <span>{language === 'hi' ? 'मार्ग विकल्प' : language === 'hinglish' ? 'Route Options' : 'SELECT ROUTE OPTION'}</span>
                   <button
                     onClick={() => setViewMode('comparison')}
                     className="text-[10px] text-sky-400 hover:text-sky-300 font-bold flex items-center space-x-1 cursor-pointer transition"
                   >
                     <Scale className="w-3 h-3" />
-                    <span>Compare All Side-by-Side</span>
+                    <span>Compare All</span>
                   </button>
                 </div>
 
@@ -250,7 +371,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
               </div>
             )}
 
-            {/* Active Route Quick Summary Card */}
+            {/* Active Route Metrics Card & 5-Hazard Matrix */}
             <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-800 via-slate-850 to-slate-900 border border-slate-700 shadow-md">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-2">
@@ -305,7 +426,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                 </div>
               </div>
 
-              {/* 5-Hazard Risk Matrix: Rain, Waterlogging, Wind, Fog, Thunderstorm */}
+              {/* 5-Hazard Risk Matrix: Rain, Flood, Wind, Fog, Storm */}
               <div className="grid grid-cols-5 gap-1.5 mb-3 text-[10px]">
                 <div className="p-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-center">
                   <div className="text-slate-400 text-[9px] mb-0.5">Rain</div>
@@ -382,7 +503,9 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-1.5">
               <Clock className="w-4 h-4 text-sky-400" />
-              <h4 className="text-xs font-black text-white">Best Departure Time</h4>
+              <h4 className="text-xs font-black text-white">
+                {language === 'hi' ? 'सर्वोत्तम प्रस्थान समय' : language === 'hinglish' ? 'Best Departure Time' : 'Best Departure Time'}
+              </h4>
             </div>
             <span className="text-[10px] font-bold text-sky-400">
               {waitOption?.tag || 'Smart Departure'}
@@ -475,3 +598,4 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
     </div>
   );
 };
+

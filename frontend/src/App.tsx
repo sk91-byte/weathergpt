@@ -444,6 +444,8 @@ export default function App() {
               currentWeather={weather}
               initialTrip={trip}
               onUpdateTrip={(updatedTrip) => setTrip(updatedTrip)}
+              initialLanguage={language === 'hi' ? 'hi' : 'en'}
+              userRole={userRole}
             />
           )}
 

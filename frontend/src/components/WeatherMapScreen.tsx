@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { DESTINATION_PRESETS, DestinationPreset } from '../data/liveMapData';
 import { buildWeatherAwareRoutes, NEARBY_SAFE_PLACES } from '../data/liveMapData';
+import { AppLanguage } from '../utils/routeWeatherSummary';
 import { InteractiveMapCanvas } from './live-map/InteractiveMapCanvas';
 import { SearchAndDestinations } from './live-map/SearchAndDestinations';
 import { RouteComparisonDrawer } from './live-map/RouteComparisonDrawer';
@@ -41,7 +42,8 @@ import {
   RefreshCw,
   MapPin,
   Clock,
-  Navigation
+  Navigation,
+  Languages
 } from './Icons';
 
 interface WeatherMapScreenProps {
@@ -53,6 +55,8 @@ interface WeatherMapScreenProps {
   onBackToHome?: () => void;
   onSelectCity?: (city: string) => void;
   initialLayer?: string;
+  initialLanguage?: AppLanguage;
+  userRole?: string;
 }
 
 // Generate realistic parallel corridor paths for alternative route options
@@ -76,8 +80,13 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   onUpdateTrip,
   onBackToHome,
   onSelectCity,
-  initialLayer
+  initialLayer,
+  initialLanguage = 'en',
+  userRole = 'citizen'
 }) => {
+  // 0. Multilingual State
+  const [language, setLanguage] = useState<AppLanguage>(initialLanguage || 'en');
+
   // 1. Origin & Destination state
   const [originName, setOriginName] = useState<string>(
     initialTrip?.from || (currentWeather.city ? `${currentWeather.city} (Current Location)` : 'DLF CyberCity, Gurgaon')
@@ -138,6 +147,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const [explainModalMode, setExplainModalMode] = useState<'why-route' | 'why-wait' | null>(null);
   const [isDrawerExpanded, setIsDrawerExpanded] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+
 
   // 8. Map Layers & Point Weather Popup
   const [showRadarOverlay, setShowRadarOverlay] = useState<boolean>(true);
@@ -824,6 +834,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         <MapWeatherPopup
           weather={selectedPointWeather}
           isLoading={isFetchingPointWeather}
+          language={language}
           onClose={() => setSelectedPointWeather(null)}
           onSetAsOrigin={(pt) => {
             setOriginName(pt.name);
@@ -843,6 +854,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         <RouteChatDrawer
           isOpen={isChatOpen}
           onClose={() => setIsChatOpen(false)}
+          language={language}
           routeContext={{
             origin: originName,
             destination: destinationName,
@@ -872,6 +884,11 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           activeRouteId={activeRouteId}
           onSelectRoute={setActiveRouteId}
           departureOptions={departureOptions}
+          originName={originName}
+          destinationName={destinationName}
+          language={language}
+          onChangeLanguage={setLanguage}
+          userRole={userRole}
           onStartNavigation={() => {
             setIsNavigating(true);
             setVehicleProgress(0);
@@ -901,6 +918,16 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         onSelectPlace={(place) => {
           setSelectedNearbyPlace(place);
           setShowNearbyPlaces(false);
+        }}
+        onUseAsStop={(place) => {
+          setSelectedNearbyPlace(place);
+          setShowNearbyPlaces(false);
+          // Set as intermediate destination or destination
+          setDestinationName(place.name);
+          if (place.coords?.lat && place.coords?.lng) {
+            setDestinationCoords([place.coords.lat, place.coords.lng]);
+            fetchRouteAndWeather(originCoords, originName, [place.coords.lat, place.coords.lng], place.name, travelMode);
+          }
         }}
         selectedPlaceId={selectedNearbyPlace?.id}
       />
@@ -939,6 +966,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
       <RouteWeatherTimelineModal
         route={activeRoute}
         isOpen={showTimelineModal}
+        language={language}
         onClose={() => setShowTimelineModal(false)}
       />
 

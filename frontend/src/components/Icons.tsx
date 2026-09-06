@@ -76,7 +76,9 @@ import {
   Footprints,
   Bike,
   Bus,
-  ArrowUpDown
+  ArrowUpDown,
+  Languages,
+  ShieldCheck
 } from 'lucide-react';
 
 export {
@@ -156,5 +158,7 @@ export {
   Footprints,
   Bike,
   Bus,
-  ArrowUpDown
+  ArrowUpDown,
+  Languages,
+  ShieldCheck
 };

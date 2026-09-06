@@ -1,60 +1,67 @@
 import React, { useState } from 'react';
 import { NearbySafePlace } from '../../types';
-import { X, Utensils, Coffee, Store, Building2, Fuel, Hospital, MapPin, ExternalLink, ChevronRight } from '../Icons';
+import { X, Utensils, Coffee, Store, Building2, Fuel, Hospital, MapPin, ExternalLink, ChevronRight, Plus, Navigation } from '../Icons';
 
 interface NearbyPlacesDrawerProps {
   places: NearbySafePlace[];
   isOpen: boolean;
   onClose: () => void;
   onSelectPlace: (place: NearbySafePlace) => void;
+  onUseAsStop?: (place: NearbySafePlace) => void;
   selectedPlaceId?: string;
 }
 
-type PlaceCategoryFilter = 'all' | 'restaurant' | 'cafe' | 'convenience' | 'hotel' | 'petrol' | 'hospital';
+type PlaceCategoryFilter = 'all' | 'shelter' | 'cafe' | 'restaurant' | 'hotel' | 'petrol' | 'hospital';
 
 export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
   places,
   isOpen,
   onClose,
   onSelectPlace,
+  onUseAsStop,
   selectedPlaceId
 }) => {
   const [filter, setFilter] = useState<PlaceCategoryFilter>('all');
 
   if (!isOpen) return null;
 
-  const filteredPlaces = filter === 'all' ? places : places.filter((p) => p.category === filter);
+  const filteredPlaces = filter === 'all'
+    ? places
+    : places.filter((p) => {
+        if (filter === 'shelter') return p.category === 'cafe' || p.category === 'hotel' || p.category === 'convenience';
+        return p.category === filter;
+      });
 
   return (
-    <div className="absolute inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex flex-col justify-end pointer-events-auto">
-      <div className="bg-white rounded-t-3xl shadow-2xl border-t border-slate-200 max-h-[85vh] flex flex-col animate-in slide-in-from-bottom duration-200">
+    <div className="absolute inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex flex-col justify-end pointer-events-auto">
+      <div className="bg-slate-900 text-white rounded-t-3xl shadow-2xl border-t border-slate-700 max-h-[85vh] flex flex-col animate-in slide-in-from-bottom duration-200">
         {/* Header */}
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div>
             <div className="flex items-center space-x-1.5">
-              <span className="text-amber-500 text-base">☕</span>
-              <h3 className="text-sm font-black text-slate-900">
-                NEARBY WHILE YOU WAIT
+              <span className="text-amber-400 text-base">☕</span>
+              <h3 className="text-sm font-black text-white">
+                NEARBY PLACES ALONG ROUTE
               </h3>
             </div>
-            <p className="text-xs text-slate-500">
-              Safe covered shelters, cafes & dry waiting spots nearby
+            <p className="text-xs text-slate-400">
+              Safe covered shelters, cafes, fuel, & resting points along your corridor
             </p>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
+            className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* AI Suggestion Banner */}
-        <div className="mx-4 mt-3 p-3 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-xs text-blue-900 flex items-start space-x-2.5">
+        <div className="mx-4 mt-3 p-3 rounded-2xl bg-gradient-to-r from-blue-950/80 to-indigo-950/80 border border-blue-500/40 text-xs text-blue-200 flex items-start space-x-2.5">
           <span className="text-lg">💡</span>
           <div>
-            <span className="font-extrabold block text-blue-950">WeatherGPT Commute Advisory:</span>
-            Heavy rainfall is expected for approximately 20 minutes. You may consider waiting at a nearby cafe or indoor lounge before continuing your journey.
+            <span className="font-extrabold block text-sky-300">WeatherGPT Route Recommendation:</span>
+            When passing through rain-heavy or low-lying sections, these nearby places provide safe parking, covered shelters, and refreshments.
           </div>
         </div>
 
@@ -63,69 +70,59 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
           <button
             onClick={() => setFilter('all')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer ${
-              filter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              filter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
             }`}
           >
-            ✨ All Places
+            ✨ All ({places.length})
+          </button>
+          <button
+            onClick={() => setFilter('shelter')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer flex items-center space-x-1 ${
+              filter === 'shelter' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+            }`}
+          >
+            <span>🛡️ Shelters</span>
           </button>
           <button
             onClick={() => setFilter('cafe')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer flex items-center space-x-1 ${
-              filter === 'cafe' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              filter === 'cafe' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
             }`}
           >
             <Coffee className="w-3.5 h-3.5" />
             <span>Cafes</span>
           </button>
           <button
-            onClick={() => setFilter('restaurant')}
+            onClick={() => setFilter('petrol')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer flex items-center space-x-1 ${
-              filter === 'restaurant' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              filter === 'petrol' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
             }`}
           >
-            <Utensils className="w-3.5 h-3.5" />
-            <span>Restaurants</span>
+            <Fuel className="w-3.5 h-3.5" />
+            <span>Petrol Pumps</span>
           </button>
           <button
-            onClick={() => setFilter('convenience')}
+            onClick={() => setFilter('hospital')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer flex items-center space-x-1 ${
-              filter === 'convenience' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              filter === 'hospital' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
             }`}
           >
-            <Store className="w-3.5 h-3.5" />
-            <span>Stores</span>
+            <Hospital className="w-3.5 h-3.5" />
+            <span>Hospitals</span>
           </button>
           <button
             onClick={() => setFilter('hotel')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer flex items-center space-x-1 ${
-              filter === 'hotel' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              filter === 'hotel' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
             <span>Hotels</span>
           </button>
-          <button
-            onClick={() => setFilter('petrol')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer flex items-center space-x-1 ${
-              filter === 'petrol' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <Fuel className="w-3.5 h-3.5" />
-            <span>Fuel Stops</span>
-          </button>
-          <button
-            onClick={() => setFilter('hospital')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer flex items-center space-x-1 ${
-              filter === 'hospital' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <Hospital className="w-3.5 h-3.5" />
-            <span>Medical</span>
-          </button>
         </div>
 
         {/* Places List */}
-        <div className="overflow-y-auto px-4 pb-6 space-y-2 flex-1">
+        <div className="overflow-y-auto px-4 pb-6 space-y-2.5 flex-1">
           {filteredPlaces.map((place) => {
             const isSelected = place.id === selectedPlaceId;
             return (
@@ -134,26 +131,28 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
                 onClick={() => onSelectPlace(place)}
                 className={`p-3 rounded-2xl border transition cursor-pointer ${
                   isSelected
-                    ? 'bg-blue-50/80 border-blue-500 shadow-md ring-2 ring-blue-500/20'
-                    : 'bg-white border-slate-200 hover:border-blue-300'
+                    ? 'bg-slate-800 border-blue-500 shadow-md ring-2 ring-blue-500/30'
+                    : 'bg-slate-850 border-slate-750 hover:border-slate-600'
                 }`}
               >
                 <div className="flex items-start justify-between mb-1">
                   <div>
                     <div className="flex items-center space-x-1.5 mb-0.5">
-                      <span className="text-[10px] font-black uppercase text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-sm">
-                        {place.categoryLabel}
+                      <span className="text-[10px] font-black uppercase text-sky-300 bg-sky-500/20 px-1.5 py-0.2 rounded-sm border border-sky-500/30">
+                        {place.categoryLabel || place.category}
                       </span>
-                      <span className="text-xs font-extrabold text-amber-500">
-                        ⭐ {place.rating} ({place.reviews})
-                      </span>
+                      {place.rating > 0 && (
+                        <span className="text-xs font-extrabold text-amber-400">
+                          ⭐ {place.rating} ({place.reviews})
+                        </span>
+                      )}
                     </div>
-                    <h4 className="text-xs font-black text-slate-900">
+                    <h4 className="text-xs font-black text-white">
                       {place.name}
                     </h4>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="text-xs font-extrabold text-blue-600 block">
+                    <span className="text-xs font-extrabold text-sky-400 block">
                       {place.distanceMeters}m
                     </span>
                     <span className="text-[10px] text-slate-400 font-semibold">
@@ -162,29 +161,40 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
                   </div>
                 </div>
 
-                <p className="text-[11px] text-slate-500 truncate mb-1.5">
+                <p className="text-[11px] text-slate-400 truncate mb-1.5">
                   📍 {place.address}
                 </p>
 
-                <div className="p-1.5 rounded-xl bg-slate-50 border border-slate-100 text-[10px] font-medium text-slate-700 mb-2 flex items-center justify-between">
-                  <span>🛡️ {place.shelterFeature}</span>
-                  <span className="font-bold text-emerald-600">{place.openStatus.split('•')[0]}</span>
+                {/* Recommendation context */}
+                <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-[10.5px] font-medium text-slate-300 mb-2.5">
+                  🛡️ <strong className="text-sky-400">Why recommended:</strong> {place.name} is {place.distanceMeters}m from the route, offering shelter and safe stopping space.
                 </div>
 
-                <div className="flex items-center justify-between pt-1 text-[11px]">
+                {/* Actions: View on map & Use as stop */}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-xs">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onSelectPlace(place);
                     }}
-                    className="text-blue-600 font-extrabold hover:underline flex items-center space-x-1 cursor-pointer"
+                    className="text-sky-400 font-bold hover:text-sky-300 flex items-center space-x-1 cursor-pointer"
                   >
-                    <span>View on Live Map</span>
+                    <span>View on Map</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
-                  <span className="text-slate-400 font-medium">
-                    {place.phone}
-                  </span>
+
+                  {onUseAsStop && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUseAsStop(place);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-blue-600/30 hover:bg-blue-600/50 text-sky-200 border border-blue-500/40 font-bold text-[10.5px] flex items-center space-x-1 cursor-pointer transition"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Use as Stop</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -194,3 +204,4 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
     </div>
   );
 };
+

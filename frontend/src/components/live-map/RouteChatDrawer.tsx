@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { apiSendChat } from '../../services/api';
+import { AppLanguage } from '../../utils/routeWeatherSummary';
 import {
   MessageSquare,
   Send,
@@ -17,6 +18,7 @@ import {
 interface RouteChatDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  language?: AppLanguage;
   routeContext: {
     origin?: string;
     destination?: string;
@@ -35,41 +37,73 @@ interface ChatMessageItem {
   sender: 'user' | 'assistant';
   text: string;
   timestamp: string;
+  followUps?: string[];
 }
 
-const QUICK_QUESTIONS = [
-  'Should I leave now?',
+const QUICK_QUESTIONS_EN = [
   'Will it rain on my route?',
-  'Where should I wait?',
-  'Why is this route safer?',
+  'Where will I face the most rain?',
+  'Should I leave now?',
+  'Which route is safest?',
+  'Where can I stop if it rains?'
+];
+
+const QUICK_QUESTIONS_HI = [
+  'क्या रास्ते में बारिश होगी?',
+  'रास्ते में सबसे ज्यादा बारिश कहाँ होगी?',
   'क्या मुझे अभी निकलना चाहिए?',
-  'रास्ते में बारिश या जलभराव होगा क्या?',
-  'Paani bhara hoga kya raste me?',
-  'Safe jagah kahan hai rukne ke liye?'
+  'कौन सा रास्ता सबसे सुरक्षित है?',
+  'बारिश होने पर कहाँ रुकना चाहिए?'
+];
+
+const QUICK_QUESTIONS_HINGLISH = [
+  'Kya raste mein baarish hogi?',
+  'Raste mein sabse zyada baarish kahan hogi?',
+  'Abhi nikalna safe hai?',
+  'Which route is safest?',
+  'Mujhe kahan rukna chahiye agar baarish ho?'
 ];
 
 export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
   isOpen,
   onClose,
+  language = 'en',
   routeContext
 }) => {
-  const [messages, setMessages] = useState<ChatMessageItem[]>([
-    {
-      id: 'welcome',
-      sender: 'assistant',
-      text: `Hello! I am WeatherGPT Copilot for your trip from **${routeContext.origin || 'Current Location'}** to **${routeContext.destination || 'Destination'}**. \n\nCurrent Route Safety Score: **${
-        routeContext.safetyScore !== null && routeContext.safetyScore !== undefined
-          ? `${routeContext.safetyScore}/100`
-          : 'Unavailable'
-      }** (${routeContext.rainRisk || 'Moderate'} rain risk). How can I assist your commute?`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }
-  ]);
+  const [messages, setMessages] = useState<ChatMessageItem[]>([]);
   const [inputQuery, setInputQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string>(`conv_${Date.now()}`);
   const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Initialize greeting on open or language switch
+  useEffect(() => {
+    const origin = routeContext.origin?.split(',')[0] || 'Origin';
+    const dest = routeContext.destination?.split(',')[0] || 'Destination';
+    const score = routeContext.safetyScore !== null && routeContext.safetyScore !== undefined ? `${routeContext.safetyScore}/100` : 'Unavailable';
+
+    let greeting = `Hello! I am WeatherGPT Copilot for your trip from **${origin}** to **${dest}**.\n\nCurrent Route Safety Score: **${score}** (${routeContext.rainRisk || 'Moderate'} rain risk). How can I assist your commute?`;
+    let initialFollowUps = ['Should I leave now?', 'Will it rain on my route?', 'Which route is safest?'];
+
+    if (language === 'hi') {
+      greeting = `नमस्ते! मैं आपका WeatherGPT कोपायलट हूँ। **${origin}** से **${dest}** तक के रास्ते का सुरक्षा स्कोर **${score}** है। मैं आपकी यात्रा में क्या मदद कर सकता हूँ?`;
+      initialFollowUps = ['क्या रास्ते में बारिश होगी?', 'क्या मुझे अभी निकलना चाहिए?', 'कौन सा रास्ता सबसे सुरक्षित है?'];
+    } else if (language === 'hinglish') {
+      greeting = `Hello! Main aapka WeatherGPT Copilot hoon for **${origin}** to **${dest}** trip.\n\nCurrent Route Safety Score: **${score}**. Aapke commute ke baare mein kya janna chahte hain?`;
+      initialFollowUps = ['Abhi nikalna safe hai?', 'Kya raste mein baarish hogi?', 'Which route is safest?'];
+    }
+
+    setMessages([
+      {
+        id: 'welcome',
+        sender: 'assistant',
+        text: greeting,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        followUps: initialFollowUps
+      }
+    ]);
+  }, [isOpen, language, routeContext.origin, routeContext.destination, routeContext.safetyScore]);
 
   useEffect(() => {
     if (isOpen) {
@@ -97,6 +131,7 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
     try {
       const response = await apiSendChat(query, {
         conversation_id: conversationId,
+        language: language === 'hi' ? 'hi' : 'en',
         route_context: {
           origin: routeContext.origin,
           destination: routeContext.destination,
@@ -114,11 +149,19 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
         setConversationId(response.conversation_id);
       }
 
+      // Generate dynamic follow-ups
+      const dynamicFollowUps = language === 'hi'
+        ? ['क्या आप बाइक से जा रहे हैं या कार से?', 'क्या आपको सबसे सुरक्षित रास्ता चाहिए या सबसे तेज़?', 'क्या मैं रास्ते में रुकने की जगह ढूँढूँ?']
+        : language === 'hinglish'
+        ? ['Bike se travel kar rahe ho ya car se?', 'Safest route chahiye ya fastest?', 'Near shelter find karein?']
+        : ['Are you travelling by bike, car, or public transport?', 'Do you want the safest route or the fastest route?', 'Should I find a nearby shelter?'];
+
       const assistantMsg: ChatMessageItem = {
         id: `msg_bot_${Date.now()}`,
         sender: 'assistant',
         text: response.response || 'Stay safe on your commute. Road surface might be wet.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        followUps: dynamicFollowUps
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
@@ -129,7 +172,9 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
         {
           id: `msg_err_${Date.now()}`,
           sender: 'assistant',
-          text: 'Unable to connect to WeatherGPT assistant right now. Please drive carefully.',
+          text: language === 'hi'
+            ? 'WeatherGPT सहायक से अभी संपर्क नहीं हो पा रहा है। कृपया सावधानी से ड्राइव करें।'
+            : 'Unable to connect to WeatherGPT assistant right now. Please drive carefully.',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -144,7 +189,7 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setInputQuery('Should I leave now?');
+      setInputQuery(language === 'hi' ? 'क्या मुझे अभी निकलना चाहिए?' : 'Should I leave now?');
       return;
     }
 
@@ -155,7 +200,7 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
 
     try {
       const recognition = new SpeechRecognition();
-      recognition.lang = 'en-IN';
+      recognition.lang = language === 'hi' ? 'hi-IN' : 'en-IN';
       recognition.interimResults = false;
 
       recognition.onstart = () => setIsListening(true);
@@ -174,6 +219,12 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
     }
   };
 
+  const activeChips = language === 'hi'
+    ? QUICK_QUESTIONS_HI
+    : language === 'hinglish'
+    ? QUICK_QUESTIONS_HINGLISH
+    : QUICK_QUESTIONS_EN;
+
   if (!isOpen) return null;
 
   return (
@@ -186,13 +237,13 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
           </div>
           <div>
             <div className="flex items-center space-x-1.5">
-              <h3 className="text-xs font-black text-white">Route Copilot</h3>
+              <h3 className="text-xs font-black text-white">Ask WeatherGPT</h3>
               <span className="text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded-xs">
-                Active
+                Copilot
               </span>
             </div>
             <p className="text-[10px] text-slate-400 truncate max-w-[200px]">
-              {routeContext.destination ? `To ${routeContext.destination}` : 'Trip Weather Advisor'}
+              {routeContext.destination ? `To ${routeContext.destination}` : 'Route Weather Copilot'}
             </p>
           </div>
         </div>
@@ -206,10 +257,10 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
       </div>
 
       {/* Route Context Banner */}
-      <div className="bg-slate-800/80 px-3 py-2 border-b border-slate-700/60 flex items-center justify-between text-[10px]">
+      <div className="bg-slate-850 px-3 py-2 border-b border-slate-750 flex items-center justify-between text-[10px]">
         <div className="flex items-center space-x-1.5 text-slate-300 truncate">
           <span className="text-emerald-400 font-bold">Trip:</span>
-          <span className="truncate">{routeContext.origin || 'Start'} → {routeContext.destination || 'End'}</span>
+          <span className="truncate">{routeContext.origin?.split(',')[0] || 'Start'} → {routeContext.destination?.split(',')[0] || 'End'}</span>
         </div>
         <div className="flex items-center space-x-1 shrink-0 ml-2">
           <span className="text-slate-400">Score:</span>
@@ -231,7 +282,7 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
             }`}
           >
             <div
-              className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs ${
+              className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-xs ${
                 msg.sender === 'user'
                   ? 'bg-blue-600 text-white rounded-br-xs font-medium shadow-md'
                   : 'bg-slate-800 border border-slate-700/70 text-slate-200 rounded-bl-xs leading-relaxed'
@@ -239,6 +290,22 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
             >
               <div className="whitespace-pre-wrap">{msg.text}</div>
             </div>
+
+            {/* Follow-up Question Chips from Assistant */}
+            {msg.sender === 'assistant' && msg.followUps && msg.followUps.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1 max-w-[95%]">
+                {msg.followUps.map((fu, fIdx) => (
+                  <button
+                    key={fIdx}
+                    onClick={() => handleSendMessage(fu)}
+                    className="text-[9.5px] bg-slate-850 hover:bg-slate-800 text-sky-300 border border-slate-700/80 px-2 py-1 rounded-lg transition cursor-pointer text-left"
+                  >
+                    💬 {fu}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <span className="text-[9px] text-slate-500 mt-1 px-1">
               {msg.timestamp}
             </span>
@@ -257,7 +324,7 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
 
       {/* Suggested Quick Prompt Chips */}
       <div className="px-3 py-2 border-t border-slate-800 bg-slate-900/90 overflow-x-auto no-scrollbar flex space-x-1.5">
-        {QUICK_QUESTIONS.map((q, idx) => (
+        {activeChips.map((q, idx) => (
           <button
             key={idx}
             onClick={() => handleSendMessage(q)}
@@ -295,7 +362,13 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
             type="text"
             value={inputQuery}
             onChange={(e) => setInputQuery(e.target.value)}
-            placeholder="Ask about weather, safety, when to leave..."
+            placeholder={
+              language === 'hi'
+                ? 'मौसम, सुरक्षा या निकलने के समय के बारे में पूछें...'
+                : language === 'hinglish'
+                ? 'Weather, safety ya departure time ke baare me poochein...'
+                : 'Ask about weather, safety, when to leave...'
+            }
             className="flex-1 bg-slate-800 text-white placeholder-slate-400 text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-hidden focus:border-blue-500"
           />
 
@@ -311,3 +384,4 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
     </div>
   );
 };
+
