@@ -7,7 +7,7 @@ from typing import Any, Callable, Literal
 
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from backend.config import settings
 
@@ -52,9 +52,8 @@ unrelated questions as unknown."""
 
 
 class WeatherQuery(BaseModel):
-    model_config = ConfigDict(extra="forbid")
     intent: Literal["current_weather", "forecast", "unknown"]
-    location: str | None
+    location: str | None = None
     location_mode: Literal["named_location", "current_location", "none"]
     time_reference: str
     request_type: Literal["temperature", "rain", "general_weather", "forecast", "unknown"]
@@ -196,5 +195,6 @@ def generate_weather_response(
     except Exception as exc:
         logger.warning("Gemini response generation failed (%s): %s", classify_gemini_error(exc), type(exc).__name__)
         raise LLMServiceError("Gemini could not generate a weather response") from exc
+
 
 
