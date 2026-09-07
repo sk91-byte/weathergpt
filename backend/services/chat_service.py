@@ -735,6 +735,12 @@ def process_chat_message(
     result["suggestions"] = _follow_up_suggestions(response_mode, profile, query.intent, bool(route_context))
     small_talk = _small_talk_response(message, response_mode)
     if small_talk:
+        # Greetings and simple conversation do not need a weather provider.
+        # Do not show a weather fallback badge for these messages.
+        result["ai_used"] = False
+        result["fallback_used"] = False
+        result["fallback_reason"] = None
+        result["data_source"] = "conversation"
         result["response"] = small_talk
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
