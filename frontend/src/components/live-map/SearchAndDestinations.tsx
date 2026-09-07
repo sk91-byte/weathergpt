@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   Search,
   X,
@@ -22,19 +22,19 @@ export type MapLanguage = 'en' | 'hi' | 'hinglish';
 
 function getPlaceTypeBadge(type?: string) {
   const t = (type || '').toLowerCase();
-  if (t === 'university' || t === 'college') return { label: 'University / College', icon: '🎓', color: 'bg-purple-950/80 text-purple-300 border-purple-800/60' };
-  if (t === 'school') return { label: 'School', icon: '🏫', color: 'bg-blue-950/80 text-blue-300 border-blue-800/60' };
-  if (t === 'hospital') return { label: 'Hospital', icon: '🏥', color: 'bg-red-950/80 text-red-300 border-red-800/60' };
-  if (t === 'airport') return { label: 'Airport', icon: '✈️', color: 'bg-sky-950/80 text-sky-300 border-sky-800/60' };
-  if (t === 'station') return { label: 'Station', icon: '🚆', color: 'bg-amber-950/80 text-amber-300 border-amber-800/60' };
-  if (t === 'bus_station') return { label: 'Bus Station', icon: '🚌', color: 'bg-orange-950/80 text-orange-300 border-orange-800/60' };
-  if (t === 'road') return { label: 'Road / Marg', icon: '🛣️', color: 'bg-slate-800 text-slate-300 border-slate-700' };
-  if (t === 'locality') return { label: 'Locality / Sector', icon: '📍', color: 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60' };
-  if (t === 'city' || t === 'town' || t === 'village') return { label: 'City / Town', icon: '🏙️', color: 'bg-indigo-950/80 text-indigo-300 border-indigo-800/60' };
-  if (t === 'landmark') return { label: 'Landmark', icon: '🏛️', color: 'bg-cyan-950/80 text-cyan-300 border-cyan-800/60' };
-  if (t === 'commercial') return { label: 'Market / Mall', icon: '🛍️', color: 'bg-pink-950/80 text-pink-300 border-pink-800/60' };
-  if (t === 'religious') return { label: 'Place of Worship', icon: '🛕', color: 'bg-yellow-950/80 text-yellow-300 border-yellow-800/60' };
-  return { label: 'Location', icon: '📍', color: 'bg-slate-800 text-slate-300 border-slate-700' };
+  if (t === 'university' || t === 'college') return { label: 'University / College', icon: 'ðŸŽ“', color: 'bg-purple-950/80 text-purple-300 border-purple-800/60' };
+  if (t === 'school') return { label: 'School', icon: 'ðŸ«', color: 'bg-blue-950/80 text-blue-300 border-blue-800/60' };
+  if (t === 'hospital') return { label: 'Hospital', icon: 'ðŸ¥', color: 'bg-red-950/80 text-red-300 border-red-800/60' };
+  if (t === 'airport') return { label: 'Airport', icon: 'âœˆï¸', color: 'bg-sky-950/80 text-sky-300 border-sky-800/60' };
+  if (t === 'station') return { label: 'Station', icon: 'ðŸš†', color: 'bg-amber-950/80 text-amber-300 border-amber-800/60' };
+  if (t === 'bus_station') return { label: 'Bus Station', icon: 'ðŸšŒ', color: 'bg-orange-950/80 text-orange-300 border-orange-800/60' };
+  if (t === 'road') return { label: 'Road / Marg', icon: 'ðŸ›£ï¸', color: 'bg-slate-800 text-slate-300 border-slate-700' };
+  if (t === 'locality') return { label: 'Locality / Sector', icon: 'ðŸ“', color: 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60' };
+  if (t === 'city' || t === 'town' || t === 'village') return { label: 'City / Town', icon: 'ðŸ™ï¸', color: 'bg-indigo-950/80 text-indigo-300 border-indigo-800/60' };
+  if (t === 'landmark') return { label: 'Landmark', icon: 'ðŸ›ï¸', color: 'bg-cyan-950/80 text-cyan-300 border-cyan-800/60' };
+  if (t === 'commercial') return { label: 'Market / Mall', icon: 'ðŸ›ï¸', color: 'bg-pink-950/80 text-pink-300 border-pink-800/60' };
+  if (t === 'religious') return { label: 'Place of Worship', icon: 'ðŸ›•', color: 'bg-yellow-950/80 text-yellow-300 border-yellow-800/60' };
+  return { label: 'Location', icon: 'ðŸ“', color: 'bg-slate-800 text-slate-300 border-slate-700' };
 }
 
 function highlightMatch(text: string, query: string): React.ReactNode {
@@ -93,7 +93,7 @@ function formatCoordsBadge(coords: any): string | null {
     lon = coords.lng ?? coords.lon ?? coords.longitude;
   }
   if (typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon)) {
-    return `${lat.toFixed(3)}°N, ${lon.toFixed(3)}°E`;
+    return `${lat.toFixed(3)}Â°N, ${lon.toFixed(3)}Â°E`;
   }
   return null;
 }
@@ -149,15 +149,15 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
       curated: 'Popular Locations & Hubs'
     },
     hi: {
-      originTitle: 'शुरुआती स्थान (Start location)',
-      destTitle: 'गंतव्य (Destination)',
-      originPlaceholder: currentLocationName || 'शुरुआती स्थान या GPS चुनें...',
-      destPlaceholder: 'गंतव्य स्थान (कॉलेज, शहर, पता) खोजें...',
-      setBtn: 'रूट देखें (Show route)',
-      gpsTitle: 'मेरा GPS स्थान',
-      change: 'बदलें',
-      searching: 'स्थान खोजे जा रहे हैं...',
-      curated: 'प्रमुख भारतीय शहर व कॉलेज'
+      originTitle: 'à¤¶à¥à¤°à¥à¤†à¤¤à¥€ à¤¸à¥à¤¥à¤¾à¤¨ (Start location)',
+      destTitle: 'à¤—à¤‚à¤¤à¤µà¥à¤¯ (Destination)',
+      originPlaceholder: currentLocationName || 'à¤¶à¥à¤°à¥à¤†à¤¤à¥€ à¤¸à¥à¤¥à¤¾à¤¨ à¤¯à¤¾ GPS à¤šà¥à¤¨à¥‡à¤‚...',
+      destPlaceholder: 'à¤—à¤‚à¤¤à¤µà¥à¤¯ à¤¸à¥à¤¥à¤¾à¤¨ (à¤•à¥‰à¤²à¥‡à¤œ, à¤¶à¤¹à¤°, à¤ªà¤¤à¤¾) à¤–à¥‹à¤œà¥‡à¤‚...',
+      setBtn: 'à¤°à¥‚à¤Ÿ à¤¦à¥‡à¤–à¥‡à¤‚ (Show route)',
+      gpsTitle: 'à¤®à¥‡à¤°à¤¾ GPS à¤¸à¥à¤¥à¤¾à¤¨',
+      change: 'à¤¬à¤¦à¤²à¥‡à¤‚',
+      searching: 'à¤¸à¥à¤¥à¤¾à¤¨ à¤–à¥‹à¤œà¥‡ à¤œà¤¾ à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚...',
+      curated: 'à¤ªà¥à¤°à¤®à¥à¤– à¤­à¤¾à¤°à¤¤à¥€à¤¯ à¤¶à¤¹à¤° à¤µ à¤•à¥‰à¤²à¥‡à¤œ'
     },
     hinglish: {
       originTitle: 'Start location',
@@ -304,7 +304,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                     : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
-                {l === 'en' ? 'EN' : l === 'hi' ? 'हिन्दी' : 'Hinglish'}
+                {l === 'en' ? 'EN' : l === 'hi' ? 'à¤¹à¤¿à¤¨à¥à¤¦à¥€' : 'Hinglish'}
               </button>
             ))}
           </div>
@@ -328,7 +328,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
         <div className="space-y-1 pb-2 border-b border-slate-800/80">
           <div className="flex items-center justify-between">
             <label className="text-[11px] font-bold text-emerald-400 flex items-center space-x-1.5">
-              <span>📍</span>
+              <span>ðŸ“</span>
               <span>{labels.originTitle}</span>
             </label>
             {originCoordsBadge && (
@@ -389,7 +389,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
         <div className="space-y-1 pt-2">
           <div className="flex items-center justify-between">
             <label className="text-[11px] font-bold text-sky-400 flex items-center space-x-1.5">
-              <span>🎯</span>
+              <span>ðŸŽ¯</span>
               <span>{labels.destTitle}</span>
             </label>
             {destCoordsBadge && (
@@ -511,7 +511,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
               onClick={onDismissGpsNotice}
               className="text-amber-400 hover:text-white font-bold ml-2 shrink-0 cursor-pointer"
             >
-              ✕
+              âœ•
             </button>
           )}
         </div>
@@ -519,7 +519,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
 
       {/* Auto-suggest overlay drawer */}
       {isOpen && (
-        <div className="absolute top-36 left-3 right-3 bg-slate-900/98 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700/90 overflow-hidden max-h-[65vh] flex flex-col animate-in fade-in zoom-in-95 duration-150 text-white">
+        <div className="absolute top-full mt-2 left-3 right-3 bg-slate-900/98 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700/90 overflow-hidden max-h-[55vh] flex flex-col animate-in fade-in zoom-in-95 duration-150 text-white">
           <div className="p-3 border-b border-slate-800 flex items-center justify-between bg-slate-800/60">
             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
               {activeField === 'origin' ? labels.originTitle : labels.destTitle}
@@ -564,7 +564,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                     Live Search Results ({autocompleteSuggestions.length})
                   </span>
                   <span className="text-[9px] text-slate-400">
-                    Use ↑↓ arrows to navigate, Enter to select
+                    Use â†‘â†“ arrows to navigate, Enter to select
                   </span>
                 </div>
                 {autocompleteSuggestions.map((item, idx) => {
@@ -595,7 +595,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                             </span>
                             {typeof item.latitude === 'number' && typeof item.longitude === 'number' && (
                               <span className="text-[9px] font-mono text-slate-400 bg-slate-900/80 px-1.5 py-0.5 rounded-md border border-slate-700/50">
-                                {item.latitude.toFixed(3)}°, {item.longitude.toFixed(3)}°
+                                {item.latitude.toFixed(3)}Â°, {item.longitude.toFixed(3)}Â°
                               </span>
                             )}
                           </div>
@@ -605,7 +605,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                         </div>
                         {(item.city || item.state) && (
                           <div className="flex items-center space-x-1.5 mt-1 text-[9.5px] text-sky-400 font-semibold">
-                            <span>📍 {[item.city, item.district !== item.city ? item.district : null, item.state].filter(Boolean).join(', ')}</span>
+                            <span>ðŸ“ {[item.city, item.district !== item.city ? item.district : null, item.state].filter(Boolean).join(', ')}</span>
                           </div>
                         )}
                       </div>
@@ -618,7 +618,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
             {/* Empty State */}
             {!isSearchingApi && !searchError && currentQuery.trim().length >= 2 && autocompleteSuggestions.length === 0 && (
               <div className="py-6 text-center text-xs text-slate-400 flex flex-col items-center justify-center space-y-1.5">
-                <span className="text-2xl">🔍</span>
+                <span className="text-2xl">ðŸ”</span>
                 <span className="font-bold text-slate-200">No matching locations found.</span>
                 <span className="text-[11px] text-slate-400 max-w-xs">
                   Try searching a landmark, college, metro station, road, or city name across India.
@@ -665,7 +665,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-white truncate">{preset.name}</div>
                       <div className="text-[10px] text-slate-400 truncate">
-                        {preset.subtitle} • {preset.city}
+                        {preset.subtitle} â€¢ {preset.city}
                       </div>
                     </div>
                   </div>
@@ -675,7 +675,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                     </span>
                     {preset.coords && typeof preset.coords.lat === 'number' && typeof preset.coords.lng === 'number' && (
                       <span className="text-[9px] text-sky-400 font-mono">
-                        {preset.coords.lat.toFixed(2)}°, {preset.coords.lng.toFixed(2)}°
+                        {preset.coords.lat.toFixed(2)}Â°, {preset.coords.lng.toFixed(2)}Â°
                       </span>
                     )}
                   </div>
@@ -688,3 +688,4 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
     </div>
   );
 };
+
