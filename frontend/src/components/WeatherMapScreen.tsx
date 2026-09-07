@@ -569,7 +569,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const activeRoute = safeRoutes.find((r) => r.id === activeRouteId) || safeRoutes[0];
 
   return (
-    <div className="relative w-full h-[calc(100vh-68px)] max-w-5xl mx-auto overflow-hidden flex flex-col bg-slate-900 select-none">
+    <div className="relative w-full min-h-[calc(100vh-68px)] max-w-5xl mx-auto overflow-y-auto flex flex-col bg-slate-900 select-none">
       {/* Top Header Tagline & Live Connection Indicator */}
       <div className="relative z-20 bg-slate-900/95 backdrop-blur-md px-3 sm:px-4 py-2 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center space-x-2">
@@ -762,7 +762,9 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
       )}
 
       {/* Main Interactive Leaflet Map Canvas or Placeholder */}
-      <div className="relative flex-1 w-full overflow-hidden flex flex-col">
+      {/* The map is a distinct first section. Details flow below it so the
+          user can scroll naturally instead of having the drawer cover the map. */}
+      <div className="relative w-full h-[52vh] min-h-[360px] flex-none overflow-hidden flex flex-col">
         {destinationName.trim().length > 0 || isNavigating ? (
           <>
             <InteractiveMapCanvas

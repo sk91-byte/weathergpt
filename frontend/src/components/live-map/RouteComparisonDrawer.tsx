@@ -128,7 +128,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
   );
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-30 bg-slate-900/98 backdrop-blur-md text-white rounded-t-3xl shadow-2xl border-t border-slate-700/80 pointer-events-auto transition-all duration-300 max-h-[82vh] flex flex-col">
+    <div className="relative z-30 w-full bg-slate-900/98 backdrop-blur-md text-white rounded-t-3xl shadow-2xl border-t border-slate-700/80 pointer-events-auto flex flex-col flex-none">
       {/* Pull Handle & Quick Status Bar */}
       <div
         onClick={onToggleExpand}
@@ -212,7 +212,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
         )}
       </div>
 
-      <div className="overflow-y-auto px-4 pb-6 space-y-3">
+      <div className="px-4 pb-6 space-y-3">
         {/* VIEW 1: SIDE-BY-SIDE WEATHER COMPARISON VIEW */}
         {viewMode === 'comparison' ? (
           <div className="space-y-3 pt-1">
