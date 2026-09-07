@@ -93,7 +93,7 @@ def _client() -> genai.Client:
     if _gemini_client is None:
         _gemini_client = genai.Client(
             api_key=settings.gemini_api_key,
-            http_options=types.HttpOptions(timeout=15000),
+            http_options=types.HttpOptions(timeout=30000),
         )
     return _gemini_client
 
@@ -111,7 +111,18 @@ def _call_gemini_with_retry(func: Callable[[], Any], max_retries: int = 1) -> An
         except Exception as exc:
             elapsed = time.perf_counter() - start
             cat = classify_gemini_error(exc)
-            logger.warning("Gemini call failed in %.2fs (attempt %d/%d, category=%s): %s - %s", elapsed, attempt + 1, max_retries + 1, cat, type(exc).__name__)
+            # Keep the provider's status/message in Render logs.  Without the
+            # final argument this format string itself raises a logging error,
+            # hiding whether the failure is auth, quota, model, or schema.
+            logger.warning(
+                "Gemini call failed in %.2fs (attempt %d/%d, category=%s): %s - %s",
+                elapsed,
+                attempt + 1,
+                max_retries + 1,
+                cat,
+                type(exc).__name__,
+                str(exc)[:500],
+            )
             last_exc = exc
             if cat in {"authentication", "quota", "invalid_model"}:
                 break
