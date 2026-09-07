@@ -474,6 +474,15 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     setTravelMode(params.travelMode);
     setLeaveByTime(params.leaveBy);
 
+    // Reveal the live map immediately. The route/weather requests can take a
+    // few seconds, but the selected origin and destination should be visible
+    // while that live analysis is running.
+    setShowPlanTripModal(false);
+    setRoutes([]);
+    setDepartureOptions([]);
+    setNearbyPlaces([]);
+    setActiveRouteId('');
+
     await fetchRouteAndWeather(
       params.originCoords,
       params.originName,

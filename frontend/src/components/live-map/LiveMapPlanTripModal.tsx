@@ -318,7 +318,7 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
         if (originRes && originRes.latitude && originRes.longitude) {
           resolvedOriginCoords = [originRes.latitude, originRes.longitude];
         } else {
-          resolvedOriginCoords = [28.4986, 77.0878]; // Safe default fallback
+          throw new Error('Origin location could not be verified.');
         }
       }
 
@@ -328,7 +328,7 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
         if (destRes && destRes.latitude && destRes.longitude) {
           resolvedDestCoords = [destRes.latitude, destRes.longitude];
         } else {
-          resolvedDestCoords = [28.4358, 77.1082]; // Safe default fallback
+          throw new Error('Destination location could not be verified.');
         }
       }
 
