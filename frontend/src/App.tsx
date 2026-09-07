@@ -10,7 +10,6 @@ import { MainWeatherCard } from './components/MainWeatherCard';
 import { WeatherMetricsGrid } from './components/WeatherMetricsGrid';
 import { WeatherRiskSection } from './components/WeatherRiskSection';
 import { YourNextTripCard } from './components/YourNextTripCard';
-import { LiveMapHomeCard } from './components/LiveMapHomeCard';
 import { WeatherAlertsCard } from './components/WeatherAlertsCard';
 import { AskWeatherGPTCard } from './components/AskWeatherGPTCard';
 import { ExploreMoreSection } from './components/ExploreMoreSection';
@@ -364,13 +363,6 @@ export default function App() {
                   setTripModalMode('all');
                   setShowTripDetails(true);
                 }}
-                onOpenLiveMap={() => setActiveTab('map')}
-              />
-
-              {/* 6b. Dedicated Live Weather & Radar Map Preview Card */}
-              <LiveMapHomeCard
-                trip={trip}
-                weather={weather}
                 onOpenLiveMap={() => setActiveTab('map')}
               />
 
