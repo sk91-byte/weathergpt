@@ -47,16 +47,17 @@ current_location for near me, here, where I am, or in my area, and none otherwis
 Understand everyday Hindi and Roman-script Hinglish words such as baarish/barish,
 chhata/chata, mausam, garmi, thand, bahar, chahiye, kyun, and batao. Preserve the
 previous location for short follow-ups such as "aur batao", "kya le jaun", or "why?"
-unless a new location is explicitly named. Never provide coordinates. Classify
-unrelated questions as unknown."""
+unless a new location is explicitly named. Never provide coordinates. Classify a
+normal conversation as general_chat and questions about WeatherGPT features as
+app_help. Use unknown only when the message cannot be answered helpfully."""
 
 
 class WeatherQuery(BaseModel):
-    intent: Literal["current_weather", "forecast", "unknown"]
+    intent: Literal["current_weather", "forecast", "general_chat", "app_help", "unknown"]
     location: str | None = None
     location_mode: Literal["named_location", "current_location", "none"]
     time_reference: str
-    request_type: Literal["temperature", "rain", "general_weather", "forecast", "unknown"]
+    request_type: Literal["temperature", "rain", "general_weather", "forecast", "general_chat", "app_help", "unknown"]
 
 
 class LLMServiceError(Exception):
@@ -235,6 +236,47 @@ def generate_weather_response(
     except Exception as exc:
         logger.warning("Gemini response generation failed (%s): %s", classify_gemini_error(exc), type(exc).__name__)
         raise LLMServiceError("Gemini could not generate a weather response") from exc
+
+
+def generate_general_response(
+    question: str,
+    language: str = "English",
+    conversation_context: dict[str, Any] | None = None,
+    app_help: bool = False,
+) -> str:
+    """Answer non-weather chat while keeping weather claims data-grounded."""
+    context_text = json.dumps(conversation_context or {}, ensure_ascii=False)
+    app_context = (
+        "WeatherGPT features: live current weather and forecasts, current-location weather, "
+        "multilingual text and voice chat, live map, route weather and safety analysis, "
+        "weather suggestions, and follow-up conversations. Explain how to use these features "
+        "when the user asks about the app."
+        if app_help else "Answer ordinary conversation naturally and briefly."
+    )
+    prompt = (
+        f"Answer in {language}. You are WeatherGPT, a friendly conversational assistant. "
+        f"{app_context} Do not invent live weather values. If the user asks for weather facts, "
+        "say that a weather lookup is needed instead of guessing. Remember the recent context. "
+        "Do not add markdown code fences.\n"
+        f"Recent conversation context: {context_text}\nUser question: {question}"
+    )
+    try:
+        response = _call_gemini_with_retry(
+            lambda: _client().models.generate_content(
+                model=settings.gemini_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(max_output_tokens=400),
+            ),
+            max_retries=1,
+        )
+        if not response.text:
+            raise LLMServiceError("Gemini returned an empty conversational response")
+        return response.text.strip()
+    except LLMServiceError:
+        raise
+    except Exception as exc:
+        logger.warning("Gemini general response failed (%s): %s", classify_gemini_error(exc), type(exc).__name__)
+        raise LLMServiceError("Gemini could not answer the conversation") from exc
 
 
 

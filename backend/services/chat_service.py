@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from backend.config import settings
-from backend.services.llm_service import WeatherQuery, generate_weather_response, interpret_weather_query
+from backend.services.llm_service import WeatherQuery, generate_general_response, generate_weather_response, interpret_weather_query
 from backend.services.location_service import LOCATIONS, get_location, reverse_geocode
 from backend.services.language_service import get_language
 from backend.services.query_parser import HINDI_CITY_ALIASES, parse_weather_query
@@ -812,6 +812,22 @@ def process_chat_message(
         result["response"] = _explain_previous_weather(previous_weather, previous_context["last_location"], response_mode)
         result["location"] = {"name": previous_context["last_location"]}
         result["data_source"] = "conversation_context"
+        add_message(conversation_id, "user", message)
+        add_message(conversation_id, "assistant", result["response"], context=previous_context)
+        return result
+    if query.intent in {"general_chat", "app_help"}:
+        try:
+            response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
+            result["response"] = generate_general_response(
+                message, response_language, previous_context, app_help=query.intent == "app_help"
+            )
+            result["intent"] = query.intent
+            result["data_source"] = "Gemini"
+        except LLMServiceError:
+            result["ai_used"] = False
+            result["fallback_used"] = True
+            result["fallback_reason"] = "llm_generation_failed"
+            result["response"] = "I can help with WeatherGPT features, weather questions, and normal conversation."
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
         return result
