@@ -85,8 +85,22 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   const suggestions = serverSuggestions.length ? serverSuggestions : localSuggestions;
 
   const needsCurrentLocation = (text: string) => {
-    const value = text.toLowerCase();
-    return /(weather of my location|weather near me|weather around me|near me|my current location|where i am|mere paas|meri location|मेरे पास|मेरी लोकेशन|मेरे आसपास|અહીં|મારી લોકેશન)/i.test(value);
+    const value = text.trim().toLowerCase();
+    const explicitlyNearby = /(weather of my location|weather near me|weather around me|near me|my current location|where i am|mere paas|meri location|मेरे पास|मेरी लोकेशन|मेरे आसपास|અહીં|મારી લોકેશન)/i.test(value);
+    if (explicitlyNearby) return true;
+
+    // Generic weather questions are implicitly about the user's current
+    // location. Without this, queries such as "Will it rain today?" were sent
+    // without coordinates and the backend had to ask for a city instead of
+    // reaching the live weather/LLM pipeline.
+    const isWeatherQuestion = /(weather|rain|rainfall|forecast|temperature|hot|cold|humid|wind|umbrella|raincoat|outside|मौसम|बारिश|वर्षा|तापमान|गर्मी|ठंड|छाता|બારીશ|વરસાદ|હવામાન|તાપમાન|છત્રી)/i.test(value);
+    if (!isWeatherQuestion) return false;
+
+    // If the user explicitly names a place, let the backend resolve that
+    // place rather than overriding it with device GPS.
+    const hasNamedPlace = /\b(?:in|at|for|near)\s+[a-z][a-z .'-]{1,50}(?:\?|$)/i.test(value)
+      || /(?:में|मे|के लिए|માં|માટે)\s+[\u0900-\u097F\u0A80-\u0AFFA-Za-z][\u0900-\u097F\u0A80-\u0AFFA-Za-z .'-]{1,50}(?:\?|$)/i.test(value);
+    return !hasNamedPlace;
   };
 
   const requestDeviceCoordinates = () => new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
