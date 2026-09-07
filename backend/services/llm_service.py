@@ -166,8 +166,37 @@ def interpret_weather_query(message: str, conversation_context: dict[str, Any] |
     except LLMServiceError:
         raise
     except Exception as exc:
-        logger.warning("Gemini query interpretation failed (%s): %s", classify_gemini_error(exc), type(exc).__name__)
-        raise LLMServiceError("Gemini could not interpret the weather question") from exc
+        # Some Gemini model/API combinations reject response_schema even though
+        # normal generation works. Retry with plain JSON instructions.
+        logger.warning(
+            "Structured Gemini query failed (%s): %s - %s",
+            classify_gemini_error(exc), type(exc).__name__, str(exc)[:500],
+        )
+        try:
+            fallback_prompt = (
+                f"{QUERY_INSTRUCTIONS}\nReturn ONLY one valid JSON object with exactly these keys: "
+                "intent, location, location_mode, time_reference, request_type. "
+                "Use null for an unknown location.\n"
+                f"Recent conversation context: {context_text}\nUser message: {message}"
+            )
+            response = _call_gemini_with_retry(
+                lambda: _client().models.generate_content(
+                    model=settings.gemini_model,
+                    contents=fallback_prompt,
+                    config=types.GenerateContentConfig(max_output_tokens=200),
+                ),
+                max_retries=0,
+            )
+            raw = (response.text or "").strip()
+            if raw.startswith("```"):
+                raw = raw.strip("`").replace("json", "", 1).strip()
+            return WeatherQuery.model_validate_json(raw)
+        except Exception as fallback_exc:
+            logger.warning(
+                "Gemini query interpretation fallback failed (%s): %s - %s",
+                classify_gemini_error(fallback_exc), type(fallback_exc).__name__, str(fallback_exc)[:500],
+            )
+            raise LLMServiceError("Gemini could not interpret the weather question") from fallback_exc
 
 
 def generate_weather_response(
