@@ -1,4 +1,4 @@
-"""Gemini integration for WeatherGPT's language understanding and replies."""
+﻿"""Gemini integration for WeatherGPT's language understanding and replies."""
 
 import json
 import logging
@@ -112,7 +112,7 @@ def _call_gemini_with_retry(func: Callable[[], Any], max_retries: int = 1) -> An
         except Exception as exc:
             elapsed = time.perf_counter() - start
             cat = classify_gemini_error(exc)
-            logger.warning("Gemini call failed in %.2fs (attempt %d/%d, category=%s): %s", elapsed, attempt + 1, max_retries + 1, cat, type(exc).__name__)
+            logger.warning("Gemini call failed in %.2fs (attempt %d/%d, category=%s): %s - %s", elapsed, attempt + 1, max_retries + 1, cat, type(exc).__name__)
             last_exc = exc
             if cat in {"authentication", "quota", "invalid_model"}:
                 break
@@ -196,4 +196,5 @@ def generate_weather_response(
     except Exception as exc:
         logger.warning("Gemini response generation failed (%s): %s", classify_gemini_error(exc), type(exc).__name__)
         raise LLMServiceError("Gemini could not generate a weather response") from exc
+
 
