@@ -206,7 +206,20 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
         sender: 'weathergpt',
         text: data.response,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        language: currentLanguage
+        language: currentLanguage,
+        cardData: {
+          type: 'weather',
+          payload: {
+            ai_used: data.ai_used,
+            fallback_used: data.fallback_used,
+            fallback_reason: data.fallback_reason,
+            data_source: data.data_source,
+            is_live: data.is_live,
+            llm_provider: data.llm_provider,
+            llm_model: data.llm_model,
+            weather_timestamp: data.weather_timestamp,
+          },
+        },
       };
       setMessages((prev) => [...prev, botMsg]);
     } catch (err) {
@@ -225,7 +238,17 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
           : currentLanguage === 'gu'
           ? `હમણાં ${weather.city} માટે લાઇવ હવામાન સેવા ઉપલબ્ધ નથી. થોડા સમય પછી ફરી પ્રયાસ કરો.`
           : `Live weather data for ${weather.city} is temporarily unavailable. I won't guess the conditions—please try again shortly.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        cardData: {
+          type: 'weather',
+          payload: {
+            ai_used: false,
+            fallback_used: true,
+            fallback_reason: 'request_failed',
+            data_source: 'none',
+            is_live: false,
+          },
+        },
       };
       setMessages((prev) => [...prev, botMsg]);
     } finally {
@@ -316,23 +339,48 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
                   : 'bg-white text-slate-800 border border-slate-200/80 rounded-bl-xs'
               }`}
             >
-              {/* If bot, show small icon & voice read */}
+              {/* If bot, show small icon & voice read & badges */}
               {m.sender === 'weathergpt' && (
-                <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100 text-[10px] text-slate-400 font-bold">
-                  <span className="flex items-center gap-1 text-blue-600">
-                    <Sparkles className="w-3 h-3" /> WeatherGPT Intelligence
-                  </span>
-                  <button
-                    onClick={() => handleSpeak(m.id, m.text)}
-                    className="p-1 hover:bg-slate-100 rounded-md text-slate-500 transition cursor-pointer"
-                    title="Speak text"
-                  >
-                    {speakingId === m.id ? (
-                      <VolumeX className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
-                    ) : (
-                      <Volume2 className="w-3.5 h-3.5" />
-                    )}
-                  </button>
+                <div className="flex flex-col gap-1 pb-1.5 mb-1.5 border-b border-slate-100 text-[10px]">
+                  <div className="flex items-center justify-between font-bold text-slate-400">
+                    <span className="flex items-center gap-1 text-blue-600">
+                      <Sparkles className="w-3 h-3" /> WeatherGPT Intelligence
+                    </span>
+                    <button
+                      onClick={() => handleSpeak(m.id, m.text)}
+                      className="p-1 hover:bg-slate-100 rounded-md text-slate-500 transition cursor-pointer"
+                      title="Speak text"
+                    >
+                      {speakingId === m.id ? (
+                        <VolumeX className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
+                      ) : (
+                        <Volume2 className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                  {m.cardData?.payload && (
+                    <div className="flex flex-wrap items-center gap-1 text-[9px] font-semibold">
+                      {m.cardData.payload.ai_used ? (
+                        <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          AI response • {m.cardData.payload.llm_provider || 'Gemini'}
+                        </span>
+                      ) : m.cardData.payload.fallback_used ? (
+                        <span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                          Weather data live, AI temporarily unavailable
+                        </span>
+                      ) : null}
+                      {m.cardData.payload.data_source && m.cardData.payload.data_source !== 'none' ? (
+                        <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                          Live weather • {m.cardData.payload.data_source}
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                          Live data unavailable — no guess shown
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

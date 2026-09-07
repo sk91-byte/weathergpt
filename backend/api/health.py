@@ -32,7 +32,24 @@ def ai_health() -> dict[str, object]:
     return gemini_health()
 
 
+@router.get("/health/diagnostic", tags=["health"])
+def health_diagnostic() -> dict[str, object]:
+    """Report overall system diagnostic status without leaking sensitive keys."""
+    database_stat = _database_status()
+    gemini_stat = gemini_health()
+    return {
+        "service": "WeatherGPT API",
+        "status": "healthy",
+        "gemini_configured": gemini_stat["configured"],
+        "gemini_model": settings.gemini_model,
+        "weather_provider_configured": True,
+        "database_configured": database_stat == "connected",
+        "database_status": database_stat,
+    }
+
+
 @router.get("/health/ai/test", tags=["health"])
 def ai_health_test() -> dict[str, object]:
     """Explicitly test Gemini connectivity when requested by an operator."""
     return test_gemini()
+

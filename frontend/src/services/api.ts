@@ -74,4 +74,5 @@ export async function apiGetLocationWeather(latitude:number, longitude:number, o
   return { weather, location };
 }
 
-export async function apiSendChat(query:string,options:any={},onSlow?:()=>void){const response=await fetchWithTimeout('/chat',{method:'POST',body:JSON.stringify({message:query,conversation_id:options.conversation_id,language:options.language||'en',profile:options.role||'citizen',latitude:options.latitude,longitude:options.longitude,route_context:options.route_context||null})},30000,onSlow);return response.json();}
+export async function apiSendChat(query:string,options:any={},onSlow?:()=>void){const response=await fetchWithTimeout('/chat',{method:'POST',body:JSON.stringify({message:query,conversation_id:options.conversation_id,language:options.language||'en',profile:options.role||'citizen',latitude:options.latitude,longitude:options.longitude,location:options.location||options.location_name||null,route_context:options.route_context||null})},30000,onSlow);return response.json();}
+

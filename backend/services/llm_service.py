@@ -2,7 +2,8 @@
 
 import json
 import logging
-from typing import Any, Literal
+import time
+from typing import Any, Callable, Literal
 
 from google import genai
 from google.genai import types
@@ -66,15 +67,15 @@ class LLMServiceError(Exception):
 def classify_gemini_error(exc: Exception) -> str:
     """Map provider errors to safe, user-facing diagnostic categories."""
     text = str(exc).lower()
-    if "api key" in text or "permission" in text or "unauthenticated" in text or "401" in text or "403" in text:
+    if "api key" in text or "permission" in text or "unauthenticated" in text or "401" in text or "403" in text or "api_key" in text:
         return "authentication"
-    if "quota" in text or "rate limit" in text or "429" in text:
+    if "quota" in text or "rate limit" in text or "429" in text or "resource_exhausted" in text:
         return "quota"
     if "model" in text and ("not found" in text or "invalid" in text):
         return "invalid_model"
-    if "timeout" in text or "timed out" in text:
+    if "timeout" in text or "timed out" in text or "deadline" in text:
         return "timeout"
-    if "network" in text or "connect" in text:
+    if "network" in text or "connect" in text or "connection" in text or "dns" in text:
         return "network"
     return "provider_error"
 
@@ -86,43 +87,76 @@ def gemini_health() -> dict[str, Any]:
     return {"service": "Gemini", "configured": True, "model": settings.gemini_model, "status": "configured"}
 
 
-def test_gemini() -> dict[str, Any]:
-    """Explicit diagnostic probe, kept separate from normal health checks."""
-    try:
-        response = _client().models.generate_content(model=settings.gemini_model, contents="Reply with OK", config=types.GenerateContentConfig(max_output_tokens=4))
-        return {**gemini_health(), "status": "available", "reply_received": bool(response.text)}
-    except Exception as exc:
-        return {**gemini_health(), "status": "unavailable", "error_type": classify_gemini_error(exc)}
-
-
 def _client() -> genai.Client:
     global _gemini_client
     if not settings.gemini_api_key:
         raise LLMServiceError("GEMINI_API_KEY is not configured")
     if _gemini_client is None:
-        _gemini_client = genai.Client(api_key=settings.gemini_api_key)
+        _gemini_client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=15000),
+        )
     return _gemini_client
 
 
-def interpret_weather_query(message: str, conversation_context: dict[str, Any] | None = None) -> WeatherQuery:
-    context_text = json.dumps(conversation_context or {})
+def _call_gemini_with_retry(func: Callable[[], Any], max_retries: int = 1) -> Any:
+    """Execute a Gemini API call with 1 controlled retry for transient errors."""
+    last_exc = None
+    for attempt in range(max_retries + 1):
+        try:
+            start = time.perf_counter()
+            res = func()
+            elapsed = time.perf_counter() - start
+            logger.info("Gemini call succeeded in %.2fs (attempt %d/%d)", elapsed, attempt + 1, max_retries + 1)
+            return res
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            cat = classify_gemini_error(exc)
+            logger.warning("Gemini call failed in %.2fs (attempt %d/%d, category=%s): %s", elapsed, attempt + 1, max_retries + 1, cat, type(exc).__name__)
+            last_exc = exc
+            if cat in {"authentication", "quota", "invalid_model"}:
+                break
+            if attempt < max_retries:
+                time.sleep(0.5)
+    raise last_exc
+
+
+def test_gemini() -> dict[str, Any]:
+    """Explicit diagnostic probe, kept separate from normal health checks."""
     try:
-        response = _client().models.generate_content(
-            model=settings.gemini_model,
-            contents=f"Recent conversation context: {context_text}\nUser message: {message}",
-            config=types.GenerateContentConfig(
-                system_instruction=QUERY_INSTRUCTIONS,
-                response_mime_type="application/json",
-                response_schema=WeatherQuery,
-            ),
-        )
+        def _do_test():
+            return _client().models.generate_content(
+                model=settings.gemini_model,
+                contents="Reply with OK",
+                config=types.GenerateContentConfig(max_output_tokens=4),
+            )
+        response = _call_gemini_with_retry(_do_test, max_retries=0)
+        return {**gemini_health(), "status": "available", "reply_received": bool(response.text)}
+    except Exception as exc:
+        return {**gemini_health(), "status": "unavailable", "error_type": classify_gemini_error(exc)}
+
+
+def interpret_weather_query(message: str, conversation_context: dict[str, Any] | None = None) -> WeatherQuery:
+    context_text = json.dumps(conversation_context or {}, ensure_ascii=False)
+    try:
+        def _do_interpret():
+            return _client().models.generate_content(
+                model=settings.gemini_model,
+                contents=f"Recent conversation context: {context_text}\nUser message: {message}",
+                config=types.GenerateContentConfig(
+                    system_instruction=QUERY_INSTRUCTIONS,
+                    response_mime_type="application/json",
+                    response_schema=WeatherQuery,
+                ),
+            )
+        response = _call_gemini_with_retry(_do_interpret, max_retries=1)
         if not response.text:
             raise LLMServiceError("Gemini returned no structured query")
         return WeatherQuery.model_validate_json(response.text)
     except LLMServiceError:
         raise
     except Exception as exc:
-        logger.warning("Gemini query interpretation failed: %s: %s", type(exc).__name__, exc)
+        logger.warning("Gemini query interpretation failed (%s): %s", classify_gemini_error(exc), type(exc).__name__)
         raise LLMServiceError("Gemini could not interpret the weather question") from exc
 
 
@@ -147,16 +181,19 @@ def generate_weather_response(
         f"Weather data: {json.dumps(weather_data, ensure_ascii=False)}"
     )
     try:
-        response = _client().models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(system_instruction=WEATHER_ASSISTANT_INSTRUCTIONS),
-        )
+        def _do_generate():
+            return _client().models.generate_content(
+                model=settings.gemini_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(system_instruction=WEATHER_ASSISTANT_INSTRUCTIONS),
+            )
+        response = _call_gemini_with_retry(_do_generate, max_retries=1)
         if not response.text:
             raise LLMServiceError("Gemini returned an empty weather response")
         return response.text.strip()
     except LLMServiceError:
         raise
     except Exception as exc:
-        logger.warning("Gemini response generation failed: %s: %s", type(exc).__name__, exc)
+        logger.warning("Gemini response generation failed (%s): %s", classify_gemini_error(exc), type(exc).__name__)
         raise LLMServiceError("Gemini could not generate a weather response") from exc
+

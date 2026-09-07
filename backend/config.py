@@ -17,6 +17,13 @@ def _as_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _clean_str(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = value.strip().strip('"').strip("'")
+    return cleaned if cleaned else None
+
+
 @dataclass(frozen=True)
 class Settings:
     """Application settings loaded from environment variables."""
@@ -24,8 +31,8 @@ class Settings:
     app_name: str = os.getenv("APP_NAME", "WeatherGPT")
     app_version: str = os.getenv("APP_VERSION", "1.0.0")
     debug: bool = _as_bool(os.getenv("DEBUG", "true"))
-    gemini_api_key: str | None = os.getenv("GEMINI_API_KEY") or None
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_api_key: str | None = _clean_str(os.getenv("GEMINI_API_KEY"))
+    gemini_model: str = _clean_str(os.getenv("GEMINI_MODEL")) or "gemini-2.5-flash"
     weatherapi_key: str | None = os.getenv("WEATHERAPI_KEY") or None
     routing_provider_url: str = os.getenv("ROUTING_PROVIDER_URL", "https://router.project-osrm.org")
     routing_provider: str = os.getenv("ROUTING_PROVIDER", "osrm")

@@ -1,9 +1,11 @@
 """Natural-language weather chat route."""
 
+import json
 import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.services.chat_service import process_chat_message
@@ -22,6 +24,7 @@ class ChatRequest(BaseModel):
     message: str = Field(max_length=500)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
+    location: str | None = Field(default=None, max_length=200)
     language: str | None = Field(default=None, description="Language code such as en, hi, or ta")
     conversation_id: str | None = Field(default=None, min_length=1, max_length=100)
     profile: str = Field(default="general_public", max_length=40)
@@ -49,10 +52,24 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/chat")
-def chat(request: ChatRequest) -> dict[str, Any]:
+def chat(request: ChatRequest) -> JSONResponse:
     """Answer a basic weather question using the existing weather service."""
     try:
-        return process_chat_message(request.message, request.latitude, request.longitude, request.language, request.conversation_id, request.profile, request.route_context)
+        data = process_chat_message(
+            request.message,
+            request.latitude,
+            request.longitude,
+            request.language,
+            request.conversation_id,
+            request.profile,
+            request.route_context,
+            request.location,
+        )
+        json_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        return JSONResponse(
+            content=json.loads(json_bytes.decode("utf-8")),
+            media_type="application/json; charset=utf-8",
+        )
     except LLMServiceError as exc:
         logger.warning("LLM chat request failed: %s", exc)
         detail = "Gemini API key is not configured" if "not configured" in str(exc) else "Gemini service is currently unavailable"
@@ -60,3 +77,4 @@ def chat(request: ChatRequest) -> dict[str, Any]:
     except WeatherServiceError as exc:
         logger.warning("Chat weather lookup failed: %s", exc)
         raise HTTPException(status_code=503, detail="Weather assistant is currently unavailable") from exc
+

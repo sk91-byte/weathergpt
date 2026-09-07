@@ -3,6 +3,7 @@
 import re
 from typing import Any
 
+from backend.config import settings
 from backend.services.llm_service import WeatherQuery, generate_weather_response, interpret_weather_query
 from backend.services.location_service import LOCATIONS, get_location, reverse_geocode
 from backend.services.language_service import get_language
@@ -653,7 +654,16 @@ def _localize_hindi_response(response: str) -> str:
     return response
 
 
-def process_chat_message(message: str, latitude: float | None = None, longitude: float | None = None, language: str | None = None, conversation_id: str | None = None, profile: str = "general_public", route_context: dict[str, Any] | None = None) -> dict[str, Any]:
+def process_chat_message(
+    message: str,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    language: str | None = None,
+    conversation_id: str | None = None,
+    profile: str = "general_public",
+    route_context: dict[str, Any] | None = None,
+    location: str | None = None,
+) -> dict[str, Any]:
     """Select a trusted location, retrieve weather, and generate an answer."""
     conversation = get_conversation(conversation_id) if conversation_id else None
     if conversation is None:
@@ -662,13 +672,15 @@ def process_chat_message(message: str, latitude: float | None = None, longitude:
     previous_context = {**conversation_context(conversation), **({"route_context": route_context} if route_context else {})}
     ai_used = True
     fallback_used = False
+    fallback_reason: str | None = None
     try:
         query: WeatherQuery = interpret_weather_query(message, previous_context)
-    except LLMServiceError:
+    except LLMServiceError as exc:
         parsed = parse_weather_query(message, previous_context)
         query = WeatherQuery(intent=parsed["intent"], location=parsed["location"], location_mode=parsed["location_mode"], time_reference=parsed["time_reference"], request_type=parsed["request_type"])
         ai_used = False
         fallback_used = True
+        fallback_reason = "llm_interpretation_failed"
     # A city explicitly present in the user's latest message always wins over
     # model output and previous context (important for "...in Chennai?").
     explicit = parse_weather_query(message)
@@ -705,7 +717,19 @@ def process_chat_message(message: str, latitude: float | None = None, longitude:
     if language is None and previous_context.get("preferred_language") == "hi":
         selected_language = get_language("hi")
     response_mode = _response_mode(message, selected_language)
-    result: dict[str, Any] = {"message": message, "intent": query.intent, "conversation_id": conversation_id, "ai_used": ai_used, "fallback_used": fallback_used, "data_source": "none", "persona": profile}
+    result: dict[str, Any] = {
+        "message": message,
+        "intent": query.intent,
+        "conversation_id": conversation_id,
+        "ai_used": ai_used,
+        "fallback_used": fallback_used,
+        "fallback_reason": fallback_reason,
+        "llm_provider": "Gemini" if settings.gemini_api_key else None,
+        "llm_model": settings.gemini_model if settings.gemini_api_key else None,
+        "data_source": "none",
+        "is_live": True,
+        "persona": profile,
+    }
     result["language"] = selected_language
     result["analysis"] = _query_analysis(query, response_mode, profile, message)
     result["suggestions"] = _follow_up_suggestions(response_mode, profile, query.intent, bool(route_context))
@@ -723,7 +747,7 @@ def process_chat_message(message: str, latitude: float | None = None, longitude:
         destination = get_location(destination_name)
         if origin is None or destination is None:
             result["response"] = (
-                "यात्रा के लिए शुरुआत और मंजिल—दोनों जगहों के सही नाम बताइए।"
+                "यात्रा के लिए शुरुआत और मंजिल—दोनों जगहों के सही नाम बताइए。"
                 if response_mode == "hi" else
                 "Trip ke liye starting point aur destination dono ke clear names batao."
                 if response_mode == "hinglish" else
@@ -803,30 +827,42 @@ def process_chat_message(message: str, latitude: float | None = None, longitude:
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
         return result
 
-    # Explicit coordinates always win, including for a follow-up such as "here".
-    if explicit_named_location:
-        location_mode = "named_location"
-    elif latitude is not None and longitude is not None:
-        location_mode = "current_location"
-    else:
-        location_mode = query.location_mode
-    if location_mode == "current_location":
-        if latitude is None or longitude is None:
-            result["response"] = (
-                "‘मेरे पास’ का मौसम बताने के लिए आपके फ़ोन का स्थान चाहिए। कृपया स्थान की अनुमति दें और फिर कोशिश करें।"
-                if response_mode == "hi" else
-                "Near me ka weather batane ke liye phone ki location chahiye. Location allow karke phir try karo."
-                if response_mode == "hinglish" else
-                "I need your device location to answer a 'near me' weather question. Please allow location access and try again."
-            )
+    resolved_location: dict[str, Any] | None = None
+    # 1. Explicit coordinates always take precedence for weather retrieval.
+    if latitude is not None and longitude is not None:
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            result["response"] = "Invalid coordinates: latitude must be between -90 and 90, longitude between -180 and 180."
             add_message(conversation_id, "user", message)
+            add_message(conversation_id, "assistant", result["response"], context=previous_context)
             return result
-        location = reverse_geocode(latitude, longitude) or {
-            "name": "Current location", "latitude": latitude, "longitude": longitude
+        geo = reverse_geocode(latitude, longitude)
+        name_str = (
+            location
+            or (geo.get("name") if geo else None)
+            or (query.location if query.location else None)
+            or previous_context.get("last_location")
+            or "selected location"
+        )
+        resolved_location = {
+            "name": name_str,
+            "latitude": latitude,
+            "longitude": longitude,
+            "source": "device_gps" if query.location_mode == "current_location" else "coordinates",
         }
-        location["source"] = "device_gps"
+    elif query.location_mode == "current_location":
+        result["response"] = (
+            "‘मेरे पास’ का मौसम बताने के लिए आपके फ़ोन का स्थान चाहिए। कृपया स्थान की अनुमति दें और फिर कोशिश करें।"
+            if response_mode == "hi" else
+            "Near me ka weather batane ke liye phone ki location chahiye. Location allow karke phir try karo."
+            if response_mode == "hinglish" else
+            "I need your device location to answer a 'near me' weather question. Please allow location access and try again."
+        )
+        add_message(conversation_id, "user", message)
+        add_message(conversation_id, "assistant", result["response"], context=previous_context)
+        return result
     else:
-        if query.location is None:
+        target_name = location or query.location
+        if target_name is None:
             result["response"] = (
                 "कृपया शहर का नाम लिखें या अपने वर्तमान स्थान की अनुमति दें।"
                 if response_mode == "hi" else
@@ -835,37 +871,68 @@ def process_chat_message(message: str, latitude: float | None = None, longitude:
                 "Please include a city name, or allow location access so I can answer for your current location."
             )
             add_message(conversation_id, "user", message)
+            add_message(conversation_id, "assistant", result["response"], context=previous_context)
             return result
-        location = get_location(query.location)
-        # Reverse-geocoded GPS names (for example, "New Delhi") may not be in
-        # the small named-city directory. Reuse the trusted saved coordinates.
-        if location is None and previous_context.get("last_location", "").strip().lower() == query.location.strip().lower():
+        found_loc = get_location(target_name)
+        if found_loc is None and previous_context.get("last_location", "").strip().lower() == target_name.strip().lower():
             if previous_context.get("last_latitude") is not None and previous_context.get("last_longitude") is not None:
-                location = {"name": query.location, "latitude": previous_context["last_latitude"], "longitude": previous_context["last_longitude"]}
-        if location is None:
+                found_loc = {"name": target_name, "latitude": previous_context["last_latitude"], "longitude": previous_context["last_longitude"]}
+        if found_loc is None:
+            result["ai_used"] = False
+            result["fallback_used"] = True
+            result["fallback_reason"] = "location_not_found"
+            result["data_source"] = "none"
             result["response"] = "I could not find that place in India. Please check the spelling and try again."
+            add_message(conversation_id, "user", message)
+            add_message(conversation_id, "assistant", result["response"], context=previous_context)
             return result
-        location = {**location, "source": "named_location"}
+        resolved_location = {**found_loc, "source": "named_location"}
 
-    result["location"] = location
-    if query.intent == "current_weather":
-        weather_data = get_current_weather(location["latitude"], location["longitude"])
-    else:
-        days = 2 if query.time_reference.lower() in {"tomorrow", "next day", "day_after_tomorrow"} else 1
-        weather_data = get_weather_forecast(location["latitude"], location["longitude"], days=days)
-        if query.time_reference.lower() == "tomorrow":
-            weather_data["forecast"] = weather_data["forecast"][1:2]
-        elif query.time_reference.lower() == "day_after_tomorrow":
-            weather_data["forecast"] = weather_data["forecast"][2:3]
+    result["location"] = resolved_location
+
+    try:
+        if query.intent == "current_weather":
+            weather_data = get_current_weather(resolved_location["latitude"], resolved_location["longitude"])
+        else:
+            days = 2 if query.time_reference.lower() in {"tomorrow", "next day", "day_after_tomorrow"} else 1
+            weather_data = get_weather_forecast(resolved_location["latitude"], resolved_location["longitude"], days=days)
+            if query.time_reference.lower() == "tomorrow":
+                weather_data["forecast"] = weather_data["forecast"][1:2]
+            elif query.time_reference.lower() == "day_after_tomorrow":
+                weather_data["forecast"] = weather_data["forecast"][2:3]
+    except WeatherServiceError:
+        result["ai_used"] = False
+        result["fallback_used"] = True
+        result["fallback_reason"] = "weather_provider_unavailable"
+        result["data_source"] = "none"
+        result["is_live"] = False
+        result["response"] = (
+            "अभी इस स्थान के लिए लाइव मौसम डेटा उपलब्ध नहीं है। मैं अनुमान नहीं लगाऊँगा—कृपया थोड़ी देर बाद फिर कोशिश करें।"
+            if response_mode == "hi" else
+            "Abhi is location ke liye live weather data available nahi hai. Main guess nahi karunga—thodi der baad try karo."
+            if response_mode == "hinglish" else
+            "Live weather data for this location is temporarily unavailable. I won't guess the conditions—please try again shortly."
+        )
+        add_message(conversation_id, "user", message)
+        add_message(conversation_id, "assistant", result["response"], context=previous_context)
+        return result
+
     result["data_source"] = weather_data.get("source", "Open-Meteo")
+    result["is_live"] = weather_data.get("is_live", True)
+    result["weather_timestamp"] = weather_data.get("current", {}).get("observed_at")
+
+    if not settings.gemini_api_key:
+        result["ai_used"] = False
+        result["fallback_used"] = True
+        result["fallback_reason"] = "llm_not_configured"
 
     if decision_question:
         if query.time_reference == "tomorrow" and len(weather_data.get("hourly", [])) > 24:
             weather_data["hourly"] = weather_data["hourly"][24:48]
-        decision = analyze_decision(weather_data, location["latitude"], location["longitude"], profile, message, location["name"])
+        decision = analyze_decision(weather_data, resolved_location["latitude"], resolved_location["longitude"], profile, message, resolved_location["name"])
         result["decision"] = decision
-        result["response"] = _decision_response(message, decision, weather_data, location["name"], response_mode)
-        result["context"] = {"location": location["name"], "time_reference": query.time_reference}
+        result["response"] = _decision_response(message, decision, weather_data, resolved_location["name"], response_mode)
+        result["context"] = {"location": resolved_location["name"], "time_reference": query.time_reference}
         add_message(conversation_id, "user", message)
         saved_decision = {
             "decision_id": decision.get("decision_id"),
@@ -879,31 +946,64 @@ def process_chat_message(message: str, latitude: float | None = None, longitude:
             "precautions": decision.get("precautions", []),
             "peak_risk_window": decision.get("peak_risk_window"),
         }
-        add_message(conversation_id, "assistant", result["response"], context={"last_location": location["name"], "last_intent": query.intent, "preferred_language": selected_language["code"], "last_decision": saved_decision})
+        add_message(
+            conversation_id,
+            "assistant",
+            result["response"],
+            context={
+                "last_location": resolved_location["name"],
+                "last_latitude": resolved_location["latitude"],
+                "last_longitude": resolved_location["longitude"],
+                "last_intent": query.intent,
+                "preferred_language": selected_language["code"],
+                "last_decision": saved_decision,
+            },
+        )
         return result
 
-    try:
-        response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
-        result["response"] = generate_weather_response(message, query, weather_data, response_language, previous_context, profile)
-        if response_mode == "hi":
-            result["response"] = _localize_hindi_response(result["response"])
-    except LLMServiceError:
-        result["ai_used"] = False
+    if result["ai_used"]:
+        try:
+            response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
+            result["response"] = generate_weather_response(message, query, weather_data, response_language, previous_context, profile)
+            if response_mode == "hi":
+                result["response"] = _localize_hindi_response(result["response"])
+        except LLMServiceError:
+            result["ai_used"] = False
+            result["fallback_used"] = True
+            result["fallback_reason"] = "llm_generation_failed"
+            result["response"] = _fallback_weather(response_mode, resolved_location["name"], weather_data, query.intent)
+    else:
         result["fallback_used"] = True
-        if query.intent == "current_weather":
-            current = weather_data["current"]
-            result["response"] = _fallback_weather(response_mode, location["name"], weather_data, query.intent)
-        else:
-            result["response"] = _fallback_weather(response_mode, location["name"], weather_data, query.intent)
-    # GPS coordinates are used for this request only. Do not persist precise
-    # device coordinates in PostgreSQL conversation state.
-    saved_coordinates = location.get("source") != "device_gps"
-    context = {"last_location": location["name"], "last_latitude": location["latitude"] if saved_coordinates else None, "last_longitude": location["longitude"] if saved_coordinates else None, "location_source": location.get("source"), "last_intent": query.intent, "last_time_reference": query.time_reference, "last_request_type": query.request_type, "preferred_language": selected_language["code"], "last_weather": {"current": weather_data.get("current"), "forecast": weather_data.get("forecast", [])[:2]}}
+        if not result.get("fallback_reason"):
+            result["fallback_reason"] = "llm_not_configured" if not settings.gemini_api_key else "llm_interpretation_failed"
+        result["response"] = _fallback_weather(response_mode, resolved_location["name"], weather_data, query.intent)
+
+    saved_coordinates = resolved_location.get("source") != "device_gps"
+    context = {
+        "last_location": resolved_location["name"],
+        "last_latitude": resolved_location["latitude"] if saved_coordinates else None,
+        "last_longitude": resolved_location["longitude"] if saved_coordinates else None,
+        "location_source": resolved_location.get("source"),
+        "last_intent": query.intent,
+        "last_time_reference": query.time_reference,
+        "last_request_type": query.request_type,
+        "preferred_language": selected_language["code"],
+        "last_weather": {"current": weather_data.get("current"), "forecast": weather_data.get("forecast", [])[:2]},
+    }
     add_message(conversation_id, "user", message)
     add_message(conversation_id, "assistant", result["response"], context=context)
-    # The user requested local preference/location persistence. This JSON
-    # profile is local-only and can be replaced by an authenticated profile.
     from backend.services.json_data_service import update_profile
-    update_profile({"language": selected_language["code"], "profile_type": profile, "location": {"name": location["name"], "latitude": location["latitude"], "longitude": location["longitude"], "source": location.get("source")}})
-    result["context"] = {"location": location["name"], "time_reference": query.time_reference}
+    update_profile(
+        {
+            "language": selected_language["code"],
+            "profile_type": profile,
+            "location": {
+                "name": resolved_location["name"],
+                "latitude": resolved_location["latitude"],
+                "longitude": resolved_location["longitude"],
+                "source": resolved_location.get("source"),
+            },
+        }
+    )
+    result["context"] = {"location": resolved_location["name"], "time_reference": query.time_reference}
     return result
