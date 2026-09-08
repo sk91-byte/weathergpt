@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { WeatherData, Language } from '../types';
+import { APP_LANGUAGES, WeatherData, Language } from '../types';
 import { INDIAN_CITIES, INITIAL_WEATHER } from '../data/weatherData';
 import { apiGetLocationWeather, apiResolveLocation } from '../services/api';
 import {
@@ -525,7 +525,35 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
                 </p>
               </div>
 
-              {/* Language Selection Cards */}
+              {/* All supported Indian languages */}
+              <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
+                {APP_LANGUAGES.map((language) => (
+                  <button
+                    key={language.code}
+                    type="button"
+                    onClick={() => setSelectedLanguage(language.code)}
+                    className={`p-3 rounded-2xl text-left border transition-all cursor-pointer flex items-center gap-2 ${
+                      selectedLanguage === language.code
+                        ? 'bg-blue-600/25 border-blue-500 shadow-md shadow-blue-500/10'
+                        : 'bg-slate-800/70 hover:bg-slate-800 border-slate-700 text-slate-300'
+                    }`}
+                  >
+                    <div className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center font-bold text-xs ${
+                      selectedLanguage === language.code ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'
+                    }`}>
+                      {language.short}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-extrabold text-xs text-white truncate">{language.nativeName}</div>
+                      <div className="text-[10px] text-slate-400 truncate">{language.englishName}</div>
+                    </div>
+                    {selectedLanguage === language.code && <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />}
+                  </button>
+                ))}
+              </div>
+
+              {/* Retained legacy preview markup below; the dynamic selector above is authoritative. */}
+              {false && (
               <div className="space-y-3">
                 {/* 1. English */}
                 <button
@@ -638,6 +666,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
                   </div>
                 </button>
               </div>
+              )}
 
               {/* Language Sample Preview */}
               <div className="p-3.5 rounded-xl bg-slate-800/50 border border-slate-700/60 text-xs text-slate-300">
@@ -652,6 +681,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
                 )}
                 {selectedLanguage === 'gu' && (
                   <p>🌤️ "{selectedWeather.city}માં અત્યારે {selectedWeather.condition}, તાપમાન {Math.round(selectedWeather.temperature)}°C છે. વરસાદની શક્યતા {selectedWeather.rainChance}% છે."</p>
+                )}
+                {!['en', 'hi', 'gu'].includes(selectedLanguage) && (
+                  <p>🌤️ Gemini will provide this weather update in {APP_LANGUAGES.find((item) => item.code === selectedLanguage)?.nativeName}.</p>
                 )}
               </div>
             </div>
