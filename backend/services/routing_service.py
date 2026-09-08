@@ -48,7 +48,35 @@ class OSRMProvider:
         return {"route_id": route_id, "origin": request.origin.model_dump(), "destination": request.destination.model_dump(), "travel_mode": request.travel_mode, "distance_km": round(float(selected.get("distance", 0)) / 1000, 2), "duration_minutes": round(float(selected.get("duration", 0)) / 60), "geometry": selected.get("geometry") or {"type": "LineString", "coordinates": []}, "steps": steps, "alternatives_available": len(routes) > 1}
 
 
-_providers: dict[str, RoutingProvider] = {"osrm": OSRMProvider()}
+class OpenRouteServiceProvider:
+    profiles = {'driving': 'driving-car', 'walking': 'foot-walking', 'cycling': 'cycling-regular'}
+
+    def get_route(self, request: RouteRequest) -> dict[str, Any]:
+        if request.travel_mode == 'transit':
+            raise RoutingServiceError('Transit routing is not available from OpenRouteService')
+        if not settings.openrouteservice_api_key:
+            raise RoutingServiceError('OpenRouteService is not configured: set OPENROUTESERVICE_API_KEY')
+        profile = self.profiles[request.travel_mode]
+        url = f'{settings.openrouteservice_base_url.rstrip('/')}/v2/directions/{profile}/geojson'
+        body = {'coordinates': [[request.origin.longitude, request.origin.latitude], [request.destination.longitude, request.destination.latitude]], 'instructions': True}
+        try:
+            response = requests.post(url, json=body, headers={'Authorization': settings.openrouteservice_api_key, 'Content-Type': 'application/json', 'Accept': 'application/geo+json, application/json', 'User-Agent': 'WeatherGPT/1.0 routing-client'}, timeout=20)
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise RoutingServiceError('OpenRouteService is temporarily unavailable') from exc
+        feature = payload.get('features', [{}])[0] if isinstance(payload, dict) else {}
+        geometry = feature.get('geometry') or {'type': 'LineString', 'coordinates': []}
+        properties = feature.get('properties') or {}
+        summary = properties.get('summary') or {}
+        steps = []
+        for segment in properties.get('segments') or []:
+            for step in segment.get('steps', []):
+                steps.append({'name': step.get('name') or 'Unnamed road', 'distance_km': round(float(step.get('distance', 0)) / 1000, 2), 'duration_minutes': round(float(step.get('duration', 0)) / 60), 'geometry': None})
+        route_id = hashlib.sha256(f'ors|{request.origin.latitude},{request.origin.longitude}|{request.destination.latitude},{request.destination.longitude}|{request.travel_mode}'.encode()).hexdigest()[:24]
+        return {'route_id': route_id, 'origin': request.origin.model_dump(), 'destination': request.destination.model_dump(), 'travel_mode': request.travel_mode, 'distance_km': round(float(summary.get('distance', 0)) / 1000, 2), 'duration_minutes': round(float(summary.get('duration', 0)) / 60), 'geometry': geometry, 'steps': steps, 'alternatives_available': False}
+
+_providers: dict[str, RoutingProvider] = {"osrm": OSRMProvider(), "ors": OpenRouteServiceProvider(), "openrouteservice": OpenRouteServiceProvider()}
 
 
 def get_route(request: RouteRequest) -> dict[str, Any]:
@@ -78,3 +106,4 @@ def sample_route(route: dict[str, Any], limit: int = 6) -> list[dict[str, float]
     count = min(limit, len(points))
     indexes = [round(index * (len(points) - 1) / max(1, count - 1)) for index in range(count)]
     return [points[index] for index in indexes]
+

@@ -47,6 +47,8 @@ class Settings:
     weatherapi_key: str | None = os.getenv("WEATHERAPI_KEY") or None
     routing_provider_url: str = os.getenv("ROUTING_PROVIDER_URL", "https://router.project-osrm.org")
     routing_provider: str = os.getenv("ROUTING_PROVIDER", "osrm")
+    openrouteservice_api_key: str | None = _clean_str(os.getenv("OPENROUTESERVICE_API_KEY"))
+    openrouteservice_base_url: str = os.getenv("OPENROUTESERVICE_BASE_URL", "https://api.heigit.org/openrouteservice")
     serpapi_api_key: str | None = os.getenv("SERPAPI_API_KEY") or None
     imd_enabled: bool = _as_bool(os.getenv("IMD_ENABLED", "true"))
     imd_api_base_url: str = _clean_str(os.getenv("IMD_API_BASE_URL")) or "https://api.imd.gov.in/api/v1"
@@ -76,3 +78,4 @@ class Settings:
 
 
 settings = Settings()
+
