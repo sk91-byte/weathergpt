@@ -1,5 +1,6 @@
 """Service functions for retrieving weather data from Open-Meteo."""
 
+from datetime import datetime, timezone
 from typing import Any
 
 import requests
@@ -11,6 +12,21 @@ from backend.config import settings
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 REQUEST_TIMEOUT_SECONDS = (5, 30)
+
+
+def _retrieved_at() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _source_metadata(source: str, retrieved_at: str, timezone_name: str | None = None) -> dict[str, Any]:
+    """Attach provenance without implying that a model value is a station observation."""
+    return {
+        "name": source,
+        "kind": "forecast_provider" if source == "Open-Meteo" else "fallback_provider",
+        "retrieved_at": retrieved_at,
+        "timezone": timezone_name,
+        "official_warning_authority": False,
+    }
 
 
 def _http_session() -> requests.Session:
@@ -86,6 +102,7 @@ def _weatherapi_current(latitude: float, longitude: float) -> dict[str, Any]:
     payload = _weatherapi_request(latitude, longitude, 1)
     current = payload["current"]
     condition = (current.get("condition") or {}).get("text") or "Unknown weather conditions"
+    retrieved_at = _retrieved_at()
     return {
         "location": {"latitude": latitude, "longitude": longitude},
         "current": {
@@ -95,6 +112,9 @@ def _weatherapi_current(latitude: float, longitude: float) -> dict[str, Any]:
             "wind_direction_degrees": None, "weather_code": None, "condition": condition,
         },
         "source": "WeatherAPI",
+        "is_live": True,
+        "retrieved_at": retrieved_at,
+        "source_metadata": _source_metadata("WeatherAPI", retrieved_at),
     }
 
 
@@ -135,6 +155,8 @@ def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
         index = times.index(current_time)
         if index < len(probabilities) and isinstance(probabilities[index], (int, float)):
             probability = probabilities[index]
+    retrieved_at = _retrieved_at()
+    timezone_name = payload.get("timezone") if isinstance(payload.get("timezone"), str) else None
     return {
         "location": {"latitude": latitude, "longitude": longitude},
         "current": {
@@ -151,6 +173,9 @@ def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
             "observed_at": current.get("time"),
         },
         "source": "Open-Meteo",
+        "is_live": True,
+        "retrieved_at": retrieved_at,
+        "source_metadata": _source_metadata("Open-Meteo", retrieved_at, timezone_name),
     }
 
 
@@ -185,7 +210,8 @@ def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> di
                     "humidity_percent": hour.get("humidity"),
                     "visibility_m": float(hour["vis_km"]) * 1000 if isinstance(hour.get("vis_km"), (int, float)) else None,
                 })
-        return {"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "WeatherAPI"}
+        retrieved_at = _retrieved_at()
+        return {"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "WeatherAPI", "is_live": True, "retrieved_at": retrieved_at, "source_metadata": _source_metadata("WeatherAPI", retrieved_at)}
     daily, hourly = payload.get("daily"), payload.get("hourly")
     daily_keys = ["time", "temperature_2m_max", "temperature_2m_min", "precipitation_sum", "precipitation_probability_max", "sunrise", "sunset", "weather_code"]
     if not isinstance(daily, dict) or not isinstance(hourly, dict) or any(not isinstance(daily.get(key), list) for key in daily_keys):
@@ -226,4 +252,6 @@ def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> di
             "humidity_percent": values("relative_humidity_2m")[index],
             "visibility_m": values("visibility")[index],
         })
-    return {"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "Open-Meteo"}
+    retrieved_at = _retrieved_at()
+    timezone_name = payload.get("timezone") if isinstance(payload.get("timezone"), str) else None
+    return {"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "Open-Meteo", "is_live": True, "retrieved_at": retrieved_at, "source_metadata": _source_metadata("Open-Meteo", retrieved_at, timezone_name)}

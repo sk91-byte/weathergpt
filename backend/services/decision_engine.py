@@ -43,7 +43,12 @@ def analyze_decision(weather: dict[str, Any], latitude: float, longitude: float,
         "why": impact.get("why", []),
         "confidence": confidence,
         "explanation": {"summary": "Risk is calculated from the supplied forecast; no risk value is invented by Gemini.", "factors": [factor for name, value in risks.items() if name != "overall" for factor in value.get("evidence", [])]},
-        "data_sources": [{"name": weather.get("source", "Unknown"), "type": "forecast", "retrieved_at": datetime.now(timezone.utc).isoformat()}],
+        "data_sources": [{
+            "name": weather.get("source", "Unknown"),
+            "type": "forecast",
+            "retrieved_at": weather.get("retrieved_at") or datetime.now(timezone.utc).isoformat(),
+            "metadata": weather.get("source_metadata", {}),
+        }],
         "multi_model_consensus": summarize_consensus([{"name": weather.get("source", "Unknown"), "rain_signal": "configured_single_source"}]),
     }
     _DECISIONS[decision_id] = result

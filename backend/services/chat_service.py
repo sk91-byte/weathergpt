@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from backend.config import settings
-from backend.services.llm_service import WeatherQuery, generate_general_response, generate_weather_response, interpret_weather_query
+from backend.services.llm_service import WeatherQuery, generate_decision_response, generate_general_response, generate_weather_response, interpret_weather_query
 from backend.services.location_service import LOCATIONS, get_location, reverse_geocode
 from backend.services.language_service import get_language
 from backend.services.query_parser import HINDI_CITY_ALIASES, parse_weather_query
@@ -736,6 +736,7 @@ def process_chat_message(
         "llm_provider": "Gemini" if settings.gemini_api_key else None,
         "llm_model": settings.gemini_model if settings.gemini_api_key else None,
         "data_source": "none",
+        "response_source": "unavailable",
         "is_live": True,
         "persona": profile,
     }
@@ -753,12 +754,14 @@ def process_chat_message(
             result["fallback_used"] = False
             result["fallback_reason"] = None
             result["data_source"] = "Gemini"
+            result["response_source"] = "Gemini"
         except LLMServiceError:
             result["response"] = small_talk
             result["ai_used"] = False
             result["fallback_used"] = False
             result["fallback_reason"] = None
             result["data_source"] = "conversation"
+            result["response_source"] = "conversation_fallback"
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
         return result
@@ -809,6 +812,7 @@ def process_chat_message(
             "destination": {"name": destination["name"], "latitude": destination["latitude"], "longitude": destination["longitude"]},
         }
         result["data_source"] = "Open-Meteo"
+        result["response_source"] = "deterministic_fallback"
         result["response"] = _route_response(message, origin, destination, origin_weather, destination_weather, route_forecast, route_decision, response_mode)
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context={"last_location": destination["name"], "last_intent": result["intent"], "preferred_language": selected_language["code"], "last_route": result["route"]})
@@ -851,10 +855,12 @@ def process_chat_message(
             )
             result["intent"] = query.intent
             result["data_source"] = "Gemini + Google Search" if search_requested and settings.gemini_search_grounding else "Gemini"
+            result["response_source"] = "Gemini"
         except LLMServiceError:
             result["ai_used"] = False
             result["fallback_used"] = True
             result["fallback_reason"] = "llm_generation_failed"
+            result["response_source"] = "conversation_fallback"
             result["response"] = "I can help with WeatherGPT features, weather questions, and normal conversation."
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
@@ -870,11 +876,13 @@ def process_chat_message(
             result["fallback_used"] = False
             result["fallback_reason"] = None
             result["data_source"] = "Gemini + Google Search" if settings.gemini_search_grounding else "Gemini"
+            result["response_source"] = "Gemini"
         except LLMServiceError:
             result["ai_used"] = False
             result["fallback_used"] = True
             result["fallback_reason"] = "llm_generation_failed"
             result["data_source"] = "conversation"
+            result["response_source"] = "conversation_fallback"
             result["response"] = (
                 "I’m here to help with WeatherGPT, general questions, and live weather. Please try that again in a moment."
             )
@@ -946,7 +954,10 @@ def process_chat_message(
     result["location"] = resolved_location
 
     try:
-        if query.intent == "current_weather":
+        # A decision question needs a time window and hourly inputs even when
+        # Gemini classifies the wording as current weather. Current conditions
+        # alone cannot support a safety or departure recommendation.
+        if query.intent == "current_weather" and not decision_question:
             weather_data = get_current_weather(resolved_location["latitude"], resolved_location["longitude"])
         else:
             days = 2 if query.time_reference.lower() in {"tomorrow", "next day", "day_after_tomorrow"} else 1
@@ -975,6 +986,13 @@ def process_chat_message(
     result["data_source"] = weather_data.get("source", "Open-Meteo")
     result["is_live"] = weather_data.get("is_live", True)
     result["weather_timestamp"] = weather_data.get("current", {}).get("observed_at")
+    result["retrieved_at"] = weather_data.get("retrieved_at")
+    result["source_metadata"] = weather_data.get("source_metadata", {
+        "name": result["data_source"],
+        "kind": "unknown",
+        "retrieved_at": result["retrieved_at"],
+        "official_warning_authority": False,
+    })
 
     if not settings.gemini_api_key:
         result["ai_used"] = False
@@ -987,6 +1005,25 @@ def process_chat_message(
         decision = analyze_decision(weather_data, resolved_location["latitude"], resolved_location["longitude"], profile, message, resolved_location["name"])
         result["decision"] = decision
         result["response"] = _decision_response(message, decision, weather_data, resolved_location["name"], response_mode)
+        result["response_source"] = "deterministic_fallback"
+        if result["ai_used"]:
+            try:
+                response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
+                result["response"] = generate_decision_response(
+                    message,
+                    weather_data,
+                    decision,
+                    response_language,
+                    previous_context,
+                    profile,
+                )
+                if response_mode == "hi":
+                    result["response"] = _localize_hindi_response(result["response"])
+                result["response_source"] = "Gemini"
+            except LLMServiceError:
+                result["ai_used"] = False
+                result["fallback_used"] = True
+                result["fallback_reason"] = "llm_generation_failed"
         result["context"] = {"location": resolved_location["name"], "time_reference": query.time_reference}
         add_message(conversation_id, "user", message)
         saved_decision = {
@@ -1022,16 +1059,19 @@ def process_chat_message(
             result["response"] = generate_weather_response(message, query, weather_data, response_language, previous_context, profile)
             if response_mode == "hi":
                 result["response"] = _localize_hindi_response(result["response"])
+            result["response_source"] = "Gemini"
         except LLMServiceError:
             result["ai_used"] = False
             result["fallback_used"] = True
             result["fallback_reason"] = "llm_generation_failed"
             result["response"] = _fallback_weather(response_mode, resolved_location["name"], weather_data, query.intent)
+            result["response_source"] = "deterministic_fallback"
     else:
         result["fallback_used"] = True
         if not result.get("fallback_reason"):
             result["fallback_reason"] = "llm_not_configured" if not settings.gemini_api_key else "llm_interpretation_failed"
         result["response"] = _fallback_weather(response_mode, resolved_location["name"], weather_data, query.intent)
+        result["response_source"] = "deterministic_fallback"
 
     saved_coordinates = resolved_location.get("source") != "device_gps"
     context = {

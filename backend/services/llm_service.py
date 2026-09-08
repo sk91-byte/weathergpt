@@ -255,6 +255,55 @@ def generate_weather_response(
         raise LLMServiceError("Gemini could not generate a weather response") from exc
 
 
+def generate_decision_response(
+    original_question: str,
+    weather_data: dict[str, Any],
+    decision: dict[str, Any],
+    language: str = "English",
+    conversation_context: dict[str, Any] | None = None,
+    profile: str = "general_public",
+) -> str:
+    """Explain a deterministic decision result without changing its facts.
+
+    Risk scores, evidence and actions are calculated by the application. Gemini
+    is only the conversational rendering layer for this structured result.
+    """
+    prompt = (
+        f"Answer in {language}. The user's persona is {profile}. "
+        "Use ONLY the supplied weather and decision JSON. Do not invent values, "
+        "warnings, locations, times, route conditions, or official orders. "
+        "Give the direct answer first, then the main evidence and 1–3 practical "
+        "actions. Clearly say when confidence or data is unavailable. Call the "
+        "result advisory decision support, not a guarantee of safety. Keep the "
+        "answer concise and natural; do not use markdown tables or code fences.\n"
+        f"Recent conversation context: {json.dumps(conversation_context or {}, ensure_ascii=False)}\n"
+        f"User question: {original_question}\n"
+        f"Weather data: {json.dumps(weather_data, ensure_ascii=False)}\n"
+        f"Deterministic decision result: {json.dumps(decision, ensure_ascii=False)}"
+    )
+    try:
+        response = _call_gemini_with_retry(
+            lambda: _client().models.generate_content(
+                model=settings.gemini_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=WEATHER_ASSISTANT_INSTRUCTIONS,
+                    max_output_tokens=450,
+                ),
+            ),
+            max_retries=1,
+        )
+        response_text = _response_text(response)
+        if not response_text:
+            raise LLMServiceError("Gemini returned an empty decision response")
+        return response_text
+    except LLMServiceError:
+        raise
+    except Exception as exc:
+        logger.warning("Gemini decision response failed (%s): %s", classify_gemini_error(exc), type(exc).__name__)
+        raise LLMServiceError("Gemini could not generate a decision response") from exc
+
+
 def generate_general_response(
     question: str,
     language: str = "English",

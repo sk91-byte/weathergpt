@@ -233,6 +233,9 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
             llm_provider: data.llm_provider,
             llm_model: data.llm_model,
             weather_timestamp: data.weather_timestamp,
+            response_source: data.response_source,
+            retrieved_at: data.retrieved_at,
+            source_metadata: data.source_metadata,
           },
         },
       };
@@ -391,6 +394,11 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
                           Weather data live, AI temporarily unavailable
                         </span>
                       ) : null}
+                      {m.cardData.payload.retrieved_at && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-500 border border-slate-200">
+                          Updated {new Date(m.cardData.payload.retrieved_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
                       {m.cardData.payload.is_live || ['current_weather', 'forecast'].includes(m.cardData.payload.intent) ? (
                         m.cardData.payload.data_source && m.cardData.payload.data_source !== 'none' ? (
                         <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">

@@ -215,3 +215,47 @@ def test_scenario_j_provider_failure():
         assert result["fallback_reason"] == "weather_provider_unavailable"
         assert result["data_source"] == "none"
         assert "temporarily unavailable" in result["response"].lower() or "उपलब्ध नहीं" in result["response"]
+
+
+def test_decision_response_is_grounded_by_gemini_when_configured():
+    """Gemini explains the deterministic decision; it does not calculate the score."""
+    mock_weather = {
+        "source": "Open-Meteo",
+        "is_live": True,
+        "retrieved_at": "2026-09-08T10:00:00+00:00",
+        "source_metadata": {"name": "Open-Meteo", "kind": "forecast_provider"},
+        "hourly": [
+            {
+                "time": "2026-09-08T12:00",
+                "precipitation_probability_percent": 70,
+                "precipitation_mm": 8,
+                "weather_code": 61,
+                "wind_speed_kmh": 18,
+                "temperature_c": 34,
+                "humidity_percent": 70,
+            }
+        ],
+        "forecast": [],
+    }
+    mock_query = WeatherQuery(
+        intent="current_weather",
+        location="Delhi",
+        location_mode="named_location",
+        time_reference="today",
+        request_type="general_weather",
+    )
+    mock_settings = MagicMock(gemini_api_key="configured", gemini_model="gemini-test")
+    with patch("backend.services.chat_service.settings", mock_settings):
+        with patch("backend.services.chat_service.interpret_weather_query", return_value=mock_query):
+            with patch("backend.services.chat_service.get_weather_forecast", return_value=mock_weather):
+                with patch("backend.services.chat_service.generate_decision_response", return_value="Gemini grounded decision response"):
+                    result = process_chat_message(
+                        message="Should I travel today?",
+                        latitude=28.61,
+                        longitude=77.23,
+                        location="Delhi",
+                    )
+    assert result["response"] == "Gemini grounded decision response"
+    assert result["response_source"] == "Gemini"
+    assert result["decision"]["risk_score"] is not None
+    assert result["source_metadata"]["name"] == "Open-Meteo"

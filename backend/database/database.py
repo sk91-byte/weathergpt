@@ -11,8 +11,27 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from backend.config import settings
 
 
+def _async_database_url(value: str | None) -> str | None:
+    """Return a URL compatible with SQLAlchemy's async engine.
+
+    Render commonly exposes PostgreSQL URLs as ``postgresql://...``.  That
+    scheme selects psycopg2, which is synchronous, while this module uses
+    SQLAlchemy's asyncio extension.  Normalize the scheme at the boundary so
+    local development and Render use the same configuration variable.
+    """
+    if not value:
+        return None
+    if value.startswith("postgresql+asyncpg://"):
+        return value
+    if value.startswith("postgresql://"):
+        return "postgresql+asyncpg://" + value[len("postgresql://"):]
+    return value
+
+
+_database_url = _async_database_url(settings.database_url)
+
 engine = create_async_engine(
-    settings.database_url,
+    _database_url,
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
