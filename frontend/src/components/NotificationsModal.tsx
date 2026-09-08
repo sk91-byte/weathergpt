@@ -1,40 +1,27 @@
 import React from 'react';
-import { X, Bell, AlertTriangle, CloudRain, Sparkles, CheckCircle2, ChevronRight } from './Icons';
-
-interface NotificationItem {
-  id: string;
-  title: string;
-  message: string;
-  time: string;
-  type: 'alert' | 'change' | 'briefing';
-  read: boolean;
-}
+import { X, Bell, AlertTriangle, CheckCircle2 } from './Icons';
+import { WeatherAlert } from '../types';
 
 interface NotificationsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenAlerts: () => void;
   onOpenBriefing: () => void;
+  alerts: WeatherAlert[];
+  onMarkAlertsRead?: () => void;
 }
 
 export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   isOpen,
   onClose,
   onOpenAlerts,
-  onOpenBriefing
+  onOpenBriefing,
+  alerts,
+  onMarkAlertsRead
 }) => {
   if (!isOpen) return null;
 
-  const notifications: NotificationItem[] = [
-    {
-      id: 'live-status',
-      title: 'Live alerts are not loaded yet',
-      message: 'No alert is shown until an authoritative live warning feed returns data for your selected location.',
-      time: 'Now',
-      type: 'briefing',
-      read: true
-    }
-  ];
+  const activeAlerts = alerts.filter((alert) => alert.isActive);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200 select-none">
@@ -63,53 +50,56 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
 
         {/* List */}
         <div className="p-5 space-y-3 overflow-y-auto">
-          {notifications.map((n) => (
+          {activeAlerts.length === 0 && (
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-center">
+              <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-500 mb-2" />
+              <h4 className="text-sm font-bold text-slate-900">No active official alerts</h4>
+              <p className="text-xs text-slate-500 mt-1">New verified warnings for your selected location will appear here.</p>
+              <button onClick={onOpenBriefing} className="mt-3 text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer">View weather briefing</button>
+            </div>
+          )}
+          {activeAlerts.map((alert) => (
             <div
-              key={n.id}
+              key={alert.id}
               onClick={() => {
+                onMarkAlertsRead?.();
                 onClose();
-                if (n.type === 'alert') onOpenAlerts();
-                if (n.type === 'briefing') onOpenBriefing();
+                onOpenAlerts();
               }}
               className="p-3.5 bg-slate-50 hover:bg-blue-50/50 border border-slate-200/80 rounded-2xl transition cursor-pointer flex items-start space-x-3 group"
             >
               <div
                 className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                  n.type === 'alert'
+                  alert.severity === 'Extreme' || alert.severity === 'High'
                     ? 'bg-red-100 text-red-700'
-                    : n.type === 'change'
+                    : alert.severity === 'Moderate'
                     ? 'bg-amber-100 text-amber-800'
                     : 'bg-blue-100 text-blue-700'
                 }`}
               >
-                {n.type === 'alert' ? (
-                  <AlertTriangle className="w-4 h-4" />
-                ) : n.type === 'change' ? (
-                  <CloudRain className="w-4 h-4" />
-                ) : (
-                  <Sparkles className="w-4 h-4" />
-                )}
+                <AlertTriangle className="w-4 h-4" />
               </div>
 
               <div className="flex-1">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold text-slate-900 group-hover:text-blue-700">
-                    {n.title}
+                    {alert.title}
                   </h4>
-                  <span className="text-[10px] text-slate-400">{n.time}</span>
+                  <span className="text-[10px] text-slate-400">{alert.issuedAt || 'Now'}</span>
                 </div>
+                <p className="text-[10px] font-bold mt-1 text-slate-500">{alert.severity} · {alert.location}</p>
                 <p className="text-xs text-slate-600 font-medium mt-1 leading-relaxed">
-                  {n.message}
+                  {alert.description}
                 </p>
               </div>
             </div>
           ))}
 
           <button
-            onClick={onClose}
+            onClick={() => { onMarkAlertsRead?.(); onClose(); }}
             className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer mt-2"
           >
-            Clear All
+            Mark notifications as read
           </button>
         </div>
       </div>

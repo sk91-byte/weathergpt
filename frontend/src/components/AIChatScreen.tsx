@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Mic, MicOff, Sparkles, Volume2, VolumeX, ArrowRight, Umbrella, CloudRain, RotateCcw, ChevronLeft, Bot, Loader2, AlertTriangle } from './Icons';
-import { ChatMessage, Language, WeatherData, RouteTrip, UserRole } from '../types';
+import { APP_LANGUAGES, ChatMessage, Language, WeatherData, RouteTrip, UserRole } from '../types';
 import { apiSendChat } from '../services/api';
 
 interface AIChatScreenProps {
@@ -62,6 +62,12 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
     }
   }, [initialQuery]);
 
+  // A language or live-weather change starts a fresh suggestion set. The next
+  // server response replaces these with conversation-aware suggestions.
+  useEffect(() => {
+    setServerSuggestions([]);
+  }, [currentLanguage, weather.city, weather.temperature, weather.rainChance]);
+
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
@@ -73,15 +79,23 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
     };
   }, []);
 
-  const localSuggestions = [
-    currentLanguage === 'hi' ? 'कल बारिश होगी?' : 'Will it rain today?',
-    currentLanguage === 'hi' ? 'क्या कल कॉलेज जाना सुरक्षित है?' : 'Should I travel to college tomorrow morning?',
-    currentLanguage === 'hi' ? 'क्या आज फसलों की सिंचाई करूँ?' : 'Can I irrigate my crops today?',
-    currentLanguage === 'hi' ? 'क्या छाता ले जाना चाहिए?' : 'Should I carry an umbrella?'
-  ];
-  if (currentLanguage === 'gu') {
-    localSuggestions.splice(0, localSuggestions.length, 'આજે વરસાદ પડશે?', 'શું કાલે કોલેજ જવું સુરક્ષિત છે?', 'આજે સિંચાઈ કરવી યોગ્ય છે?', 'શું છત્રી લઈ જવી જોઈએ?');
-  }
+  const isRainLikely = weather.rainChance >= 40 || /rain|storm|shower/i.test(weather.condition);
+  const isHot = weather.temperature >= 35;
+  const localSuggestions = currentLanguage === 'hi'
+    ? (isRainLikely
+      ? ['आज बारिश के लिए क्या तैयारी करूं?', 'क्या छाता और रेनकोट साथ रखूं?', 'क्या अभी बाहर जाना सुरक्षित है?', 'बारिश से यात्रा पर क्या असर होगा?']
+      : isHot
+        ? ['आज गर्मी से कैसे बचूं?', 'क्या दोपहर में बाहर जाना सुरक्षित है?', 'आज कितना पानी पीना चाहिए?', 'मौसम के अनुसार क्या पहनूं?']
+        : ['आज का मौसम कैसा रहेगा?', 'क्या आज बाहर जाना सुरक्षित है?', 'आज मुझे क्या साथ रखना चाहिए?', 'मुख्य मौसम जोखिम समझाइए।'])
+    : currentLanguage === 'gu'
+      ? (isRainLikely
+        ? ['આજે વરસાદ માટે શું તૈયારી કરું?', 'શું છત્રી અને રેઇનકોટ સાથે રાખું?', 'શું અત્યારે બહાર જવું સલામત છે?', 'વરસાદથી મુસાફરી પર શું અસર થશે?']
+        : ['આજે બહાર જવું સલામત છે?', 'આજે શું સાથે રાખવું જોઈએ?', 'મુખ્ય હવામાન જોખમ સમજાવો.', 'આજની આગાહી સમજાવો.'])
+      : (isRainLikely
+        ? ['What should I prepare for the rain?', 'Should I carry an umbrella or raincoat?', 'Is it safe to go outside now?', 'Will rain affect my travel?']
+        : isHot
+          ? ['How should I stay safe in today’s heat?', 'Is it safe to go outside this afternoon?', 'How much water should I carry?', 'What should I wear today?']
+          : ['What will today’s weather be like?', 'Is it safe to go outside today?', 'What should I carry today?', 'Explain the main weather risk.']);
   const suggestions = serverSuggestions.length ? serverSuggestions : localSuggestions;
 
   const needsCurrentLocation = (text: string) => {
@@ -332,18 +346,18 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
         </div>
 
         {/* Language selector */}
-        <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
-          {(['en', 'hi', 'gu'] as Language[]).map((l) => (
+        <div className="flex items-center max-w-[58vw] overflow-x-auto bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
+          {APP_LANGUAGES.map((language) => (
             <button
-              key={l}
-              onClick={() => onLanguageChange(l)}
-              className={`px-2 py-1 rounded-md transition cursor-pointer ${
-                currentLanguage === l
+              key={language.code}
+              onClick={() => onLanguageChange(language.code)}
+              className={`px-2 py-1 rounded-md transition cursor-pointer whitespace-nowrap ${
+                currentLanguage === language.code
                   ? 'bg-blue-600 text-white shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              {l === 'en' ? 'EN' : l === 'hi' ? 'हिन्दी' : 'ગુજરાતી'}
+              {language.short}
             </button>
           ))}
         </div>

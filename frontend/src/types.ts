@@ -1,4 +1,30 @@
-export type Language = 'en' | 'hi' | 'gu';
+export type Language = 'en' | 'as' | 'bn' | 'brx' | 'doi' | 'gu' | 'hi' | 'kn' | 'ks' | 'gom' | 'ml' | 'mni' | 'mr' | 'mai' | 'ne' | 'or' | 'pa' | 'sa' | 'sat' | 'sd' | 'ta' | 'te' | 'ur';
+
+export const APP_LANGUAGES: Array<{ code: Language; englishName: string; nativeName: string; short: string }> = [
+  { code: 'en', englishName: 'English', nativeName: 'English', short: 'EN' },
+  { code: 'as', englishName: 'Assamese', nativeName: 'অসমীয়া', short: 'অ' },
+  { code: 'bn', englishName: 'Bengali', nativeName: 'বাংলা', short: 'বাং' },
+  { code: 'brx', englishName: 'Bodo', nativeName: 'बड़ो', short: 'बो' },
+  { code: 'doi', englishName: 'Dogri', nativeName: 'डोगरी', short: 'डो' },
+  { code: 'gu', englishName: 'Gujarati', nativeName: 'ગુજરાતી', short: 'ગુ' },
+  { code: 'hi', englishName: 'Hindi', nativeName: 'हिन्दी', short: 'हि' },
+  { code: 'kn', englishName: 'Kannada', nativeName: 'ಕನ್ನಡ', short: 'ಕ' },
+  { code: 'ks', englishName: 'Kashmiri', nativeName: 'कॉशुर', short: 'कॉ' },
+  { code: 'gom', englishName: 'Konkani', nativeName: 'कोंकणी', short: 'कों' },
+  { code: 'ml', englishName: 'Malayalam', nativeName: 'മലയാളം', short: 'മ' },
+  { code: 'mni', englishName: 'Manipuri', nativeName: 'মৈতৈলোন্', short: 'মৈ' },
+  { code: 'mr', englishName: 'Marathi', nativeName: 'मराठी', short: 'म' },
+  { code: 'mai', englishName: 'Maithili', nativeName: 'मैথिली', short: 'मै' },
+  { code: 'ne', englishName: 'Nepali', nativeName: 'नेपाली', short: 'ने' },
+  { code: 'or', englishName: 'Odia', nativeName: 'ଓଡ଼ିଆ', short: 'ଓ' },
+  { code: 'pa', englishName: 'Punjabi', nativeName: 'ਪੰਜਾਬੀ', short: 'ਪੰ' },
+  { code: 'sa', englishName: 'Sanskrit', nativeName: 'संस्कृतम्', short: 'सं' },
+  { code: 'sat', englishName: 'Santhali', nativeName: 'ᱥᱟᱱᱛᱟᱲᱤ', short: 'ᱥ' },
+  { code: 'sd', englishName: 'Sindhi', nativeName: 'سنڌي', short: 'سن' },
+  { code: 'ta', englishName: 'Tamil', nativeName: 'தமிழ்', short: 'த' },
+  { code: 'te', englishName: 'Telugu', nativeName: 'తెలుగు', short: 'తె' },
+  { code: 'ur', englishName: 'Urdu', nativeName: 'اُردُو', short: 'اُ' },
+];
 
 export type UserRole = 'citizen' | 'farmer' | 'traveller' | 'researcher';
 

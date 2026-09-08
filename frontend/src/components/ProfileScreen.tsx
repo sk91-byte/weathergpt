@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, Settings, Bell, MapPin, Navigation, ShieldAlert, CheckCircle2, Sparkles } from './Icons';
-import { Language, UserRole, DemoScenario } from '../types';
+import { APP_LANGUAGES, Language, UserRole, DemoScenario } from '../types';
 
 interface ProfileScreenProps {
   userName?: string;
@@ -98,18 +98,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
           <div className="flex items-center justify-between text-xs pt-1">
             <span className="font-semibold text-slate-700">Language</span>
-            <div className="flex bg-slate-100 p-0.5 rounded-xl text-[11px] font-bold">
-              {(['en', 'hi', 'gu'] as Language[]).map((l) => (
+            <div className="flex max-w-[70vw] overflow-x-auto bg-slate-100 p-0.5 rounded-xl text-[11px] font-bold">
+              {APP_LANGUAGES.map((language) => (
                 <button
-                  key={l}
-                  onClick={() => onLanguageChange(l)}
-                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                    currentLanguage === l
+                  key={language.code}
+                  onClick={() => onLanguageChange(language.code)}
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer whitespace-nowrap ${
+                    currentLanguage === language.code
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  {l === 'en' ? 'English' : l === 'hi' ? 'हिन्दी' : 'ગુજરાતી'}
+                  {language.nativeName}
                 </button>
               ))}
             </div>

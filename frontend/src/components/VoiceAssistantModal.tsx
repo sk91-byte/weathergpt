@@ -12,6 +12,10 @@ interface VoiceAssistantModalProps {
   userRole: UserRole;
 }
 
+// The backend voice endpoint currently supports speech recognition/TTS for these two languages.
+// Text chat remains available in every language in the app language registry.
+const VOICE_LANGUAGES: Language[] = ['en', 'hi'];
+
 export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   weather,
   isOpen,
@@ -255,7 +259,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
         {/* Header language pills */}
         <div className="flex items-center space-x-1.5 bg-white/10 p-1 rounded-full text-xs font-bold mb-3">
-          {(['en', 'hi', 'gu'] as Language[]).map((lang) => (
+          {VOICE_LANGUAGES.map((lang) => (
             <button
               key={lang}
               onClick={() => onLanguageChange(lang)}
@@ -263,10 +267,13 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                 currentLanguage === lang ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'
               }`}
             >
-              {lang === 'en' ? 'English' : lang === 'hi' ? 'हिन्दी' : 'ગુજરાતી'}
+              {lang === 'en' ? 'English' : 'हिन्दी'}
             </button>
           ))}
         </div>
+        {!VOICE_LANGUAGES.includes(currentLanguage) && (
+          <p className="text-[11px] text-amber-200 mb-2">Voice is currently available in English and Hindi. Use Text Chat for all Indian languages.</p>
+        )}
 
         <h3 className="text-xl font-extrabold text-white font-heading">
           Talk to WeatherGPT

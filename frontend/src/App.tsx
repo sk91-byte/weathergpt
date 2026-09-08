@@ -39,7 +39,7 @@ import {
   DEFAULT_FARMER_ADVISORY,
   INITIAL_WEATHER
 } from './data/weatherData';
-import { WeatherData, Language, UserRole, DemoScenario, RouteTrip, WeatherAlert } from './types';
+import { WeatherData, Language, APP_LANGUAGES, UserRole, DemoScenario, RouteTrip, WeatherAlert } from './types';
 
 export default function App() {
   // First-time Onboarding State
@@ -60,7 +60,7 @@ export default function App() {
   const [language, setLanguage] = useState<Language>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('weathergpt_language');
-      if (saved === 'en' || saved === 'hi' || saved === 'gu') {
+      if (APP_LANGUAGES.some((item) => item.code === saved)) {
         return saved;
       }
     }
@@ -84,6 +84,9 @@ export default function App() {
   const [savedTrips, setSavedTrips] = useState<RouteTrip[]>(DEFAULT_SAVED_TRIPS);
   const [tripModalMode, setTripModalMode] = useState<'details' | 'new' | 'all'>('details');
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
+  const [readAlertIds, setReadAlertIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('weathergpt_read_alert_ids') || '[]'); } catch { return []; }
+  });
   const [advisory, setAdvisory] = useState(DEFAULT_FARMER_ADVISORY);
 
   const [activeTab, setActiveTab] = useState<TabType>('home');
@@ -219,9 +222,21 @@ export default function App() {
     const city = weather.city.toLowerCase();
     const coordinates = city.includes('dehradun') ? [30.3165, 78.0322] : [28.6139, 77.2090];
     apiGetNearbyAlerts(coordinates[0], coordinates[1])
-      .then(setAlerts)
+      .then((nextAlerts) => {
+        setAlerts(nextAlerts);
+        const unseen = nextAlerts.filter((alert) => alert.isActive && !readAlertIds.includes(alert.id));
+        if (unseen.length && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          unseen.slice(0, 2).forEach((alert) => new Notification(alert.title, { body: alert.description, tag: alert.id }));
+        }
+      })
       .catch(() => setAlerts([]));
-  }, [weather.city]);
+  }, [weather.city, readAlertIds]);
+
+  const markAlertsRead = () => {
+    const ids = alerts.map((alert) => alert.id);
+    setReadAlertIds(ids);
+    try { localStorage.setItem('weathergpt_read_alert_ids', JSON.stringify(ids)); } catch {}
+  };
 
   // Switch City
   const handleSelectCity = async (cityString: string) => {
@@ -315,8 +330,13 @@ export default function App() {
                 city={weather.city}
                 country={weather.country}
                 onOpenCitySelector={() => setShowCitySelector(true)}
-                onOpenNotifications={() => setShowNotifications(true)}
-                unreadAlertCount={alerts.filter((a) => a.isActive).length}
+                onOpenNotifications={async () => {
+                  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+                    try { await Notification.requestPermission(); } catch {}
+                  }
+                  setShowNotifications(true);
+                }}
+                unreadAlertCount={alerts.filter((a) => a.isActive && !readAlertIds.includes(a.id)).length}
                 onUseLiveLocation={handleGetLiveLocation}
                 isLocating={isLocating}
               />
@@ -556,6 +576,8 @@ export default function App() {
             onClose={() => setShowNotifications(false)}
             onOpenAlerts={() => setShowWeatherAlerts(true)}
             onOpenBriefing={() => setShowDailyBriefing(true)}
+            alerts={alerts}
+            onMarkAlertsRead={markAlertsRead}
           />
         )}
 

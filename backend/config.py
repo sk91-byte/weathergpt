@@ -60,6 +60,8 @@ class Settings:
     imd_alert_longitude: float | None = _optional_float(os.getenv("IMD_ALERT_LONGITUDE"))
     official_alerts_url: str | None = _clean_str(os.getenv("OFFICIAL_ALERTS_URL"))
     official_alerts_api_key: str | None = _clean_str(os.getenv("OFFICIAL_ALERTS_API_KEY"))
+    sachet_alerts_enabled: bool = _as_bool(os.getenv("SACHET_ALERTS_ENABLED", "false"))
+    sachet_alerts_url: str = os.getenv("SACHET_ALERTS_URL", "https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml")
     database_url: str | None = os.getenv("DATABASE_URL") or None
     storage_mode: str = os.getenv("STORAGE_MODE", "postgres" if os.getenv("DATABASE_URL") else "json")
     json_data_file: str = os.getenv("JSON_DATA_FILE", str(Path(__file__).resolve().parent / "data" / "weathergpt.json"))
