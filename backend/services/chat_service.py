@@ -846,13 +846,24 @@ def process_chat_message(
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
         return result
     if query.intent == "unknown":
-        result["response"] = (
-            "मैं WeatherGPT हूँ और मौसम से जुड़े सवालों में मदद कर सकता हूँ। अपने शहर का मौसम या पूर्वानुमान पूछें।"
-            if response_mode == "hi" else
-            "Main WeatherGPT hoon—weather se jude sawaal poochho, jaise aaj ka mausam, baarish ya forecast."
-            if response_mode == "hinglish" else
-            "I’m WeatherGPT, so I’m best suited to weather and forecast questions. Try asking me about the weather in your city."
-        )
+        try:
+            response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
+            result["response"] = generate_general_response(
+                message, response_language, previous_context, use_search=True
+            )
+            result["intent"] = "general_chat"
+            result["ai_used"] = True
+            result["fallback_used"] = False
+            result["fallback_reason"] = None
+            result["data_source"] = "Gemini + Google Search" if settings.gemini_search_grounding else "Gemini"
+        except LLMServiceError:
+            result["ai_used"] = False
+            result["fallback_used"] = True
+            result["fallback_reason"] = "llm_generation_failed"
+            result["data_source"] = "conversation"
+            result["response"] = (
+                "I’m here to help with WeatherGPT, general questions, and live weather. Please try that again in a moment."
+            )
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
         return result

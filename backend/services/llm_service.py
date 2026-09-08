@@ -99,6 +99,21 @@ def _client() -> genai.Client:
     return _gemini_client
 
 
+def _response_text(response: Any) -> str:
+    """Read text across google-genai SDK response shapes."""
+    direct = getattr(response, "text", None)
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    pieces: list[str] = []
+    for candidate in getattr(response, "candidates", None) or []:
+        content = getattr(candidate, "content", None)
+        for part in getattr(content, "parts", None) or []:
+            value = getattr(part, "text", None)
+            if isinstance(value, str) and value.strip():
+                pieces.append(value.strip())
+    return "\n".join(pieces).strip()
+
+
 def _call_gemini_with_retry(func: Callable[[], Any], max_retries: int = 1) -> Any:
     """Execute a Gemini API call with 1 controlled retry for transient errors."""
     last_exc = None
@@ -142,7 +157,7 @@ def test_gemini() -> dict[str, Any]:
                 config=types.GenerateContentConfig(max_output_tokens=4),
             )
         response = _call_gemini_with_retry(_do_test, max_retries=0)
-        return {**gemini_health(), "status": "available", "reply_received": bool(response.text)}
+        return {**gemini_health(), "status": "available", "reply_received": bool(_response_text(response))}
     except Exception as exc:
         return {**gemini_health(), "status": "unavailable", "error_type": classify_gemini_error(exc)}
 
@@ -161,9 +176,10 @@ def interpret_weather_query(message: str, conversation_context: dict[str, Any] |
                 ),
             )
         response = _call_gemini_with_retry(_do_interpret, max_retries=1)
-        if not response.text:
+        raw_response = _response_text(response)
+        if not raw_response:
             raise LLMServiceError("Gemini returned no structured query")
-        return WeatherQuery.model_validate_json(response.text)
+        return WeatherQuery.model_validate_json(raw_response)
     except LLMServiceError:
         raise
     except Exception as exc:
@@ -188,7 +204,7 @@ def interpret_weather_query(message: str, conversation_context: dict[str, Any] |
                 ),
                 max_retries=0,
             )
-            raw = (response.text or "").strip()
+            raw = _response_text(response)
             if raw.startswith("```"):
                 raw = raw.strip("`").replace("json", "", 1).strip()
             return WeatherQuery.model_validate_json(raw)
@@ -228,9 +244,10 @@ def generate_weather_response(
                 config=types.GenerateContentConfig(system_instruction=WEATHER_ASSISTANT_INSTRUCTIONS),
             )
         response = _call_gemini_with_retry(_do_generate, max_retries=1)
-        if not response.text:
+        response_text = _response_text(response)
+        if not response_text:
             raise LLMServiceError("Gemini returned an empty weather response")
-        return response.text.strip()
+        return response_text
     except LLMServiceError:
         raise
     except Exception as exc:
@@ -243,6 +260,7 @@ def generate_general_response(
     language: str = "English",
     conversation_context: dict[str, Any] | None = None,
     app_help: bool = False,
+    use_search: bool = False,
 ) -> str:
     """Answer non-weather chat while keeping weather claims data-grounded."""
     context_text = json.dumps(conversation_context or {}, ensure_ascii=False)
@@ -261,17 +279,21 @@ def generate_general_response(
         f"Recent conversation context: {context_text}\nUser question: {question}"
     )
     try:
+        config = types.GenerateContentConfig(max_output_tokens=400)
+        if use_search and settings.gemini_search_grounding:
+            config.tools = [types.Tool(google_search=types.GoogleSearch())]
         response = _call_gemini_with_retry(
             lambda: _client().models.generate_content(
                 model=settings.gemini_model,
                 contents=prompt,
-                config=types.GenerateContentConfig(max_output_tokens=400),
+                config=config,
             ),
             max_retries=1,
         )
-        if not response.text:
+        response_text = _response_text(response)
+        if not response_text:
             raise LLMServiceError("Gemini returned an empty conversational response")
-        return response.text.strip()
+        return response_text
     except LLMServiceError:
         raise
     except Exception as exc:

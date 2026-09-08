@@ -36,6 +36,7 @@ class Settings:
     # the model configurable, but use the fast currently available Flash model
     # as the safe default for new deployments.
     gemini_model: str = _clean_str(os.getenv("GEMINI_MODEL")) or "gemini-3.5-flash"
+    gemini_search_grounding: bool = _as_bool(os.getenv("GEMINI_SEARCH_GROUNDING", "true"))
     weatherapi_key: str | None = os.getenv("WEATHERAPI_KEY") or None
     routing_provider_url: str = os.getenv("ROUTING_PROVIDER_URL", "https://router.project-osrm.org")
     routing_provider: str = os.getenv("ROUTING_PROVIDER", "osrm")
