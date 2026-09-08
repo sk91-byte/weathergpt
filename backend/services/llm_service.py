@@ -27,6 +27,12 @@ Match the requested language naturally. English should sound friendly and human.
 should use simple everyday Hindi, not difficult or overly formal words. Hinglish should
 use natural Hindi written in the Roman alphabet. Do not mix English headings or provider
 labels into a non-English answer unless a proper name or unit needs it.
+For Assamese, Bengali, Bodo, Dogri, Gujarati, Hindi, Kannada, Kashmiri, Konkani,
+Malayalam, Manipuri, Marathi, Maithili, Nepali, Odia, Punjabi, Sanskrit, Santhali,
+Sindhi, Tamil, Telugu, and Urdu, answer in the requested language's normal native
+script. Preserve place names, numbers, units, and official alert names when needed,
+but do not silently switch to English. Keep the wording simple enough for a general
+public user.
 
 Answer the user's actual question first, then add a short useful recommendation. Explain
 what the data means in daily life: rain probability above 40% means suggest an umbrella
@@ -359,6 +365,44 @@ def generate_general_response(
     except Exception as exc:
         logger.warning("Gemini general response failed (%s): %s", classify_gemini_error(exc), type(exc).__name__)
         raise LLMServiceError("Gemini could not answer the conversation") from exc
+
+
+def generate_follow_up_suggestions(
+    question: str,
+    answer: str,
+    language: str = "English",
+    profile: str = "general_public",
+    route_context: dict[str, Any] | None = None,
+) -> list[str]:
+    """Generate short clickable follow-ups in the same language as the answer."""
+    prompt = (
+        f"Create exactly 4 short clickable follow-up questions in {language}. "
+        "Use the requested language and its normal native script; do not use English "
+        "unless the requested language is English or Hinglish. Questions must refer "
+        "to the weather topic just answered and be useful for this user's persona. "
+        "Return ONLY a valid JSON array of four strings, with no markdown or explanation.\n"
+        f"Persona: {profile}\nRoute context: {json.dumps(route_context or {}, ensure_ascii=False)}\n"
+        f"User question: {question}\nWeatherGPT answer: {answer}"
+    )
+    try:
+        response = _call_gemini_with_retry(
+            lambda: _client().models.generate_content(
+                model=settings.gemini_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(max_output_tokens=220),
+            ),
+            max_retries=0,
+        )
+        raw = _response_text(response).strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`").replace("json", "", 1).strip()
+        values = json.loads(raw)
+        if not isinstance(values, list) or len(values) != 4 or not all(isinstance(item, str) and item.strip() for item in values):
+            raise LLMServiceError("Gemini returned invalid suggestion data")
+        return [item.strip() for item in values]
+    except Exception as exc:
+        logger.warning("Gemini suggestion generation failed (%s): %s", classify_gemini_error(exc), type(exc).__name__)
+        raise LLMServiceError("Gemini could not generate suggestions") from exc
 
 
 

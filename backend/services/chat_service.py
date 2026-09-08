@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from backend.config import settings
-from backend.services.llm_service import WeatherQuery, generate_decision_response, generate_general_response, generate_weather_response, interpret_weather_query
+from backend.services.llm_service import WeatherQuery, generate_decision_response, generate_follow_up_suggestions, generate_general_response, generate_weather_response, interpret_weather_query
 from backend.services.location_service import LOCATIONS, get_location, reverse_geocode
 from backend.services.language_service import get_language
 from backend.services.query_parser import HINDI_CITY_ALIASES, parse_weather_query
@@ -13,6 +13,37 @@ from backend.services.weather_service import WeatherServiceError, get_current_we
 from backend.services.conversation_service import add_message, conversation_context, create_conversation, get_conversation
 from backend.services.json_data_service import get_profile
 from backend.services.decision_engine import analyze_decision
+
+
+def _response_language_name(selected_language: dict[str, Any], response_mode: str) -> str:
+    """Give Gemini both the English language name and native label for reliable multilingual output."""
+    if response_mode == "hinglish":
+        return "Hinglish (natural Hindi written in the Roman alphabet)"
+    if selected_language["code"] == "en":
+        return "English"
+    return f'{selected_language["name"]} ({selected_language["native_name"]})'
+
+
+def _with_localized_suggestions(
+    result: dict[str, Any],
+    message: str,
+    selected_language: dict[str, Any],
+    profile: str,
+    route_context: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Replace English fallback chips with Gemini-generated chips in the selected language."""
+    if result.get("response") and settings.gemini_api_key:
+        try:
+            result["suggestions"] = generate_follow_up_suggestions(
+                message,
+                result["response"],
+                _response_language_name(selected_language, _response_mode(message, selected_language)),
+                profile,
+                route_context,
+            )
+        except LLMServiceError:
+            pass
+    return result
 
 
 def _language_from_message(message: str) -> str | None:
@@ -748,7 +779,7 @@ def process_chat_message(
         # Greetings are conversational requests too. Let Gemini generate the
         # response, using the local phrase only if the provider is unavailable.
         try:
-            response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
+            response_language = _response_language_name(selected_language, response_mode)
             result["response"] = generate_general_response(message, response_language, previous_context)
             result["ai_used"] = True
             result["fallback_used"] = False
@@ -764,7 +795,7 @@ def process_chat_message(
             result["response_source"] = "conversation_fallback"
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
-        return result
+        return _with_localized_suggestions(result, message, selected_language, profile, route_context)
     route_places = _extract_route_places(message)
     if route_places:
         result["suggestions"] = _follow_up_suggestions(response_mode, profile, query.intent, True)
@@ -781,7 +812,7 @@ def process_chat_message(
             )
             add_message(conversation_id, "user", message)
             add_message(conversation_id, "assistant", result["response"], context=previous_context)
-            return result
+            return _with_localized_suggestions(result, message, selected_language, profile, route_context)
         route_query = parse_weather_query(message, previous_context)
         route_decision = decision_question
         route_forecast = route_decision or route_query["intent"] == "forecast"
@@ -802,7 +833,7 @@ def process_chat_message(
             )
             add_message(conversation_id, "user", message)
             add_message(conversation_id, "assistant", result["response"], context=previous_context)
-            return result
+            return _with_localized_suggestions(result, message, selected_language, profile, route_context)
         origin = {**origin, "source": "named_location"}
         destination = {**destination, "source": "named_location"}
         result["intent"] = "forecast" if route_forecast else "current_weather"
@@ -819,7 +850,7 @@ def process_chat_message(
         from backend.services.json_data_service import update_profile
         update_profile({"language": selected_language["code"], "profile_type": profile, "route": {"origin": origin["name"], "destination": destination["name"], "origin_coordinates": {"latitude": origin["latitude"], "longitude": origin["longitude"]}, "destination_coordinates": {"latitude": destination["latitude"], "longitude": destination["longitude"]}}})
         result["context"] = {"origin": origin["name"], "destination": destination["name"], "time_reference": route_query["time_reference"]}
-        return result
+        return _with_localized_suggestions(result, message, selected_language, profile, route_context)
     # A short follow-up such as “why?” refers to the last decision, not to a
     # brand-new weather lookup. Reuse the saved evidence and actions so voice
     # and text conversations behave identically.
@@ -832,7 +863,7 @@ def process_chat_message(
         result["data_source"] = "conversation_context"
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
-        return result
+        return _with_localized_suggestions(result, message, selected_language, profile, route_context)
     previous_weather = previous_context.get("last_weather")
     if _is_why_followup(message) and isinstance(previous_weather, dict) and previous_context.get("last_location"):
         result["intent"] = previous_context.get("last_intent", "current_weather")
@@ -841,10 +872,10 @@ def process_chat_message(
         result["data_source"] = "conversation_context"
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
-        return result
+        return _with_localized_suggestions(result, message, selected_language, profile, route_context)
     if query.intent in {"general_chat", "app_help"}:
         try:
-            response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
+            response_language = _response_language_name(selected_language, response_mode)
             search_requested = _needs_web_search(message)
             result["response"] = generate_general_response(
                 message,
@@ -864,10 +895,10 @@ def process_chat_message(
             result["response"] = "I can help with WeatherGPT features, weather questions, and normal conversation."
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
-        return result
+        return _with_localized_suggestions(result, message, selected_language, profile, route_context)
     if query.intent == "unknown":
         try:
-            response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
+            response_language = _response_language_name(selected_language, response_mode)
             result["response"] = generate_general_response(
                 message, response_language, previous_context, use_search=True
             )
@@ -888,7 +919,7 @@ def process_chat_message(
             )
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
-        return result
+        return _with_localized_suggestions(result, message, selected_language, profile, route_context)
 
     resolved_location: dict[str, Any] | None = None
     # 1. Explicit coordinates always take precedence for weather retrieval.
@@ -897,7 +928,7 @@ def process_chat_message(
             result["response"] = "Invalid coordinates: latitude must be between -90 and 90, longitude between -180 and 180."
             add_message(conversation_id, "user", message)
             add_message(conversation_id, "assistant", result["response"], context=previous_context)
-            return result
+            return _with_localized_suggestions(result, message, selected_language, profile, route_context)
         geo = reverse_geocode(latitude, longitude)
         name_str = (
             location
@@ -922,7 +953,7 @@ def process_chat_message(
         )
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
-        return result
+        return _with_localized_suggestions(result, message, selected_language, profile, route_context)
     else:
         target_name = location or query.location
         if target_name is None:
@@ -935,7 +966,7 @@ def process_chat_message(
             )
             add_message(conversation_id, "user", message)
             add_message(conversation_id, "assistant", result["response"], context=previous_context)
-            return result
+            return _with_localized_suggestions(result, message, selected_language, profile, route_context)
         found_loc = get_location(target_name)
         if found_loc is None and previous_context.get("last_location", "").strip().lower() == target_name.strip().lower():
             if previous_context.get("last_latitude") is not None and previous_context.get("last_longitude") is not None:
@@ -981,7 +1012,7 @@ def process_chat_message(
         )
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
-        return result
+        return _with_localized_suggestions(result, message, selected_language, profile, route_context)
 
     result["data_source"] = weather_data.get("source", "Open-Meteo")
     result["is_live"] = weather_data.get("is_live", True)
@@ -1008,7 +1039,7 @@ def process_chat_message(
         result["response_source"] = "deterministic_fallback"
         if result["ai_used"]:
             try:
-                response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
+                response_language = _response_language_name(selected_language, response_mode)
                 result["response"] = generate_decision_response(
                     message,
                     weather_data,
@@ -1051,11 +1082,11 @@ def process_chat_message(
                 "last_decision": saved_decision,
             },
         )
-        return result
+        return _with_localized_suggestions(result, message, selected_language, profile, route_context)
 
     if result["ai_used"]:
         try:
-            response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
+            response_language = _response_language_name(selected_language, response_mode)
             result["response"] = generate_weather_response(message, query, weather_data, response_language, previous_context, profile)
             if response_mode == "hi":
                 result["response"] = _localize_hindi_response(result["response"])
@@ -1101,4 +1132,4 @@ def process_chat_message(
         }
     )
     result["context"] = {"location": resolved_location["name"], "time_reference": query.time_reference}
-    return result
+    return _with_localized_suggestions(result, message, selected_language, profile, route_context)
