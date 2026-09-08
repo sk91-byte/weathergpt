@@ -94,6 +94,7 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
   const baseLayerRef = useRef<L.TileLayer | null>(null);
   const weatherLayerRef = useRef<L.TileLayer | L.LayerGroup | null>(null);
   const elementsLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const fittedRouteKeyRef = useRef<string | null>(null);
 
   // Expose Zoom and Recenter controls to parent canvas
   useImperativeHandle(ref, () => ({
@@ -464,7 +465,47 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
         });
         layerGroup.addLayer(glowLine);
 
-        // Render colored route sections based on safety scores & weather hazards
+        // Keep a single, highly visible blue route like a normal map app. The
+        // thinner overlays below add risk context without hiding the route.
+        const routeHitLine = L.polyline(validActivePoints, {
+          color: '#2563eb',
+          weight: 22,
+          opacity: 0.01,
+          lineCap: 'round',
+          lineJoin: 'round'
+        });
+        const handleRouteTap = (event: L.LeafletMouseEvent) => {
+          // Stop the map click handler from treating a route tap as a random
+          // map tap. The segment handlers below provide the weather sample.
+          L.DomEvent.stopPropagation(event.originalEvent);
+          const midIndex = Math.floor(validActivePoints.length / 2);
+          const midpoint = validActivePoints[midIndex];
+          const waypoint = activeRoute.waypoints?.length
+            ? activeRoute.waypoints[Math.min(
+                activeRoute.waypoints.length - 1,
+                Math.floor((midIndex / Math.max(1, validActivePoints.length - 1)) * activeRoute.waypoints.length)
+              )]
+            : null;
+          if (waypoint && onRoutePointClick) {
+            onRoutePointClick(waypoint);
+          } else if (onMapClick) {
+            onMapClick(midpoint[0], midpoint[1]);
+          }
+        };
+        routeHitLine.on('click', handleRouteTap);
+        layerGroup.addLayer(routeHitLine);
+
+        const routeLine = L.polyline(validActivePoints, {
+          color: '#2563eb',
+          weight: 8,
+          opacity: 0.96,
+          lineCap: 'round',
+          lineJoin: 'round'
+        });
+        routeLine.on('click', handleRouteTap);
+        layerGroup.addLayer(routeLine);
+
+        // Render narrow colored route sections based on safety scores & weather hazards.
         const numPoints = validActivePoints.length;
         if (numPoints >= 2) {
           const numSegments = Math.min(4, Math.max(2, Math.floor(numPoints / 3)));
@@ -509,8 +550,8 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
 
               const segmentLine = L.polyline(segmentPts, {
                 color: segmentColor,
-                weight: 7,
-                opacity: 0.95,
+                weight: 4,
+                opacity: 0.9,
                 lineCap: 'round',
                 lineJoin: 'round'
               });
@@ -518,8 +559,19 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
               // Tapping route section -> opens weather popup with detailed route-specific info
               segmentLine.on('click', () => {
                 if (onRoutePointClick) {
-                  const midSegPt = segmentPts[Math.floor(segmentPts.length / 2)];
-                  onRoutePointClick({
+                  const midSegIndex = startIdx + Math.floor(segmentPts.length / 2);
+                  const midSegPt = validActivePoints[Math.min(validActivePoints.length - 1, midSegIndex)];
+                  const timelinePoint = activeRoute.waypoints?.length
+                    ? activeRoute.waypoints[Math.min(
+                        activeRoute.waypoints.length - 1,
+                        Math.floor((midSegIndex / Math.max(1, validActivePoints.length - 1)) * activeRoute.waypoints.length)
+                      )]
+                    : null;
+
+                  // Prefer the real weather timeline sample. This keeps the
+                  // popup consistent with the weather analysis returned by
+                  // the backend instead of inventing segment values.
+                  onRoutePointClick(timelinePoint || {
                     id: `seg_${s}`,
                     name: `${activeRoute.name} (${sectionLabel})`,
                     expectedTime: `+${Math.round((s + 0.5) * (activeRoute.durationMinutes / numSegments))} min`,
@@ -635,12 +687,16 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
               // Start with a complete route overview instead of zooming into
               // the nearest segment. The extra bottom padding keeps the line
               // visible above the route details drawer.
-              map.fitBounds(bounds, {
-                paddingTopLeft: [48, 88],
-                paddingBottomRight: [48, 150],
-                maxZoom: 11,
-                animate: false
-              });
+              const routeKey = `${activeRoute.id}:${validActivePoints.length}:${validActivePoints[0].join(',')}:${validActivePoints[validActivePoints.length - 1].join(',')}`;
+              if (fittedRouteKeyRef.current !== routeKey) {
+                map.fitBounds(bounds, {
+                  paddingTopLeft: [48, 88],
+                  paddingBottomRight: [48, 150],
+                  maxZoom: 14,
+                  animate: false
+                });
+                fittedRouteKeyRef.current = routeKey;
+              }
             }
           } catch (e) {
             console.warn('fitBounds error:', e);
