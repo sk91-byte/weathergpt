@@ -448,23 +448,60 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
         }
       });
 
-    // 2. Draw Active Route with Outer Glow and Colored Route Sections:
-    // Green: safer | Yellow: caution | Orange: risky | Red: dangerous
+    // 2. Draw a guaranteed A-to-B connector while the road geometry is
+    // loading or invalid. This is deliberately independent of `activeRoute`:
+    // an API response can create a route object before its geometry is usable.
+    // Without this guard the map shows two pins and no visible connection.
+    const hasUsableRoadGeometry = Boolean(
+      activeRoute?.geoPoints?.some((point) => isValidLatLng(point))
+    );
+    if ((!activeRoute || !hasUsableRoadGeometry) && originCoords && destinationCoords && isValidLatLng(originCoords) && isValidLatLng(destinationCoords)) {
+      const previewPoints: [number, number][] = [toValidLatLng(originCoords), toValidLatLng(destinationCoords)];
+      const previewLine = L.polyline(previewPoints, {
+        color: '#2563eb',
+        weight: 7,
+        opacity: 0.98,
+        lineCap: 'round',
+        lineJoin: 'round'
+      });
+      layerGroup.addLayer(previewLine);
+      const previewBounds = L.latLngBounds(previewPoints);
+      if (previewBounds.isValid()) {
+        map.fitBounds(previewBounds, {
+          paddingTopLeft: [50, 80],
+          paddingBottomRight: [50, 160],
+          maxZoom: 14,
+          animate: false
+        });
+      }
+    }
+
+    // Green/yellow/orange risk overlays are intentionally omitted from the
+    // base route so they cannot create duplicate-looking lines.
     if (activeRoute && activeRoute.geoPoints && activeRoute.geoPoints.length > 0) {
       const validActivePoints = (activeRoute.geoPoints || [])
         .map((pt) => (isValidLatLng(pt) ? toValidLatLng(pt) : null))
         .filter((pt): pt is [number, number] => pt !== null);
 
-      if (validActivePoints.length > 1) {
-        const glowLine = L.polyline(validActivePoints, {
-          color: activeRoute.strokeColor || '#3b82f6',
-          weight: 12,
-          opacity: 0.35,
-          lineCap: 'round',
-          lineJoin: 'round'
-        });
-        layerGroup.addLayer(glowLine);
+      // Guarantee that the displayed road geometry touches the exact A and B
+      // pins, even when the routing provider trims the first/last coordinate.
+      const exactStart = originCoords && isValidLatLng(originCoords) ? toValidLatLng(originCoords) : null;
+      const exactEnd = destinationCoords && isValidLatLng(destinationCoords) ? toValidLatLng(destinationCoords) : null;
+      if (validActivePoints.length >= 2) {
+        if (exactStart && Math.hypot(validActivePoints[0][0] - exactStart[0], validActivePoints[0][1] - exactStart[1]) > 0.0001) {
+          validActivePoints.unshift(exactStart);
+        }
+        if (exactEnd) {
+          const last = validActivePoints[validActivePoints.length - 1];
+          if (Math.hypot(last[0] - exactEnd[0], last[1] - exactEnd[1]) > 0.0001) {
+            validActivePoints.push(exactEnd);
+          }
+        }
+      } else if (exactStart && exactEnd) {
+        validActivePoints.push(exactStart, exactEnd);
+      }
 
+      if (validActivePoints.length > 1) {
         // Keep a single, highly visible blue route like a normal map app. The
         // thinner overlays below add risk context without hiding the route.
         const routeHitLine = L.polyline(validActivePoints, {
@@ -769,6 +806,20 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
       iconAnchor: [60, 11]
     });
     layerGroup.addLayer(L.marker(endCoords, { icon: destIcon }));
+
+    // Last-resort visual connection: use the exact coordinates used by the
+    // two markers above, not only the optional props. This keeps A and B
+    // visibly connected while the route request is pending or unavailable.
+    const hasRoadGeometry = Boolean(activeRoute?.geoPoints?.some((point) => isValidLatLng(point)));
+    if (!hasRoadGeometry && isValidLatLng(startCoords) && isValidLatLng(endCoords)) {
+      layerGroup.addLayer(L.polyline([startCoords, endCoords], {
+        color: '#2563eb',
+        weight: 7,
+        opacity: 0.98,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }));
+    }
 
     // 6. Real GPS User Position Marker (if active)
     if (gpsCoords && isValidLatLng(gpsCoords)) {

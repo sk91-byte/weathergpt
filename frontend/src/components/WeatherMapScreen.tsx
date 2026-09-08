@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   WeatherData,
   LiveMapRoute,
@@ -113,6 +113,10 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const [activeRouteId, setActiveRouteId] = useState<string>('');
   const [departureOptions, setDepartureOptions] = useState<DepartureTimeOption[]>([]);
   const [routeSteps, setRouteSteps] = useState<any[]>([]);
+  // A destination change can otherwise start two overlapping calculations
+  // (button handler + state effect). Only the newest request may update the
+  // map or clear its route.
+  const routeRequestIdRef = useRef(0);
 
   // 4. Navigation & Vehicle Progress
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
@@ -192,16 +196,9 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               });
             }
 
-            // Recalculate route if destination exists
-            if (destinationCoords) {
-              fetchRouteAndWeather(
-                [latitude, longitude],
-                resolvedLabel,
-                destinationCoords,
-                destinationName,
-                travelMode
-              );
-            }
+            // The origin/destination state effect recalculates the route once
+            // both values have been committed. Do not start a second request
+            // here; duplicate requests were clearing successful polylines.
           } catch (e) {
             if (import.meta.env.DEV) {
               console.warn('GPS position handling error:', e);
@@ -245,6 +242,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
       endName: string,
       mode: string
     ) => {
+      const requestId = ++routeRequestIdRef.current;
       setIsAnalyzing(true);
       const wakeupTimer = setTimeout(() => {
         setIsRenderWakingUp(true);
@@ -256,6 +254,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
         // Step 1: Calculate Route Geometry & steps via backend OSRM
         const routeData = await apiCalculateRoute(originPt, destPt, mode);
+        if (routeRequestIdRef.current !== requestId) return;
 
         clearTimeout(wakeupTimer);
         setIsRenderWakingUp(false);
@@ -265,8 +264,58 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         const geoPts = routeData.geometry || [];
         setRouteSteps(routeData.steps || []);
 
-        // Step 2: Fetch Route Weather & Safety analysis from Open-Meteo
-        const weatherAnalysis = await apiGetRouteWeather(geoPts, mode);
+        // Render the road route immediately. Weather, departure advice, and
+        // nearby places are secondary enhancements and must not delay or hide
+        // the actual route line.
+        const routeOnly: LiveMapRoute = {
+          id: routeData.route_id,
+          name: `${endName.split(',')[0]} via Corridor`,
+          badge: 'ROUTE CALCULATED',
+          type: 'recommended',
+          distanceKm: routeData.distance_km,
+          durationMinutes: routeData.duration_minutes,
+          safetyScore: 0,
+          summaryCondition: 'Loading live weather…',
+          rainRisk: 'Unavailable',
+          waterloggingRisk: 'Unavailable',
+          thunderstormRisk: 'Unavailable',
+          hazardCount: 0,
+          color: 'orange',
+          strokeColor: '#2563eb',
+          pathPoints: [],
+          geoPoints: geoPts,
+          waypoints: [],
+          riskZones: [],
+          departureAdvice: 'Loading live departure advice…',
+          whyThisRoute: 'Road route calculated from the live routing service.',
+          whyWait: 'Live weather analysis is loading.'
+        };
+        setRoutes([routeOnly]);
+        setActiveRouteId(routeOnly.id);
+
+        // Step 2: Fetch Route Weather & Safety analysis from Open-Meteo.
+        // Weather is an enhancement to the road route: if the weather
+        // provider is sleeping, rate-limited, or temporarily unavailable, do
+        // not discard the route geometry that was already calculated.
+        const weatherAnalysis = await apiGetRouteWeather(geoPts, mode).catch((error) => {
+          console.warn('Route weather unavailable; showing the road route anyway:', error);
+          if (routeRequestIdRef.current === requestId) {
+            setDataSource(`${routeData.data_source || 'OSRM route service'} · weather unavailable`);
+          }
+          return {
+            safety_score: null,
+            rain_risk: 'Unavailable',
+            waterlogging_risk: 'Unavailable',
+            wind_risk: 'Unavailable',
+            fog_risk: 'Unavailable',
+            thunderstorm_risk: 'Unavailable',
+            timeline: [],
+            risk_zones: [],
+            is_live: false,
+            source: 'Weather temporarily unavailable'
+          };
+        });
+        if (routeRequestIdRef.current !== requestId) return;
 
         // Step 3: Fetch Departure Time Recommendations
         const departures = await apiGetBestDepartureTime(
@@ -274,10 +323,17 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           originPt,
           destPt,
           weatherAnalysis.safety_score
-        );
+        ).catch((error) => {
+          console.warn('Departure recommendations unavailable:', error);
+          return { warning_message: '', options: [] };
+        });
 
         // Step 4: Fetch Nearby Safe Places
-        const placesResponse = await apiGetNearbyPlaces(endCoords[0], endCoords[1], 5, 'all');
+        const placesResponse = await apiGetNearbyPlaces(endCoords[0], endCoords[1], 5, 'all').catch((error) => {
+          console.warn('Nearby places unavailable:', error);
+          return null;
+        });
+        if (routeRequestIdRef.current !== requestId) return;
         if (placesResponse?.places && placesResponse.places.length > 0) {
           // Adapt ApiNearbyPlaceItem to NearbySafePlace
           const adaptedPlaces = placesResponse.places.map((p) => ({
@@ -309,14 +365,16 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           type: 'recommended',
           distanceKm: calculatedDistanceKm,
           durationMinutes: calculatedDurationMin,
-          safetyScore: weatherAnalysis.safety_score,
+          safetyScore: weatherAnalysis.safety_score ?? 0,
           summaryCondition: weatherAnalysis.timeline?.[0]?.weather_condition || 'Unavailable',
           rainRisk: (weatherAnalysis.rain_risk as any) || 'Unavailable',
           waterloggingRisk: (weatherAnalysis.waterlogging_risk as any) || 'Unavailable',
           thunderstormRisk: (weatherAnalysis.thunderstorm_risk as any) || 'Unavailable',
           hazardCount: weatherAnalysis.risk_zones?.length || 0,
-          color: weatherAnalysis.safety_score >= 80 ? 'green' : 'orange',
-          strokeColor: weatherAnalysis.safety_score >= 80 ? '#10b981' : '#f59e0b',
+          color: weatherAnalysis.safety_score === null
+            ? 'orange'
+            : weatherAnalysis.safety_score >= 80 ? 'green' : 'orange',
+          strokeColor: '#2563eb',
           pathPoints: [],
           geoPoints: geoPts,
           waypoints: (weatherAnalysis.timeline || []).map((tl, idx) => ({
@@ -371,6 +429,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         }
       } catch (err) {
         console.warn('Live route calculation failed:', err);
+        if (routeRequestIdRef.current !== requestId) return;
         clearTimeout(wakeupTimer);
         setIsRenderWakingUp(false);
         setIsLive(false);
@@ -380,7 +439,9 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         setNearbyPlaces([]);
         setActiveRouteId('');
       } finally {
-        setIsAnalyzing(false);
+        if (routeRequestIdRef.current === requestId) {
+          setIsAnalyzing(false);
+        }
       }
     },
     []
@@ -483,14 +544,6 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     setNearbyPlaces([]);
     setActiveRouteId('');
 
-    await fetchRouteAndWeather(
-      params.originCoords,
-      params.originName,
-      params.destinationCoords,
-      params.destinationName,
-      params.travelMode
-    );
-
     if (onUpdateTrip) {
       onUpdateTrip({
         id: `trip-${Date.now()}`,
@@ -531,14 +584,6 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         setDestinationName(resolvedName);
         setDestinationCoords(resolvedCoords);
         setDestinationQuery(resolvedName);
-
-        await fetchRouteAndWeather(
-          originCoords,
-          originName,
-          resolvedCoords,
-          resolvedName,
-          travelMode
-        );
 
         if (onUpdateTrip) {
           onUpdateTrip({
@@ -739,15 +784,11 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             setOriginName(item.name);
             setOriginCoords([item.lat, item.lon]);
             setOriginQuery(item.name);
-            if (destinationCoords) {
-              fetchRouteAndWeather([item.lat, item.lon], item.name, destinationCoords, destinationName, travelMode);
-            }
           }}
           onSelectDestinationPreset={(item) => {
             setDestinationName(item.name);
             setDestinationCoords([item.lat, item.lon]);
             setDestinationQuery(item.name);
-            fetchRouteAndWeather(originCoords, originName, [item.lat, item.lon], item.name, travelMode);
           }}
           presets={DESTINATION_PRESETS}
           currentLocationName={originName}
@@ -817,7 +858,6 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
                 setDestinationCoords([pt.lat, pt.lng]);
                 setDestinationQuery(pt.name);
                 setSelectedPointWeather(null);
-                fetchRouteAndWeather(originCoords, originName, [pt.lat, pt.lng], pt.name, travelMode);
               }}
             />
 
@@ -920,7 +960,6 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           setDestinationName(place.name);
           if (place.coords?.lat && place.coords?.lng) {
             setDestinationCoords([place.coords.lat, place.coords.lng]);
-            fetchRouteAndWeather(originCoords, originName, [place.coords.lat, place.coords.lng], place.name, travelMode);
           }
         }}
         selectedPlaceId={selectedNearbyPlace?.id}

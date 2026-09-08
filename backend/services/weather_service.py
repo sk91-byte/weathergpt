@@ -1,17 +1,20 @@
-"""Service functions for retrieving weather data from Open-Meteo."""
+"""Service functions for retrieving weather data from IMD and Open-Meteo."""
 
 from datetime import datetime, timezone
 from typing import Any
+import logging
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from backend.config import settings
+from backend.services.imd_service import IMDServiceError, get_current_weather as get_imd_current_weather, get_forecast as get_imd_forecast, imd_access_configured, is_india_coordinates
 
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 REQUEST_TIMEOUT_SECONDS = (5, 30)
+logger = logging.getLogger(__name__)
 
 
 def _retrieved_at() -> str:
@@ -22,10 +25,10 @@ def _source_metadata(source: str, retrieved_at: str, timezone_name: str | None =
     """Attach provenance without implying that a model value is a station observation."""
     return {
         "name": source,
-        "kind": "forecast_provider" if source == "Open-Meteo" else "fallback_provider",
+        "kind": "official_meteorological_provider" if source == "IMD" else ("forecast_provider" if source == "Open-Meteo" else "fallback_provider"),
         "retrieved_at": retrieved_at,
         "timezone": timezone_name,
-        "official_warning_authority": False,
+        "official_warning_authority": source == "IMD",
     }
 
 
@@ -120,6 +123,11 @@ def _weatherapi_current(latitude: float, longitude: float) -> dict[str, Any]:
 
 def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
     """Return current weather for the supplied coordinates."""
+    if imd_access_configured() and is_india_coordinates(latitude, longitude):
+        try:
+            return get_imd_current_weather(latitude, longitude)
+        except IMDServiceError as exc:
+            logger.info("IMD current weather unavailable; using fallback provider: %s", exc)
     try:
         payload = _request_weather({
             "latitude": latitude, "longitude": longitude,
@@ -181,6 +189,12 @@ def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
 
 def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> dict[str, Any]:
     """Return daily and hourly forecast data for the supplied coordinates."""
+    imd_forecast = None
+    if imd_access_configured() and is_india_coordinates(latitude, longitude):
+        try:
+            imd_forecast = get_imd_forecast(latitude, longitude, days)
+        except IMDServiceError as exc:
+            logger.info("IMD city forecast unavailable; using Open-Meteo: %s", exc)
     try:
         payload = _request_weather({
             "latitude": latitude, "longitude": longitude, "forecast_days": days,
@@ -189,6 +203,8 @@ def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> di
             "timezone": "auto",
         })
     except WeatherServiceError:
+        if imd_forecast:
+            return imd_forecast
         fallback = _weatherapi_request(latitude, longitude, days)
         forecast = []
         hourly_forecast = []
@@ -211,7 +227,7 @@ def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> di
                     "visibility_m": float(hour["vis_km"]) * 1000 if isinstance(hour.get("vis_km"), (int, float)) else None,
                 })
         retrieved_at = _retrieved_at()
-        return {"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "WeatherAPI", "is_live": True, "retrieved_at": retrieved_at, "source_metadata": _source_metadata("WeatherAPI", retrieved_at)}
+        return _merge_imd_daily({"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "WeatherAPI", "is_live": True, "retrieved_at": retrieved_at, "source_metadata": _source_metadata("WeatherAPI", retrieved_at)}, imd_forecast)
     daily, hourly = payload.get("daily"), payload.get("hourly")
     daily_keys = ["time", "temperature_2m_max", "temperature_2m_min", "precipitation_sum", "precipitation_probability_max", "sunrise", "sunset", "weather_code"]
     if not isinstance(daily, dict) or not isinstance(hourly, dict) or any(not isinstance(daily.get(key), list) for key in daily_keys):
@@ -254,4 +270,19 @@ def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> di
         })
     retrieved_at = _retrieved_at()
     timezone_name = payload.get("timezone") if isinstance(payload.get("timezone"), str) else None
-    return {"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "Open-Meteo", "is_live": True, "retrieved_at": retrieved_at, "source_metadata": _source_metadata("Open-Meteo", retrieved_at, timezone_name)}
+    return _merge_imd_daily({"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "Open-Meteo", "is_live": True, "retrieved_at": retrieved_at, "source_metadata": _source_metadata("Open-Meteo", retrieved_at, timezone_name)}, imd_forecast)
+
+
+def _merge_imd_daily(base: dict[str, Any], imd_forecast: dict[str, Any] | None) -> dict[str, Any]:
+    """Use IMD daily values while retaining Open-Meteo hourly decision inputs."""
+    if not imd_forecast:
+        return base
+    imd_by_date = {item.get("date"): item for item in imd_forecast.get("forecast", []) if item.get("date")}
+    merged = []
+    for item in base.get("forecast", []):
+        official = imd_by_date.get(item.get("date"))
+        if official:
+            merged.append({**item, "temperature_max_c": official.get("temperature_max_c"), "temperature_min_c": official.get("temperature_min_c"), "condition": official.get("condition", item.get("condition")), "official_source": "IMD"})
+        else:
+            merged.append(item)
+    return {**base, "forecast": merged, "source": "IMD + " + str(base.get("source", "Open-Meteo")), "source_metadata": {"name": "IMD + " + str(base.get("source", "Open-Meteo")), "kind": "official_plus_supplemental_forecast", "retrieved_at": base.get("retrieved_at"), "official_warning_authority": True, "providers": ["India Meteorological Department", base.get("source", "Open-Meteo")]}}

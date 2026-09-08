@@ -4,11 +4,24 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query
 
+from backend.config import settings
+from backend.services.imd_service import imd_access_configured
 from backend.services.weather_service import WeatherServiceError, get_current_weather, get_weather_forecast
 
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/weather", tags=["weather"])
+
+
+@router.get("/providers")
+def weather_providers() -> dict:
+    """Expose provider readiness without exposing credentials."""
+    return {
+        "india_primary": "IMD",
+        "imd": {"enabled": settings.imd_enabled, "access_configured": imd_access_configured()},
+        "global_fallback": "Open-Meteo",
+        "historical": "Open-Meteo Archive",
+    }
 
 
 def _validate_coordinates(latitude: float, longitude: float) -> None:

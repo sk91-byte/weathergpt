@@ -4,7 +4,7 @@ from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.services.climate_service import get_historical_weather, get_rainfall_trend, get_temperature_trend
+from backend.services.climate_service import get_climate_summary, get_historical_weather, get_rainfall_trend, get_temperature_trend
 
 router = APIRouter(prefix="/climate", tags=["climate"])
 
@@ -46,4 +46,4 @@ def rainfall_trend(latitude: float = Query(...), longitude: float = Query(...), 
 def climate_summary(latitude: float = Query(...), longitude: float = Query(...), start_year: int = Query(...), end_year: int = Query(...)) -> dict:
     _coords(latitude, longitude)
     if start_year > end_year: raise HTTPException(400, "start_year must be before end_year")
-    return _run(lambda: {"location": {"latitude": latitude, "longitude": longitude}, "temperature": get_temperature_trend(latitude, longitude, start_year, end_year), "rainfall": get_rainfall_trend(latitude, longitude, start_year, end_year)})
+    return _run(lambda: get_climate_summary(latitude, longitude, start_year, end_year))

@@ -1,4 +1,5 @@
 // Compatibility layer between the Remix interface and the existing Render API.
+import type { WeatherAlert } from '../types';
 export interface ApiPoint { latitude: number; longitude: number; name?: string; }
 export interface ApiAutocompleteSuggestion { place_id: string; name: string; formatted_address: string; latitude: number; longitude: number; type?: string; }
 export interface ApiRouteResponse { route_id: string; origin: ApiPoint; destination: ApiPoint; travel_mode: string; distance_km: number; duration_minutes: number; geometry: [number, number][]; steps: any[]; is_live: boolean; data_source: string; }
@@ -7,9 +8,71 @@ export interface ApiBestDepartureTimeResponse { route_id: string; current_safety
 export interface ApiPointWeatherResponse { latitude:number; longitude:number; location_name:string; temperature:number | null; feels_like:number | null; condition:string; condition_icon:string; rain_probability:number | null; current_precipitation:number | null; humidity:number | null; wind_speed:number | null; wind_direction:string; visibility?:number; weather_risk?:string; nearby_alerts?:string[]; updated_time?:string; weather_source:string; is_live:boolean; route_point_info?:any; }
 export interface ApiNearbyPlaceItem { id:string; name:string; category:any; category_label:string; rating:number; reviews:number; distance_meters:number; walking_minutes:number; address:string; latitude:number; longitude:number; open_status:string; shelter_feature:string; route_relevance:string; phone?:string; is_live:boolean; }
 export interface ApiNearbyPlacesResponse { places: ApiNearbyPlaceItem[]; recommended_wait_place?: ApiNearbyPlaceItem; is_live:boolean; }
+export interface ApiClimateSummary {
+  location: { latitude: number; longitude: number };
+  temperature: { trend: Array<{ year: number; average_temperature_c: number | null }>; data_source: string; is_demo: boolean };
+  rainfall: { trend: Array<{ year: number; rainfall_mm: number }>; data_source: string; is_demo: boolean };
+}
+
+function normalizeAlertType(value: unknown): WeatherAlert['type'] {
+  const text = String(value || '').toLowerCase();
+  if (text.includes('flood')) return 'flood';
+  if (text.includes('cyclone')) return 'cyclone';
+  if (text.includes('heat')) return 'heatwave';
+  if (text.includes('fog')) return 'dense-fog';
+  if (text.includes('wind')) return 'strong-winds';
+  if (text.includes('thunder') || text.includes('lightning')) return 'thunderstorm';
+  return 'heavy-rain';
+}
+
+export async function apiGetNearbyAlerts(latitude: number, longitude: number, radiusKm = 50, onSlow?:()=>void): Promise<WeatherAlert[]> {
+  const params = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude), radius_km: String(radiusKm) });
+  const response = await fetchWithTimeout(`/alerts/nearby?${params.toString()}`, {}, 20000, onSlow);
+  const payload = await response.json();
+  if (!Array.isArray(payload)) return [];
+  return payload.filter((item: any) => item && item.is_demo !== true).map((item: any): WeatherAlert => ({
+    id: String(item.id),
+    type: normalizeAlertType(item.alert_type),
+    title: String(item.title || 'Official weather alert'),
+    severity: ['Low', 'Moderate', 'High', 'Extreme'].includes(item.severity) ? item.severity : 'Moderate',
+    location: String(item.affected_area || 'Selected area'),
+    issuedAt: String(item.issued_at || 'Unavailable'),
+    description: String(item.description || 'See the official source for details.'),
+    impacts: [],
+    recommendedActions: [],
+    isActive: true,
+    isNearby: true,
+  }));
+}
 
 export const BACKEND_BASE_URL = ((import.meta as any).env?.VITE_BACKEND_BASE_URL || 'https://weathergpt-bjhy.onrender.com').replace(/\/$/, '');
 let latestRouteId: string | null = null;
+
+// Accept GeoJSON, plain coordinate arrays, or point objects and always return
+// Leaflet coordinates as [latitude, longitude].
+export function parseRouteGeometry(geometryData: any): [number, number][] {
+  let rawCoords: any[] = [];
+  if (Array.isArray(geometryData)) rawCoords = geometryData;
+  else if (geometryData && Array.isArray(geometryData.coordinates)) rawCoords = geometryData.coordinates;
+  else if (geometryData && Array.isArray(geometryData.points)) rawCoords = geometryData.points;
+  else if (geometryData?.geometry) return parseRouteGeometry(geometryData.geometry);
+
+  return rawCoords.flatMap((point: any) => {
+    if (Array.isArray(point) && point.length >= 2) {
+      const first = Number(point[0]);
+      const second = Number(point[1]);
+      if (!Number.isFinite(first) || !Number.isFinite(second)) return [];
+      // OSRM/GeoJSON is [longitude, latitude].
+      return [[second, first] as [number, number]];
+    }
+    if (point && typeof point === 'object') {
+      const lat = Number(point.lat ?? point.latitude);
+      const lon = Number(point.lng ?? point.lon ?? point.longitude);
+      return Number.isFinite(lat) && Number.isFinite(lon) ? [[lat, lon] as [number, number]] : [];
+    }
+    return [];
+  });
+}
 
 async function fetchWithTimeout(endpoint: string, options: RequestInit = {}, timeoutMs = 20000, onSlow?: () => void) {
   const controller = new AbortController(); const slow = onSlow ? window.setTimeout(onSlow, 2800) : undefined; const timer = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -36,13 +99,46 @@ export async function apiAutocompleteLocations(query: string, _latitude?: number
   })).filter((item: ApiAutocompleteSuggestion) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
 }
 
+async function fetchBrowserRoadFallback(origin: ApiPoint, destination: ApiPoint, travelMode: string): Promise<ApiRouteResponse> {
+  const profile = travelMode === 'walking' ? 'foot' : travelMode === 'cycling' ? 'bike' : 'driving';
+  const url = `https://router.project-osrm.org/route/v1/${profile}/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson&steps=true`;
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`OSRM browser fallback failed (${response.status})`);
+  const payload = await response.json();
+  const route = payload.routes?.[0];
+  const geometry = parseRouteGeometry(route?.geometry);
+  if (!route || geometry.length < 2) throw new Error('OSRM browser fallback returned no road geometry.');
+  return {
+    route_id: `osrm-browser-${Date.now()}`,
+    origin,
+    destination,
+    travel_mode: travelMode,
+    distance_km: Number(route.distance || 0) / 1000,
+    duration_minutes: Math.max(1, Math.round(Number(route.duration || 0) / 60)),
+    geometry,
+    steps: route.legs?.flatMap((leg: any) => leg.steps || []) || [],
+    is_live: true,
+    data_source: 'OSRM road service'
+  };
+}
+
 export async function apiCalculateRoute(origin: ApiPoint, destination: ApiPoint, travelMode = 'driving', onSlow?: () => void): Promise<ApiRouteResponse> {
-  const response = await fetchWithTimeout('/route', { method:'POST', body:JSON.stringify({ origin, destination, travel_mode:travelMode }) }, 30000, onSlow);
-  const payload=await response.json();
-  const geometry=(payload.geometry?.coordinates || []).map((p:[number,number])=>[p[1],p[0]]);
-  if (!payload.route_id || geometry.length < 2) throw new Error('The routing service returned an invalid route.');
-  latestRouteId=payload.route_id;
-  return { ...payload, geometry, is_live:true, data_source:'OSRM route service' };
+  try {
+    const response = await fetchWithTimeout('/route', { method:'POST', body:JSON.stringify({ origin, destination, travel_mode:travelMode }) }, 30000, onSlow);
+    const payload=await response.json();
+    const rawGeometry = payload.geometry ?? payload.coordinates ?? payload.route?.geometry ?? payload.routes?.[0]?.geometry;
+    const geometry = parseRouteGeometry(rawGeometry);
+    console.log('Route geometry received', rawGeometry);
+    console.log('Converted Leaflet points length', geometry.length);
+    if (!payload.route_id || geometry.length < 2) throw new Error('The routing service returned an invalid route.');
+    latestRouteId=payload.route_id;
+    return { ...payload, geometry, is_live:true, data_source:'OSRM route service' };
+  } catch (backendError) {
+    console.warn('Render route request failed; requesting road geometry directly from OSRM.', backendError);
+    const fallbackRoute = await fetchBrowserRoadFallback(origin, destination, travelMode);
+    latestRouteId = fallbackRoute.route_id;
+    return fallbackRoute;
+  }
 }
 
 export async function apiGetRouteWeather(routeOrGeometry:[number,number][]|string, _travelMode='driving', onSlow?:()=>void):Promise<ApiRouteWeatherResponse> {
@@ -72,6 +168,14 @@ export async function apiGetLocationWeather(latitude:number, longitude:number, o
   ]);
   if (!weather) throw new Error('Current weather is unavailable.');
   return { weather, location };
+}
+
+export async function apiGetClimateSummary(latitude: number, longitude: number, startYear: number, endYear: number, onSlow?:()=>void): Promise<ApiClimateSummary> {
+  const params = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude), start_year: String(startYear), end_year: String(endYear) });
+  const response = await fetchWithTimeout(`/climate/summary?${params.toString()}`, {}, 45000, onSlow);
+  const payload = await response.json();
+  if (!payload?.temperature?.trend || !payload?.rainfall?.trend) throw new Error('Climate provider returned incomplete historical data.');
+  return payload as ApiClimateSummary;
 }
 
 export async function apiSendChat(query:string,options:any={},onSlow?:()=>void){const response=await fetchWithTimeout('/chat',{method:'POST',body:JSON.stringify({message:query,conversation_id:options.conversation_id,language:options.language||'en',profile:options.role||'citizen',latitude:options.latitude,longitude:options.longitude,location:options.location||options.location_name||null,route_context:options.route_context||null})},30000,onSlow);return response.json();}

@@ -29,18 +29,17 @@ import { CitySelectorModal } from './components/CitySelectorModal';
 import { NotificationsModal } from './components/NotificationsModal';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
 import { getWeatherTheme } from './utils/weatherGradients';
-import { apiGetLocationWeather, apiResolveLocation } from './services/api';
+import { apiGetLocationWeather, apiGetNearbyAlerts, apiResolveLocation } from './services/api';
 
 import {
   DEFAULT_HOURLY_FORECAST,
   DEFAULT_DAILY_FORECAST,
   DEFAULT_ROUTE_TRIP,
   DEFAULT_SAVED_TRIPS,
-  DEFAULT_ALERTS,
   DEFAULT_FARMER_ADVISORY,
   INITIAL_WEATHER
 } from './data/weatherData';
-import { WeatherData, Language, UserRole, DemoScenario, RouteTrip } from './types';
+import { WeatherData, Language, UserRole, DemoScenario, RouteTrip, WeatherAlert } from './types';
 
 export default function App() {
   // First-time Onboarding State
@@ -84,7 +83,7 @@ export default function App() {
   const [trip, setTrip] = useState<RouteTrip>(DEFAULT_ROUTE_TRIP);
   const [savedTrips, setSavedTrips] = useState<RouteTrip[]>(DEFAULT_SAVED_TRIPS);
   const [tripModalMode, setTripModalMode] = useState<'details' | 'new' | 'all'>('details');
-  const [alerts, setAlerts] = useState(DEFAULT_ALERTS);
+  const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
   const [advisory, setAdvisory] = useState(DEFAULT_FARMER_ADVISORY);
 
   const [activeTab, setActiveTab] = useState<TabType>('home');
@@ -212,6 +211,17 @@ export default function App() {
         });
     }
   }, []);
+
+  // Load only configured authoritative alerts. The backend deliberately
+  // returns an empty list when no official feed is configured; the UI must
+  // never replace that with demo warnings.
+  useEffect(() => {
+    const city = weather.city.toLowerCase();
+    const coordinates = city.includes('dehradun') ? [30.3165, 78.0322] : [28.6139, 77.2090];
+    apiGetNearbyAlerts(coordinates[0], coordinates[1])
+      .then(setAlerts)
+      .catch(() => setAlerts([]));
+  }, [weather.city]);
 
   // Switch City
   const handleSelectCity = async (cityString: string) => {
