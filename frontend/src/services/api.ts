@@ -25,24 +25,56 @@ function normalizeAlertType(value: unknown): WeatherAlert['type'] {
   return 'heavy-rain';
 }
 
-export async function apiGetNearbyAlerts(latitude: number, longitude: number, radiusKm = 50, onSlow?:()=>void): Promise<WeatherAlert[]> {
+function alertActions(type: WeatherAlert['type'], severity: string): { impacts: string[]; actions: string[] } {
+  const severe = severity === 'High' || severity === 'Extreme';
+  if (type === 'thunderstorm') return {
+    impacts: ['Lightning, sudden rain, gusty winds, and temporary travel disruption.'],
+    actions: [severe ? 'Avoid open areas and postpone non-essential travel.' : 'Stay indoors during lightning and check updates before leaving.']
+  };
+  if (type === 'flood') return {
+    impacts: ['Waterlogging, unsafe crossings, and road closures may occur.'],
+    actions: ['Do not enter moving water; follow local authority instructions and use a safer route.']
+  };
+  if (type === 'cyclone') return {
+    impacts: ['Damaging winds, heavy rain, power disruption, and coastal flooding are possible.'],
+    actions: ['Stay indoors, secure loose objects, and follow official evacuation instructions.']
+  };
+  if (type === 'heatwave') return {
+    impacts: ['Heat stress, dehydration, and reduced outdoor work capacity.'],
+    actions: ['Drink water regularly and avoid strenuous activity during the hottest hours.']
+  };
+  if (type === 'dense-fog') return {
+    impacts: ['Poor visibility and slower or hazardous road travel.'],
+    actions: ['Reduce speed, use headlights, and allow extra travel time.']
+  };
+  return {
+    impacts: ['Weather conditions may affect outdoor activity and local travel.'],
+    actions: ['Check the official warning, keep your phone charged, and plan a safer alternative.']
+  };
+}
+
+export async function apiGetNearbyAlerts(latitude: number, longitude: number, radiusKm = 50, onSlow?:()=>void, locationName?: string): Promise<WeatherAlert[]> {
   const params = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude), radius_km: String(radiusKm) });
+  if (locationName) params.set('location_name', locationName);
   const response = await fetchWithTimeout(`/alerts/nearby?${params.toString()}`, {}, 20000, onSlow);
   const payload = await response.json();
   if (!Array.isArray(payload)) return [];
-  return payload.filter((item: any) => item && item.is_demo !== true).map((item: any): WeatherAlert => ({
-    id: String(item.id),
-    type: normalizeAlertType(item.alert_type),
-    title: String(item.title || 'Official weather alert'),
-    severity: ['Low', 'Moderate', 'High', 'Extreme'].includes(item.severity) ? item.severity : 'Moderate',
-    location: String(item.affected_area || 'Selected area'),
-    issuedAt: String(item.issued_at || 'Unavailable'),
-    description: String(item.description || 'See the official source for details.'),
-    impacts: [],
-    recommendedActions: [],
-    isActive: true,
-    isNearby: true,
-  }));
+  return payload.filter((item: any) => item && item.is_demo !== true).map((item: any): WeatherAlert => {
+    const type = normalizeAlertType(item.alert_type);
+    const severity = ['Low', 'Moderate', 'High', 'Extreme'].includes(item.severity) ? item.severity : 'Moderate';
+    const guidance = alertActions(type, severity);
+    return {
+      id: String(item.id), type,
+      title: String(item.title || 'Official weather alert'), severity,
+      location: String(item.affected_area || 'Selected area'),
+      issuedAt: String(item.issued_at || 'Unavailable'),
+      description: String(item.description || 'See the official source for details.'),
+      impacts: guidance.impacts, recommendedActions: guidance.actions,
+      sourceUrl: typeof item.source_url === 'string' ? item.source_url : undefined,
+      isActive: !item.end_time || Number.isNaN(Date.parse(String(item.end_time))) || Date.parse(String(item.end_time)) > Date.now(),
+      isNearby: true,
+    };
+  });
 }
 
 export const BACKEND_BASE_URL = ((import.meta as any).env?.VITE_BACKEND_BASE_URL || 'https://weathergpt-bjhy.onrender.com').replace(/\/$/, '');

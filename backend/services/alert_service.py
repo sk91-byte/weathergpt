@@ -262,11 +262,15 @@ def alert_feed_status() -> dict[str, object]:
     }
 
 
-def nearby_alerts(latitude: float, longitude: float, radius_km: float) -> list[WeatherAlert]:
+def nearby_alerts(latitude: float, longitude: float, radius_km: float, location_name: str | None = None) -> list[WeatherAlert]:
     def distance(alert: WeatherAlert) -> float:
         # CAP feeds may publish nationwide alerts without a coordinate.
         if alert.latitude == 0.0 and alert.longitude == 0.0:
-            return 0.0
+            search_text = f"{alert.title} {alert.description} {alert.affected_area}".lower()
+            selected_location = (location_name or "").lower().strip()
+            if not selected_location or selected_location in {"india", "current location"}:
+                return float("inf")
+            return 0.0 if selected_location in search_text else float("inf")
         p1, p2 = radians(latitude), radians(alert.latitude)
         dlat, dlon = p2 - p1, radians(alert.longitude - longitude)
         value = sin(dlat / 2) ** 2 + cos(p1) * cos(p2) * sin(dlon / 2) ** 2

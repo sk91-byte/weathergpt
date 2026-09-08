@@ -84,6 +84,7 @@ export default function App() {
   const [savedTrips, setSavedTrips] = useState<RouteTrip[]>(DEFAULT_SAVED_TRIPS);
   const [tripModalMode, setTripModalMode] = useState<'details' | 'new' | 'all'>('details');
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
+  const [alertCoordinates, setAlertCoordinates] = useState({ latitude: 28.6139, longitude: 77.2090 });
   const [readAlertIds, setReadAlertIds] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('weathergpt_read_alert_ids') || '[]'); } catch { return []; }
   });
@@ -145,6 +146,7 @@ export default function App() {
       async (pos) => {
         try {
           const { latitude, longitude } = pos.coords;
+          setAlertCoordinates({ latitude, longitude });
           const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
           if (liveWeather) {
             const liveData: WeatherData = {
@@ -215,13 +217,12 @@ export default function App() {
     }
   }, []);
 
-  // Load only configured authoritative alerts. The backend deliberately
+  // Load only configured authoritative alerts for the user's actual location.
+  // The backend deliberately
   // returns an empty list when no official feed is configured; the UI must
   // never replace that with demo warnings.
   useEffect(() => {
-    const city = weather.city.toLowerCase();
-    const coordinates = city.includes('dehradun') ? [30.3165, 78.0322] : [28.6139, 77.2090];
-    apiGetNearbyAlerts(coordinates[0], coordinates[1])
+    apiGetNearbyAlerts(alertCoordinates.latitude, alertCoordinates.longitude, 50, undefined, weather.city)
       .then((nextAlerts) => {
         setAlerts(nextAlerts);
         const unseen = nextAlerts.filter((alert) => alert.isActive && !readAlertIds.includes(alert.id));
@@ -230,7 +231,18 @@ export default function App() {
         }
       })
       .catch(() => setAlerts([]));
-  }, [weather.city, readAlertIds]);
+  }, [alertCoordinates.latitude, alertCoordinates.longitude, readAlertIds]);
+
+  // Opening the alert screen is an explicit user action, so refresh the alert
+  // radius from the device GPS at that moment when permission is available.
+  useEffect(() => {
+    if (!showWeatherAlerts || typeof window === 'undefined' || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (position) => setAlertCoordinates({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+      () => { /* Keep the selected city as the safe fallback. */ },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+    );
+  }, [showWeatherAlerts]);
 
   const markAlertsRead = () => {
     const ids = alerts.map((alert) => alert.id);
@@ -246,6 +258,7 @@ export default function App() {
       const latitude = Number(resolved?.latitude ?? resolved?.lat);
       const longitude = Number(resolved?.longitude ?? resolved?.lon ?? resolved?.lng);
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error('Location coordinates unavailable');
+      setAlertCoordinates({ latitude, longitude });
       const { weather: liveWeather, location } = await apiGetLocationWeather(latitude, longitude);
       const liveData: WeatherData = {
         ...weather,

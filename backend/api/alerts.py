@@ -13,8 +13,8 @@ def get_alerts() -> list[dict]:
 
 
 @router.get("/nearby")
-def get_nearby_alerts(latitude: float = Query(..., ge=-90, le=90), longitude: float = Query(..., ge=-180, le=180), radius_km: float = Query(25, gt=0, le=500)) -> list[dict]:
-    return [alert.model_dump() for alert in nearby_alerts(latitude, longitude, radius_km)]
+def get_nearby_alerts(latitude: float = Query(..., ge=-90, le=90), longitude: float = Query(..., ge=-180, le=180), radius_km: float = Query(25, gt=0, le=500), location_name: str | None = Query(None, max_length=120)) -> list[dict]:
+    return [alert.model_dump() for alert in nearby_alerts(latitude, longitude, radius_km, location_name)]
 
 
 @router.get("/status")
