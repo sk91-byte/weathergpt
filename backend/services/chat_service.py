@@ -109,6 +109,15 @@ def _response_mode(message: str, selected_language: dict[str, Any]) -> str:
     return code
 
 
+def _needs_web_search(message: str) -> bool:
+    """Identify questions that need current or place-specific web facts."""
+    return bool(re.search(
+        r"\b(where|who is|what is|which|when|latest|current|today|news|located|location|address|distance|open now)\b"
+        r"|कहाँ|कौन|क्या है|नवीनतम|आज|पता|स्थान|ક્યાં|કોણ|શું છે|સ્થાન",
+        message.lower(),
+    ))
+
+
 def _small_talk_response(message: str, language: str) -> str | None:
     """Handle lightweight conversation without making an unnecessary weather call."""
     text = message.lower().strip().strip(" ?!.।")
@@ -832,11 +841,16 @@ def process_chat_message(
     if query.intent in {"general_chat", "app_help"}:
         try:
             response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
+            search_requested = _needs_web_search(message)
             result["response"] = generate_general_response(
-                message, response_language, previous_context, app_help=query.intent == "app_help"
+                message,
+                response_language,
+                previous_context,
+                app_help=query.intent == "app_help",
+                use_search=search_requested,
             )
             result["intent"] = query.intent
-            result["data_source"] = "Gemini"
+            result["data_source"] = "Gemini + Google Search" if search_requested and settings.gemini_search_grounding else "Gemini"
         except LLMServiceError:
             result["ai_used"] = False
             result["fallback_used"] = True
