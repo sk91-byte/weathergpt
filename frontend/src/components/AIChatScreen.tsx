@@ -227,6 +227,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
             ai_used: data.ai_used,
             fallback_used: data.fallback_used,
             fallback_reason: data.fallback_reason,
+            intent: data.intent,
             data_source: data.data_source,
             is_live: data.is_live,
             llm_provider: data.llm_provider,
@@ -379,20 +380,22 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                           AI response • {m.cardData.payload.llm_provider || 'Gemini'}
                         </span>
-                      ) : m.cardData.payload.fallback_used ? (
+                      ) : m.cardData.payload.fallback_used && (m.cardData.payload.is_live || ['current_weather', 'forecast'].includes(m.cardData.payload.intent)) ? (
                         <span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                           Weather data live, AI temporarily unavailable
                         </span>
                       ) : null}
-                      {m.cardData.payload.data_source && m.cardData.payload.data_source !== 'none' ? (
+                      {m.cardData.payload.is_live || ['current_weather', 'forecast'].includes(m.cardData.payload.intent) ? (
+                        m.cardData.payload.data_source && m.cardData.payload.data_source !== 'none' ? (
                         <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                           Live weather • {m.cardData.payload.data_source}
                         </span>
-                      ) : (
+                        ) : (
                         <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
                           Live data unavailable — no guess shown
                         </span>
-                      )}
+                        )
+                      ) : null}
                     </div>
                   )}
                 </div>
