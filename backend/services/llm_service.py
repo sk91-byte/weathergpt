@@ -114,6 +114,17 @@ def _response_text(response: Any) -> str:
     return "\n".join(pieces).strip()
 
 
+def _clean_generated_text(value: str) -> str:
+    """Remove accidental Markdown code fences from user-facing prose."""
+    text = value.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    return text
+
+
 def _call_gemini_with_retry(func: Callable[[], Any], max_retries: int = 1) -> Any:
     """Execute a Gemini API call with 1 controlled retry for transient errors."""
     last_exc = None
@@ -244,7 +255,7 @@ def generate_weather_response(
                 config=types.GenerateContentConfig(system_instruction=WEATHER_ASSISTANT_INSTRUCTIONS),
             )
         response = _call_gemini_with_retry(_do_generate, max_retries=1)
-        response_text = _response_text(response)
+        response_text = _clean_generated_text(_response_text(response))
         if not response_text:
             raise LLMServiceError("Gemini returned an empty weather response")
         return response_text
@@ -293,7 +304,7 @@ def generate_decision_response(
             ),
             max_retries=1,
         )
-        response_text = _response_text(response)
+        response_text = _clean_generated_text(_response_text(response))
         if not response_text:
             raise LLMServiceError("Gemini returned an empty decision response")
         return response_text
@@ -339,7 +350,7 @@ def generate_general_response(
             ),
             max_retries=1,
         )
-        response_text = _response_text(response)
+        response_text = _clean_generated_text(_response_text(response))
         if not response_text:
             raise LLMServiceError("Gemini returned an empty conversational response")
         return response_text
