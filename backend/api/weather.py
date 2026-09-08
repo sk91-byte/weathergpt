@@ -18,7 +18,7 @@ def weather_providers() -> dict:
     """Expose provider readiness without exposing credentials."""
     return {
         "india_primary": "IMD",
-        "imd": {"enabled": settings.imd_enabled, "access_configured": imd_access_configured()},
+        "imd": {"enabled": settings.imd_enabled, "access_configured": imd_access_configured(), "aws_id_configured": bool(settings.imd_aws_id), "city_id_configured": bool(settings.imd_city_id), "district_id_configured": bool(settings.imd_district_id)},
         "global_fallback": "Open-Meteo",
         "historical": "Open-Meteo Archive",
     }

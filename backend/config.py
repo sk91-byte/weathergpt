@@ -54,6 +54,7 @@ class Settings:
     imd_ip_whitelisted: bool = _as_bool(os.getenv("IMD_IP_WHITELISTED", "false"))
     imd_city_id: str | None = _clean_str(os.getenv("IMD_CITY_ID"))
     imd_station_id: str | None = _clean_str(os.getenv("IMD_STATION_ID"))
+    imd_aws_id: str | None = _clean_str(os.getenv("IMD_AWS_ID"))
     imd_district_id: str | None = _clean_str(os.getenv("IMD_DISTRICT_ID"))
     imd_alert_latitude: float | None = _optional_float(os.getenv("IMD_ALERT_LATITUDE"))
     imd_alert_longitude: float | None = _optional_float(os.getenv("IMD_ALERT_LONGITUDE"))

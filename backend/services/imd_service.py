@@ -85,6 +85,9 @@ class IMDClient:
             response = self.session.get(f"{self.base_url}/{endpoint.lstrip('/')}", params=params or {}, timeout=(5, 15))
             response.raise_for_status()
             payload = response.json()
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else "unknown"
+            raise IMDServiceError(f"IMD request failed with HTTP {status}") from exc
         except (requests.RequestException, ValueError) as exc:
             raise IMDServiceError("IMD is unavailable or access was not authorized") from exc
         if isinstance(payload, dict) and payload.get("status") is False:
@@ -122,9 +125,14 @@ def _condition(code: Any) -> str:
 def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
     client = IMDClient()
     mapping = _mapping(client, latitude, longitude)
-    station_id = settings.imd_station_id or (_station_id(mapping) if mapping else None)
-    params = {"id": station_id} if station_id else None
-    record = _nearest_record(_records(client.get("current_wx", params)), latitude, longitude)
+    # AWS/ARG uses a call sign (for example NDL), while current_wx uses a
+    # station/WMO identifier (for example 42182). Prefer AWS for live values.
+    if settings.imd_aws_id:
+        record = _nearest_record(_records(client.get("aws_data", {"id": settings.imd_aws_id})), latitude, longitude)
+    else:
+        station_id = settings.imd_station_id or (_station_id(mapping) if mapping else None)
+        params = {"id": station_id} if station_id else None
+        record = _nearest_record(_records(client.get("current_wx", params)), latitude, longitude)
     if record is None:
         raise IMDServiceError("IMD returned no current observation")
     station_lat = _number(_value(record, "latitude", "lat")) or _number(_value(mapping or {}, "latitude", "lat")) or latitude
