@@ -30,7 +30,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
         ? `नमस्ते अनमोल! मैं WeatherGPT हूँ। मैं केवल मौसम नहीं बताता, बल्कि यह समझाता हूँ कि आपको क्या सावधानी रखनी चाहिए। आज आप क्या जानना चाहते हैं?`
         : currentLanguage === 'gu'
         ? `નમસ્તે અનમોલ! હું WeatherGPT છું. હું માત્ર હવામાન નથી કહેતો, પણ તમારે શું પગલાં લેવા જોઈએ તે જણાવું છું. આજે તમે શું જાણવા માગો છો?`
-        : `Hello Anmol! I'm WeatherGPT. Unlike standard weather apps, I translate live atmospheric conditions into proactive, personalized decisions. How can I help with your day?`,
+        : `Hello Anmol! I'm WeatherGPT. I can chat with you, answer your questions, explain app features, and give live weather guidance when you need it. How can I assist you today?`,
       timestamp: 'Just now'
     }
   ]);
@@ -242,7 +242,13 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
       const botMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         sender: 'weathergpt',
-        text: err instanceof Error && err.message.includes('Location permission')
+        text: !needsCurrentLocation(textToSend)
+          ? (currentLanguage === 'hi'
+            ? 'नमस्ते! मैं आपकी बातचीत, सामान्य सवालों और WeatherGPT के फीचर्स में मदद कर सकता हूँ। मैं आपकी कैसे सहायता करूँ?'
+            : currentLanguage === 'gu'
+            ? 'નમસ્તે! હું તમારી વાતચીત, સામાન્ય પ્રશ્નો અને WeatherGPT ફીચર્સમાં મદદ કરી શકું છું. હું તમારી કેવી રીતે મદદ કરું?'
+            : `Hi! I'm WeatherGPT. I can answer general questions, explain app features, and help with live weather whenever you need it. How can I assist you?`)
+          : err instanceof Error && err.message.includes('Location permission')
           ? (currentLanguage === 'hi'
             ? 'आपके आसपास का मौसम बताने के लिए स्थान की अनुमति चाहिए। कृपया ब्राउज़र में Location Allow करें और फिर दोबारा पूछें।'
             : currentLanguage === 'gu'
@@ -258,9 +264,9 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
           type: 'weather',
           payload: {
             ai_used: false,
-            fallback_used: true,
-            fallback_reason: 'request_failed',
-            data_source: 'none',
+            fallback_used: needsCurrentLocation(textToSend),
+            fallback_reason: needsCurrentLocation(textToSend) ? 'request_failed' : undefined,
+            data_source: needsCurrentLocation(textToSend) ? 'none' : 'conversation',
             is_live: false,
           },
         },
