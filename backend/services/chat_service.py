@@ -735,13 +735,21 @@ def process_chat_message(
     result["suggestions"] = _follow_up_suggestions(response_mode, profile, query.intent, bool(route_context))
     small_talk = _small_talk_response(message, response_mode)
     if small_talk:
-        # Greetings and simple conversation do not need a weather provider.
-        # Do not show a weather fallback badge for these messages.
-        result["ai_used"] = False
-        result["fallback_used"] = False
-        result["fallback_reason"] = None
-        result["data_source"] = "conversation"
-        result["response"] = small_talk
+        # Greetings are conversational requests too. Let Gemini generate the
+        # response, using the local phrase only if the provider is unavailable.
+        try:
+            response_language = "Hindi" if response_mode == "hi" else "Hinglish" if response_mode == "hinglish" else selected_language["name"]
+            result["response"] = generate_general_response(message, response_language, previous_context)
+            result["ai_used"] = True
+            result["fallback_used"] = False
+            result["fallback_reason"] = None
+            result["data_source"] = "Gemini"
+        except LLMServiceError:
+            result["response"] = small_talk
+            result["ai_used"] = False
+            result["fallback_used"] = False
+            result["fallback_reason"] = None
+            result["data_source"] = "conversation"
         add_message(conversation_id, "user", message)
         add_message(conversation_id, "assistant", result["response"], context=previous_context)
         return result
