@@ -375,7 +375,9 @@ def places_along_route(route_coordinates: list[list[float]], radius_km: float = 
     route_points = [(float(point[1]), float(point[0])) for point in route_coordinates if len(point) >= 2]
     if len(route_points) < 2:
         raise PlaceSearchError("Route geometry is invalid")
-    sample_count = min(14, max(4, len(route_points) // 25))
+    # Keep the Overpass request small enough for a free Render instance while
+    # still covering the whole road corridor.
+    sample_count = min(8, max(4, len(route_points) // 80))
     sample_points = [route_points[round(index * (len(route_points) - 1) / (sample_count - 1))] for index in range(sample_count)]
     cache_key = f"route-places:{hash(tuple((round(lat, 5), round(lon, 5)) for lat, lon in sample_points))}:{radius_km}:{limit_per_category}"
     saved = cache.get(cache_key)
@@ -388,12 +390,25 @@ def places_along_route(route_coordinates: list[list[float]], radius_km: float = 
         for latitude, longitude in sample_points
     )
     query = f'''[out:json][timeout:30];\n({around_queries}\n); out center tags;'''
-    try:
-        response = requests.post("https://overpass-api.de/api/interpreter", data={"data": query}, headers={"User-Agent": "WeatherGPT/1.0 route-amenities"}, timeout=35)
-        response.raise_for_status()
-        values = response.json().get("elements", [])
-    except (requests.RequestException, ValueError) as exc:
-        raise PlaceSearchError("Route amenity search is temporarily unavailable") from exc
+    values: list[dict[str, Any]] | None = None
+    last_error: Exception | None = None
+    # Public Overpass instances occasionally rate-limit or time out. Try a
+    # second public mirror before reporting an unavailable route-place search.
+    for endpoint in (
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+    ):
+        try:
+            response = requests.post(endpoint, data={"data": query}, headers={"User-Agent": "WeatherGPT/1.0 route-amenities"}, timeout=12)
+            response.raise_for_status()
+            parsed = response.json().get("elements", [])
+            if isinstance(parsed, list):
+                values = parsed
+                break
+        except (requests.RequestException, ValueError) as exc:
+            last_error = exc
+    if values is None:
+        raise PlaceSearchError("Route amenity search is temporarily unavailable") from last_error
 
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
