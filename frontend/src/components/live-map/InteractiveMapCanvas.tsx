@@ -42,6 +42,8 @@ interface InteractiveMapCanvasProps {
   originCoords?: [number, number];
   destinationCoords?: [number, number];
   gpsCoords?: [number, number] | null;
+  isRouteLoading?: boolean;
+  routeError?: string;
 }
 
 export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
@@ -65,7 +67,9 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
   onRoutePointClick,
   originCoords,
   destinationCoords,
-  gpsCoords
+  gpsCoords,
+  isRouteLoading = false,
+  routeError = ''
 }) => {
   // Tile mode: 'streets' (Carto Voyager / OpenStreetMap), 'satellite' (ArcGIS), 'dark' (Carto Dark)
   const [tileMode, setTileMode] = useState<'streets' | 'satellite' | 'dark'>('streets');
@@ -120,6 +124,8 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
         originCoords={originCoords}
         destinationCoords={destinationCoords}
         gpsCoords={gpsCoords}
+        isRouteLoading={isRouteLoading}
+        routeError={routeError}
       />
 
       {/* Floating Route Options Quick Switcher Bar on Map */}

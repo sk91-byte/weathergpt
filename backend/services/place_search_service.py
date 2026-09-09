@@ -347,3 +347,111 @@ def nearby_places(latitude: float, longitude: float, radius_km: float = 5, limit
     result = result[:limit]
     cache.set(key, result, ttl_seconds=120)
     return result
+
+
+def _route_distance_km(latitude: float, longitude: float, route_points: list[tuple[float, float]]) -> tuple[float, float]:
+    """Return approximate distance to the route and distance along the route."""
+    best_distance = float("inf")
+    best_index = 0
+    for index, (route_lat, route_lon) in enumerate(route_points):
+        distance = sqrt(((latitude - route_lat) * 111) ** 2 + ((longitude - route_lon) * 111 * cos(radians(latitude))) ** 2)
+        if distance < best_distance:
+            best_distance, best_index = distance, index
+    along_route = 0.0
+    for first, second in zip(route_points[:best_index], route_points[1:best_index + 1]):
+        along_route += sqrt(((second[0] - first[0]) * 111) ** 2 + ((second[1] - first[1]) * 111 * cos(radians(first[0]))) ** 2)
+    return best_distance, along_route
+
+
+def places_along_route(route_coordinates: list[list[float]], radius_km: float = 0.8, limit_per_category: int = 5) -> list[dict[str, Any]]:
+    """Find real mapped amenities within a small corridor of a road route.
+
+    Input coordinates use GeoJSON order: [longitude, latitude]. Overpass is
+    queried around sampled road points, then every result is measured against
+    the complete route before it is returned.
+    """
+    if len(route_coordinates) < 2:
+        raise PlaceSearchError("A route with at least two coordinates is required")
+    route_points = [(float(point[1]), float(point[0])) for point in route_coordinates if len(point) >= 2]
+    if len(route_points) < 2:
+        raise PlaceSearchError("Route geometry is invalid")
+    sample_count = min(14, max(4, len(route_points) // 25))
+    sample_points = [route_points[round(index * (len(route_points) - 1) / (sample_count - 1))] for index in range(sample_count)]
+    cache_key = f"route-places:{hash(tuple((round(lat, 5), round(lon, 5)) for lat, lon in sample_points))}:{radius_km}:{limit_per_category}"
+    saved = cache.get(cache_key)
+    if saved is not None:
+        return saved
+    radius_m = max(300, min(int(radius_km * 1000), 1500))
+    around_queries = "\n".join(
+        f'''nwr(around:{radius_m},{latitude},{longitude})["amenity"~"^(restaurant|cafe|fast_food|fuel|hospital|pharmacy|charging_station)$"];\n'''
+        f'''nwr(around:{radius_m},{latitude},{longitude})["tourism"="hotel"];'''
+        for latitude, longitude in sample_points
+    )
+    query = f'''[out:json][timeout:30];\n({around_queries}\n); out center tags;'''
+    try:
+        response = requests.post("https://overpass-api.de/api/interpreter", data={"data": query}, headers={"User-Agent": "WeatherGPT/1.0 route-amenities"}, timeout=35)
+        response.raise_for_status()
+        values = response.json().get("elements", [])
+    except (requests.RequestException, ValueError) as exc:
+        raise PlaceSearchError("Route amenity search is temporarily unavailable") from exc
+
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in values if isinstance(values, list) else []:
+        if not isinstance(item, dict):
+            continue
+        point = item.get("center") if isinstance(item.get("center"), dict) else item
+        tags = item.get("tags") if isinstance(item.get("tags"), dict) else {}
+        name = str(tags.get("name") or "").strip()
+        if not name or point.get("lat") is None or point.get("lon") is None:
+            continue
+        place_lat, place_lon = float(point["lat"]), float(point["lon"])
+        distance_to_route, distance_along_route = _route_distance_km(place_lat, place_lon, route_points)
+        if distance_to_route > radius_km:
+            continue
+        amenity, tourism = tags.get("amenity"), tags.get("tourism")
+        if amenity == "charging_station" or tags.get("fuel:electricity") in {"yes", "true"}:
+            category = "ev_charging"
+        elif amenity == "fuel":
+            category = "petrol"
+        elif amenity in {"hospital", "pharmacy"}:
+            category = "hospital"
+        elif tourism == "hotel":
+            category = "hotel"
+        elif amenity == "cafe":
+            category = "cafe"
+        else:
+            category = "restaurant"
+        unique_id = f"{category}:{name.lower()}:{round(place_lat, 5)}:{round(place_lon, 5)}"
+        if unique_id in seen:
+            continue
+        seen.add(unique_id)
+        address_parts = [tags.get(key) for key in ("addr:housenumber", "addr:street", "addr:suburb", "addr:city", "addr:state", "addr:postcode") if tags.get(key)]
+        address = ", ".join(str(value) for value in address_parts) or "Address not listed in OpenStreetMap"
+        result.append({
+            "place_id": f"{item.get('type', 'node')}-{item.get('id')}",
+            "name": name,
+            "address": address,
+            "formatted_address": address,
+            "latitude": place_lat,
+            "longitude": place_lon,
+            "category": category,
+            "distance_km": round(distance_to_route, 2),
+            "distance_from_route_km": round(distance_to_route, 2),
+            "distance_from_start_km": round(distance_along_route, 2),
+            "opening_hours": tags.get("opening_hours"),
+            "phone": tags.get("phone") or tags.get("contact:phone"),
+            "website": tags.get("website") or tags.get("contact:website"),
+            "brand": tags.get("brand"),
+        })
+    result.sort(key=lambda item: (item["distance_from_start_km"], item["distance_from_route_km"]))
+    category_counts: dict[str, int] = {}
+    limited: list[dict[str, Any]] = []
+    for item in result:
+        count = category_counts.get(item["category"], 0)
+        if count >= limit_per_category:
+            continue
+        category_counts[item["category"]] = count + 1
+        limited.append(item)
+    cache.set(cache_key, limited, ttl_seconds=180)
+    return limited

@@ -30,6 +30,8 @@ interface LeafletMapViewProps {
   originCoords?: [number, number];
   destinationCoords?: [number, number];
   gpsCoords?: [number, number] | null;
+  isRouteLoading?: boolean;
+  routeError?: string;
 }
 
 export function toValidLatLng(coords: any, fallback: [number, number] = [28.472, 77.125]): [number, number] {
@@ -64,7 +66,8 @@ export function isValidLatLng(coords: any): boolean {
   }
   const nLat = Number(lat);
   const nLon = Number(lon);
-  return typeof nLat === 'number' && typeof nLon === 'number' && !isNaN(nLat) && !isNaN(nLon);
+  return Number.isFinite(nLat) && Number.isFinite(nLon) &&
+    nLat >= -90 && nLat <= 90 && nLon >= -180 && nLon <= 180;
 }
 
 export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(({
@@ -87,7 +90,9 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
   onRoutePointClick,
   originCoords,
   destinationCoords,
-  gpsCoords
+  gpsCoords,
+  isRouteLoading = false,
+  routeError = ''
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -448,60 +453,17 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
         }
       });
 
-    // 2. Draw a guaranteed A-to-B connector while the road geometry is
-    // loading or invalid. This is deliberately independent of `activeRoute`:
-    // an API response can create a route object before its geometry is usable.
-    // Without this guard the map shows two pins and no visible connection.
-    const hasUsableRoadGeometry = Boolean(
-      activeRoute?.geoPoints?.some((point) => isValidLatLng(point))
-    );
-    if ((!activeRoute || !hasUsableRoadGeometry) && originCoords && destinationCoords && isValidLatLng(originCoords) && isValidLatLng(destinationCoords)) {
-      const previewPoints: [number, number][] = [toValidLatLng(originCoords), toValidLatLng(destinationCoords)];
-      const previewLine = L.polyline(previewPoints, {
-        color: '#2563eb',
-        weight: 7,
-        opacity: 0.98,
-        lineCap: 'round',
-        lineJoin: 'round'
-      });
-      layerGroup.addLayer(previewLine);
-      const previewBounds = L.latLngBounds(previewPoints);
-      if (previewBounds.isValid()) {
-        map.fitBounds(previewBounds, {
-          paddingTopLeft: [50, 80],
-          paddingBottomRight: [50, 160],
-          maxZoom: 14,
-          animate: false
-        });
-      }
-    }
-
     // Green/yellow/orange risk overlays are intentionally omitted from the
     // base route so they cannot create duplicate-looking lines.
-    if (activeRoute && activeRoute.geoPoints && activeRoute.geoPoints.length > 0) {
-      const validActivePoints = (activeRoute.geoPoints || [])
-        .map((pt) => (isValidLatLng(pt) ? toValidLatLng(pt) : null))
+    if (activeRoute && Array.isArray(activeRoute.geoPoints)) {
+      const validActivePoints = activeRoute.geoPoints
+        .map((pt) => (isValidLatLng(pt) ? [Number(pt[0]), Number(pt[1])] as [number, number] : null))
         .filter((pt): pt is [number, number] => pt !== null);
 
-      // Guarantee that the displayed road geometry touches the exact A and B
-      // pins, even when the routing provider trims the first/last coordinate.
-      const exactStart = originCoords && isValidLatLng(originCoords) ? toValidLatLng(originCoords) : null;
-      const exactEnd = destinationCoords && isValidLatLng(destinationCoords) ? toValidLatLng(destinationCoords) : null;
-      if (validActivePoints.length >= 2) {
-        if (exactStart && Math.hypot(validActivePoints[0][0] - exactStart[0], validActivePoints[0][1] - exactStart[1]) > 0.0001) {
-          validActivePoints.unshift(exactStart);
-        }
-        if (exactEnd) {
-          const last = validActivePoints[validActivePoints.length - 1];
-          if (Math.hypot(last[0] - exactEnd[0], last[1] - exactEnd[1]) > 0.0001) {
-            validActivePoints.push(exactEnd);
-          }
-        }
-      } else if (exactStart && exactEnd) {
-        validActivePoints.push(exactStart, exactEnd);
-      }
-
-      if (validActivePoints.length > 1) {
+      console.log('[WeatherGPT route] activeRoute id:', activeRoute.id);
+      console.log('[WeatherGPT route] geoPoints received:', activeRoute.geoPoints.length);
+      console.log('[WeatherGPT route] Leaflet points:', validActivePoints.length);
+      if (validActivePoints.length >= 3) {
         // Keep a single, highly visible blue route like a normal map app. The
         // thinner overlays below add risk context without hiding the route.
         const routeHitLine = L.polyline(validActivePoints, {
@@ -539,6 +501,11 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
           lineCap: 'round',
           lineJoin: 'round'
         });
+        const renderedPointCount = routeLine.getLatLngs().length;
+        console.log('Rendered OSRM Leaflet polyline point count:', renderedPointCount);
+        if (renderedPointCount < 100) {
+          console.error('OSRM route rendering regression: expected >100 Leaflet points.');
+        }
         routeLine.on('click', handleRouteTap);
         layerGroup.addLayer(routeLine);
 
@@ -628,15 +595,6 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
               layerGroup.addLayer(segmentLine);
             }
           }
-        } else {
-          const activeLine = L.polyline(validActivePoints, {
-            color: activeRoute.strokeColor || '#2563eb',
-            weight: 6,
-            opacity: 0.95,
-            lineCap: 'round',
-            lineJoin: 'round'
-          });
-          layerGroup.addLayer(activeLine);
         }
 
         // Route labels stay hidden by default; tapping a colored segment opens
@@ -807,19 +765,6 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
     });
     layerGroup.addLayer(L.marker(endCoords, { icon: destIcon }));
 
-    // Last-resort visual connection: use the exact coordinates used by the
-    // two markers above, not only the optional props. This keeps A and B
-    // visibly connected while the route request is pending or unavailable.
-    const hasRoadGeometry = Boolean(activeRoute?.geoPoints?.some((point) => isValidLatLng(point)));
-    if (!hasRoadGeometry && isValidLatLng(startCoords) && isValidLatLng(endCoords)) {
-      layerGroup.addLayer(L.polyline([startCoords, endCoords], {
-        color: '#2563eb',
-        weight: 7,
-        opacity: 0.98,
-        lineCap: 'round',
-        lineJoin: 'round'
-      }));
-    }
 
     // 6. Real GPS User Position Marker (if active)
     if (gpsCoords && isValidLatLng(gpsCoords)) {
@@ -938,6 +883,8 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
     originCoords,
     destinationCoords,
     gpsCoords,
+    isRouteLoading,
+    routeError,
     onSelectRoute,
     onSelectRiskZone,
     onSelectNearbyPlace,
@@ -947,6 +894,11 @@ export const LeafletMapView = forwardRef<LeafletMapHandle, LeafletMapViewProps>(
   return (
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full bg-slate-900 z-10" />
+      {(isRouteLoading || routeError) && !routes.some((route) => (route.geoPoints?.length || 0) >= 3) && (
+        <div className="absolute left-3 right-3 bottom-3 z-40 rounded-xl border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-slate-200 shadow-xl backdrop-blur">
+          {routeError || 'Calculating road route…'}
+        </div>
+      )}
     </div>
   );
 });

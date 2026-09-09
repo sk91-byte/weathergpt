@@ -108,6 +108,18 @@ export const WeatherAlertsModal: React.FC<WeatherAlertsModalProps> = ({
                   {alert.description}
                 </p>
 
+                {alert.sourceUrl && (
+                  <a
+                    href={alert.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(event) => event.stopPropagation()}
+                    className="inline-flex items-center text-[11px] font-bold text-blue-600 hover:text-blue-800"
+                  >
+                    Open official source <ChevronRight className="w-3 h-3 ml-0.5" />
+                  </a>
+                )}
+
                 {/* Possible Impacts */}
                 <div className="bg-slate-50 p-2.5 rounded-xl text-xs space-y-1">
                   <span className="font-bold text-slate-700 block text-[10px] uppercase tracking-wider">

@@ -2,17 +2,32 @@
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
+from pydantic import BaseModel, Field
 
-from backend.services.place_search_service import PlaceSearchError, autocomplete, nearby_places, place_details
+from backend.services.place_search_service import PlaceSearchError, autocomplete, nearby_places, places_along_route, place_details
 
 router = APIRouter(prefix="/places", tags=["places"])
+
+
+class AlongRouteRequest(BaseModel):
+    coordinates: list[list[float]] = Field(min_length=2, max_length=2000)
+    radius_km: float = Field(default=0.8, gt=0, le=1.5)
+    limit_per_category: int = Field(default=5, ge=1, le=10)
 
 
 @router.get("/nearby")
 def nearby(latitude: float = Query(..., ge=-90, le=90), longitude: float = Query(..., ge=-180, le=180), radius_km: float = Query(5, gt=0, le=25), limit: int = Query(12, gt=0, le=20)) -> dict[str, list[dict[str, Any]]]:
     try:
         return {"places": nearby_places(latitude, longitude, radius_km, limit)}
+    except PlaceSearchError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@router.post("/along-route")
+def along_route(request: AlongRouteRequest = Body(...)) -> dict[str, list[dict[str, Any]]]:
+    try:
+        return {"places": places_along_route(request.coordinates, request.radius_km, request.limit_per_category)}
     except PlaceSearchError as exc:
         raise HTTPException(503, str(exc)) from exc
 

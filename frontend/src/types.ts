@@ -88,6 +88,7 @@ export interface DailyForecast {
 }
 
 export interface WeatherAlert {
+  sourceUrl?: string;
   id: string;
   type: 'heavy-rain' | 'flood' | 'cyclone' | 'thunderstorm' | 'heatwave' | 'dense-fog' | 'strong-winds';
   title: string;
@@ -254,7 +255,7 @@ export interface DepartureTimeOption {
 export interface NearbySafePlace {
   id: string;
   name: string;
-  category: 'restaurant' | 'cafe' | 'convenience' | 'hotel' | 'petrol' | 'hospital';
+  category: 'restaurant' | 'cafe' | 'convenience' | 'hotel' | 'petrol' | 'hospital' | 'ev_charging';
   categoryLabel: string;
   rating: number;
   reviews: number;
@@ -264,7 +265,12 @@ export interface NearbySafePlace {
   coords: { x: number; y: number; lat?: number; lng?: number };
   openStatus: string;
   shelterFeature: string;
+  routeRelevance?: string;
   phone?: string;
+  website?: string;
+  openingHours?: string;
+  distanceFromRouteMeters?: number;
+  distanceFromStartKm?: number;
 }
 
 export interface LiveNavigationState {
@@ -293,3 +299,4 @@ export interface LiveNavigationState {
   simulatedAlertActive: boolean;
   alternativeRouteAvailable: boolean;
 }
+
