@@ -8,6 +8,7 @@ import requests
 from math import cos, radians, sqrt
 
 from backend.services.cache_service import cache
+from backend.config import settings
 
 
 class PlaceSearchError(Exception):
@@ -384,6 +385,12 @@ def places_along_route(route_coordinates: list[list[float]], radius_km: float = 
     if saved is not None:
         return saved
     radius_m = max(300, min(int(radius_km * 1000), 1500))
+    if settings.geoapify_api_key:
+        try:
+            return _geoapify_places_along_route(route_points, sample_points, radius_m, radius_km, limit_per_category, cache_key)
+        except (requests.RequestException, ValueError, KeyError) as exc:
+            # Keep the existing OSM fallback if Geoapify is temporarily unavailable.
+            last_error = exc
     around_queries = "\n".join(
         f'''nwr(around:{radius_m},{latitude},{longitude})["amenity"~"^(restaurant|cafe|fast_food|fuel|hospital|pharmacy|charging_station)$"];\n'''
         f'''nwr(around:{radius_m},{latitude},{longitude})["tourism"="hotel"];'''
@@ -468,5 +475,54 @@ def places_along_route(route_coordinates: list[list[float]], radius_km: float = 
             continue
         category_counts[item["category"]] = count + 1
         limited.append(item)
+    cache.set(cache_key, limited, ttl_seconds=180)
+    return limited
+
+
+def _geoapify_places_along_route(route_points, sample_points, radius_m, radius_km, limit_per_category, cache_key):
+    categories = ",".join(("healthcare.hospital", "service.vehicle.fuel", "catering.restaurant", "catering.cafe", "accommodation.hotel", "service.vehicle.charging_station"))
+    result = []
+    seen = set()
+    for latitude, longitude in sample_points:
+        response = requests.get("https://api.geoapify.com/v2/places", params={
+            "categories": categories, "filter": f"circle:{longitude},{latitude},{radius_m}",
+            "bias": f"proximity:{longitude},{latitude}", "limit": 20,
+            "apiKey": settings.geoapify_api_key,
+        }, headers={"User-Agent": "WeatherGPT/1.0 route-amenities"}, timeout=12)
+        response.raise_for_status()
+        features = response.json().get("features", [])
+        for feature in features if isinstance(features, list) else []:
+            props = feature.get("properties", {})
+            place_lat, place_lon = props.get("lat"), props.get("lon")
+            name = str(props.get("name") or "").strip()
+            if not name or place_lat is None or place_lon is None:
+                continue
+            distance_to_route, distance_along_route = _route_distance_km(float(place_lat), float(place_lon), route_points)
+            if distance_to_route > radius_km:
+                continue
+            categories_raw = props.get("categories") or []
+            category_text = " ".join(categories_raw) if isinstance(categories_raw, list) else str(categories_raw)
+            if "charging_station" in category_text: category = "ev_charging"
+            elif "fuel" in category_text: category = "petrol"
+            elif "hospital" in category_text: category = "hospital"
+            elif "hotel" in category_text: category = "hotel"
+            elif "cafe" in category_text: category = "cafe"
+            else: category = "restaurant"
+            unique_id = f"{category}:{props.get('place_id') or name.lower()}"
+            if unique_id in seen: continue
+            seen.add(unique_id)
+            result.append({"place_id": str(props.get("place_id") or unique_id), "name": name,
+                "address": props.get("formatted") or "Address not listed", "formatted_address": props.get("formatted") or "Address not listed",
+                "latitude": float(place_lat), "longitude": float(place_lon), "category": category,
+                "distance_km": round(distance_to_route, 2), "distance_from_route_km": round(distance_to_route, 2),
+                "distance_from_start_km": round(distance_along_route, 2), "opening_hours": props.get("opening_hours"),
+                "phone": (props.get("contact") or {}).get("phone") if isinstance(props.get("contact"), dict) else None,
+                "website": (props.get("contact") or {}).get("website") if isinstance(props.get("contact"), dict) else None,
+                "brand": props.get("brand")})
+    result.sort(key=lambda item: (item["distance_from_start_km"], item["distance_from_route_km"]))
+    counts = {}; limited = []
+    for item in result:
+        if counts.get(item["category"], 0) >= limit_per_category: continue
+        counts[item["category"]] = counts.get(item["category"], 0) + 1; limited.append(item)
     cache.set(cache_key, limited, ttl_seconds=180)
     return limited
