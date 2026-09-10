@@ -106,15 +106,34 @@ def _client() -> genai.Client:
 
 
 def _response_text(response: Any) -> str:
-    """Read text across google-genai SDK response shapes."""
-    direct = getattr(response, "text", None)
+    """Read text across google-genai SDK response and JSON-like shapes.
+
+    The SDK has returned both typed objects and dictionary-like values across
+    versions. An empty ``response.text`` does not necessarily mean that the
+    provider failed; the text may still be nested under candidates/content/
+    parts. Keep extraction defensive so chat does not silently fall back when
+    Gemini actually returned a normal candidate.
+    """
+    def read_value(value: Any, key: str) -> Any:
+        if isinstance(value, dict):
+            return value.get(key)
+        return getattr(value, key, None)
+
+    direct = read_value(response, "text") or read_value(response, "output_text")
     if isinstance(direct, str) and direct.strip():
         return direct.strip()
+
     pieces: list[str] = []
-    for candidate in getattr(response, "candidates", None) or []:
-        content = getattr(candidate, "content", None)
-        for part in getattr(content, "parts", None) or []:
-            value = getattr(part, "text", None)
+    candidates = read_value(response, "candidates") or []
+    if isinstance(candidates, dict):
+        candidates = [candidates]
+    for candidate in candidates:
+        content = read_value(candidate, "content")
+        parts = read_value(content, "parts") if content is not None else None
+        if isinstance(parts, dict):
+            parts = [parts]
+        for part in parts or []:
+            value = read_value(part, "text")
             if isinstance(value, str) and value.strip():
                 pieces.append(value.strip())
     return "\n".join(pieces).strip()
@@ -174,7 +193,13 @@ def test_gemini() -> dict[str, Any]:
                 config=types.GenerateContentConfig(max_output_tokens=4),
             )
         response = _call_gemini_with_retry(_do_test, max_retries=0)
-        return {**gemini_health(), "status": "available", "reply_received": bool(_response_text(response))}
+        reply_received = bool(_response_text(response))
+        return {
+            **gemini_health(),
+            "status": "available" if reply_received else "unavailable",
+            "reply_received": reply_received,
+            **({} if reply_received else {"error_type": "empty_response"}),
+        }
     except Exception as exc:
         return {**gemini_health(), "status": "unavailable", "error_type": classify_gemini_error(exc)}
 
