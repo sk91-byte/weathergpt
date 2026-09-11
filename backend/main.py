@@ -4,6 +4,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from backend.config import settings
 
@@ -95,6 +96,11 @@ app = FastAPI(
     description="Backend for an AI-powered conversational weather application.",
     version=settings.app_version,
 )
+
+# JSON responses are often repetitive and compress very well.  This reduces
+# transfer time for route/weather payloads without touching already-compressed
+# assets; Starlette only compresses responses above this threshold.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
 # Allow local Flutter development and explicitly configured deployed frontends.
 app.add_middleware(

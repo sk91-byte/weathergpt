@@ -106,7 +106,22 @@ export function parseRouteGeometry(geometryData: any): [number, number][] {
 }
 async function fetchWithTimeout(endpoint: string, options: RequestInit = {}, timeoutMs = 20000, onSlow?: () => void) {
   const controller = new AbortController(); const slow = onSlow ? window.setTimeout(onSlow, 2800) : undefined; const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-  try { const response = await fetch(`${BACKEND_BASE_URL}${endpoint}`, { ...options, signal: controller.signal, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } }); if (!response.ok) throw new Error(`Backend request failed (${response.status})`); return response; }
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}${endpoint}`, { ...options, signal: controller.signal, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+    if (!response.ok) {
+      let detail = '';
+      try {
+        const errorPayload = await response.clone().json();
+        detail = typeof errorPayload?.detail === 'string'
+          ? errorPayload.detail
+          : typeof errorPayload?.message === 'string'
+            ? errorPayload.message
+            : typeof errorPayload?.error === 'string' ? errorPayload.error : '';
+      } catch { /* provider may return an empty/non-JSON error body */ }
+      throw new Error(`Backend request failed (${response.status})${detail ? `: ${detail}` : ''}`);
+    }
+    return response;
+  }
   finally { if (slow) window.clearTimeout(slow); window.clearTimeout(timer); }
 }
 
@@ -150,14 +165,15 @@ export async function apiGetRouteWeather(routeOrGeometry:[number,number][]|strin
   if(!routeId) throw new Error('Create a route before loading route weather.');
   const response=await fetchWithTimeout('/route/weather',{method:'POST',body:JSON.stringify({route_id:routeId})},30000,onSlow);
   const payload=await response.json(); const segments=Array.isArray(payload.segments)?payload.segments:[]; const overall=payload.overall_risk||{};
-  if (!payload.data_available || !segments.length || typeof overall.score !== 'number') throw new Error('Live route weather is currently unavailable.');
+  if (!payload.data_available || !segments.length) throw new Error('Live route weather is currently unavailable.');
   const levels=segments.map((s:any)=>String(s.risk?.level||'').toLowerCase());
   const rainRisk=levels.includes('high')?'High':levels.includes('moderate')?'Moderate':'Low';
   const numberOrNull=(value:any)=>typeof value==='number'&&Number.isFinite(value)?value:null;
-  return { safety_score:numberOrNull(overall.score)===null?null:Math.round(overall.score), rain_risk:rainRisk, waterlogging_risk:'Unavailable', wind_risk:'Unavailable', fog_risk:'Unavailable', thunderstorm_risk:'Unavailable', timeline:segments.map((s:any,i:number)=>{const probability=numberOrNull(s.weather?.rain_probability_percent); return {id:`segment-${i}`,name:`Route point ${i+1}`,expected_time:s.start_time||'Unavailable',distance_from_start_km:0,weather_condition:s.weather?.condition||'Unavailable',condition_icon:'partly-cloudy',temp_c:numberOrNull(s.weather?.temperature_c),feels_like_c:numberOrNull(s.weather?.temperature_c),rain_prob:probability,rain_intensity:probability===null?'None':probability>=70?'Heavy':probability>=40?'Moderate':probability>0?'Light':'None',precipitation_mm:numberOrNull(s.weather?.precipitation_mm),waterlogging_risk:'Unavailable',wind_speed_kmh:numberOrNull(s.weather?.wind_speed_kmh),safety_score:numberOrNull(s.risk?.score),latitude:s.location?.latitude,longitude:s.location?.longitude};}),risk_zones:[],is_live:true,source:'Live weather provider'};
+  const toSafetyScore=(riskScore:any)=>{const value=numberOrNull(riskScore); return value===null?null:Math.max(0,Math.min(100,Math.round(100-value)));};
+  return { safety_score:toSafetyScore(overall.score), rain_risk:rainRisk, waterlogging_risk:'Unavailable', wind_risk:'Unavailable', fog_risk:'Unavailable', thunderstorm_risk:'Unavailable', timeline:segments.map((s:any,i:number)=>{const probability=numberOrNull(s.weather?.rain_probability_percent); return {id:`segment-${i}`,name:`Route point ${i+1}`,expected_time:s.start_time||'Unavailable',distance_from_start_km:0,weather_condition:s.weather?.condition||'Unavailable',condition_icon:'partly-cloudy',temp_c:numberOrNull(s.weather?.temperature_c),feels_like_c:numberOrNull(s.weather?.temperature_c),rain_prob:probability,rain_intensity:probability===null?'None':probability>=70?'Heavy':probability>=40?'Moderate':probability>0?'Light':'None',precipitation_mm:numberOrNull(s.weather?.precipitation_mm),waterlogging_risk:'Unavailable',wind_speed_kmh:numberOrNull(s.weather?.wind_speed_kmh),safety_score:toSafetyScore(s.risk?.score),latitude:s.location?.latitude,longitude:s.location?.longitude,source_type:s.weather?.source_type};}),risk_zones:[],is_live:true,source:payload.data_mode === 'live_current_conditions_fallback' ? 'Live current conditions along route' : 'Live weather provider'};
 }
 
-export async function apiGetBestDepartureTime(routeId:string,_origin:ApiPoint,_destination:ApiPoint,currentSafetyScore:number|null,onSlow?:()=>void):Promise<ApiBestDepartureTimeResponse>{ const response=await fetchWithTimeout('/route/best-time',{method:'POST',body:JSON.stringify({route_id:routeId})},30000,onSlow); const payload=await response.json(); const options=(payload.alternative_times||[]).filter((x:any)=>typeof x?.risk?.score==='number').map((x:any,i:number)=>({id:`departure-${i}`,title:x.departure_time===payload.recommended_departure_time?'Recommended':'Alternative',time:x.departure_time,safety_score:x.risk.score,is_recommended:x.departure_time===payload.recommended_departure_time,note:payload.reason||'Live forecast recommendation',rain_risk:x.risk.level||'Unavailable'})); const best=options.find((x:any)=>x.is_recommended)||options[0]||null; return {route_id:routeId,current_safety_score:currentSafetyScore,warning:typeof currentSafetyScore==='number'&&currentSafetyScore<80,warning_message:typeof currentSafetyScore==='number'&&currentSafetyScore<80?'This route has some weather risk. Consider the recommended time.':'',best_departure_time:payload.recommended_departure_time||'',best_option:best,options}; }
+export async function apiGetBestDepartureTime(routeId:string,_origin:ApiPoint,_destination:ApiPoint,currentSafetyScore:number|null,onSlow?:()=>void):Promise<ApiBestDepartureTimeResponse>{ const response=await fetchWithTimeout('/route/best-time',{method:'POST',body:JSON.stringify({route_id:routeId})},30000,onSlow); const payload=await response.json(); const options=(payload.alternative_times||[]).filter((x:any)=>typeof x?.risk?.score==='number').map((x:any,i:number)=>({id:`departure-${i}`,title:x.departure_time===payload.recommended_departure_time?'Recommended':'Alternative',time:x.departure_time,safety_score:Math.max(0,Math.min(100,Math.round(100-x.risk.score))),is_recommended:x.departure_time===payload.recommended_departure_time,note:payload.reason||'Live forecast recommendation',rain_risk:x.risk.level||'Unavailable'})); const best=options.find((x:any)=>x.is_recommended)||options[0]||null; return {route_id:routeId,current_safety_score:currentSafetyScore,warning:typeof currentSafetyScore==='number'&&currentSafetyScore<60,warning_message:typeof currentSafetyScore==='number'&&currentSafetyScore<60?'This route has elevated weather risk. Consider the recommended time.':'',best_departure_time:payload.recommended_departure_time||'',best_option:best,options}; }
 
 export async function apiGetRouteExplanation(routeId:string,_params?:any,onSlow?:()=>void){const response=await fetchWithTimeout(`/route/${encodeURIComponent(routeId)}/explanation`,{},20000,onSlow);const payload=await response.json();return {...payload,explanation:Array.isArray(payload.explanation)?payload.explanation.join(' '):payload.explanation,factors:payload.explanation||[],safety_score:payload.risk_score};}
 
@@ -188,7 +204,10 @@ export async function apiGetClimateSummary(latitude: number, longitude: number, 
   return payload as ApiClimateSummary;
 }
 
-export async function apiSendChat(query:string,options:any={},onSlow?:()=>void){const response=await fetchWithTimeout('/chat',{method:'POST',body:JSON.stringify({message:query,conversation_id:options.conversation_id,language:options.language||'en',profile:options.role||'citizen',latitude:options.latitude,longitude:options.longitude,location:options.location||options.location_name||null,route_context:options.route_context||null})},30000,onSlow);return response.json();}
+// Chat may include one provider call on a cold Render instance.  Keep the
+// request alive long enough for the backend's deterministic fallback to reply,
+// while the backend circuit breaker prevents repeated Gemini hangs.
+export async function apiSendChat(query:string,options:any={},onSlow?:()=>void){const response=await fetchWithTimeout('/chat',{method:'POST',body:JSON.stringify({message:query,conversation_id:options.conversation_id,language:options.language||'en',profile:options.role||'citizen',latitude:options.latitude,longitude:options.longitude,location:options.location||options.location_name||null,route_context:options.route_context||null})},60000,onSlow);return response.json();}
 
 
 

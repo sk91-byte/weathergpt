@@ -31,18 +31,18 @@ def _with_localized_suggestions(
     profile: str,
     route_context: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Replace English fallback chips with Gemini-generated chips in the selected language."""
-    if result.get("response") and settings.gemini_api_key:
-        try:
-            result["suggestions"] = generate_follow_up_suggestions(
-                message,
-                result["response"],
-                _response_language_name(selected_language, _response_mode(message, selected_language)),
-                profile,
-                route_context,
-            )
-        except LLMServiceError:
-            pass
+    """Keep suggestion chips local so they never add another Gemini request."""
+    # Suggestions are UI shortcuts, not AI content.  They are deliberately
+    # generated from a fixed, persona-aware list in under a millisecond.
+    result.setdefault(
+        "suggestions",
+        _follow_up_suggestions(
+            _response_mode(message, selected_language),
+            profile,
+            str(result.get("intent") or "current_weather"),
+            bool(route_context),
+        ),
+    )
     return result
 
 
@@ -694,6 +694,62 @@ def _localize_hindi_response(response: str) -> str:
     return response
 
 
+def _instant_weather_template(
+    message: str,
+    weather_data: dict[str, Any],
+    location_name: str,
+    response_mode: str,
+) -> str | None:
+    """Answer common weather questions without spending a Gemini request.
+
+    Values are always taken from the just-retrieved provider payload.  This is
+    a response template, not a weather prediction or a cached final answer.
+    """
+    text = message.lower()
+    current = weather_data.get("current") if isinstance(weather_data.get("current"), dict) else {}
+    forecast = weather_data.get("forecast") if isinstance(weather_data.get("forecast"), list) else []
+    first_day = forecast[0] if forecast and isinstance(forecast[0], dict) else {}
+    temperature = current.get("temperature_c")
+    if temperature is None:
+        temperature = first_day.get("temperature_max_c")
+    rain = current.get("precipitation_probability_percent")
+    if rain is None:
+        rain = first_day.get("precipitation_probability_percent")
+    wind = current.get("wind_speed_kmh")
+    if rain is not None and any(word in text for word in ("umbrella", "chhata", "chata", "छाता", "rain", "बारिश", "baarish", "barish")):
+        try:
+            rain_value = float(rain)
+        except (TypeError, ValueError):
+            return None
+        advice = "carry an umbrella or raincoat" if rain_value >= 40 else "an umbrella is not essential, but check again before leaving"
+        if response_mode == "hi":
+            return f"{location_name} में बारिश की संभावना {round(rain_value)}% है। इसलिए {('छाता या रेनकोट साथ रखें' if rain_value >= 40 else 'छाता जरूरी नहीं है, लेकिन निकलने से पहले दोबारा अपडेट देखें')}।"
+        if response_mode == "hinglish":
+            return f"{location_name} mein rain chance {round(rain_value)}% hai. Isliye {('chhata ya raincoat saath rakho' if rain_value >= 40 else 'chhata zaroori nahi hai, lekin nikalne se pehle update check kar lo')}."
+        return f"Rain probability in {location_name} is {round(rain_value)}%. You should {advice}."
+    if temperature is not None and any(word in text for word in ("temperature", "tapman", "how hot", "how cold", "गर्मी", "तापमान")):
+        try:
+            temp_value = round(float(temperature), 1)
+        except (TypeError, ValueError):
+            return None
+        if response_mode == "hi":
+            return f"{location_name} में तापमान अभी लगभग {temp_value}°C है। पानी साथ रखें और मौसम के अनुसार कपड़े पहनें।"
+        if response_mode == "hinglish":
+            return f"{location_name} mein temperature abhi lagbhag {temp_value}°C hai. Paani saath rakho aur weather ke hisaab se kapde pehno."
+        return f"The current temperature in {location_name} is about {temp_value}°C. Keep water with you and dress for the conditions."
+    if wind is not None and any(word in text for word in ("wind", "hawa", "हवा", "windy")):
+        try:
+            wind_value = round(float(wind), 1)
+        except (TypeError, ValueError):
+            return None
+        if response_mode == "hi":
+            return f"{location_name} में हवा की गति लगभग {wind_value} किमी/घंटा है। खुले क्षेत्रों में सावधानी रखें।"
+        if response_mode == "hinglish":
+            return f"{location_name} mein hawa ki speed lagbhag {wind_value} km/h hai. Open areas mein thoda sambhal kar rahna."
+        return f"Wind speed in {location_name} is about {wind_value} km/h. Take extra care in open areas."
+    return None
+
+
 def process_chat_message(
     message: str,
     latitude: float | None = None,
@@ -713,10 +769,37 @@ def process_chat_message(
     ai_used = True
     fallback_used = False
     fallback_reason: str | None = None
+    # Most weather questions are predictable.  Parse those locally so a
+    # normal user does not pay for a Gemini interpretation call before the
+    # actual answer is generated.  Gemini remains available for novel wording.
+    local_parsed = parse_weather_query(message, previous_context)
+    local_template_question = any(
+        word in message.lower()
+        for word in ("umbrella", "chhata", "chata", "छाता", "rain", "बारिश", "baarish", "barish", "temperature", "tapman", "तापमान", "wind", "windy", "hawa", "हवा")
+    )
+    local_weather_query = local_template_question and local_parsed["intent"] != "unknown" and (
+        local_parsed.get("location")
+        or local_parsed.get("location_mode") == "current_location"
+        or previous_context.get("last_location")
+        or location
+        or latitude is not None
+    )
     try:
-        query: WeatherQuery = interpret_weather_query(message, previous_context)
+        if local_weather_query:
+            query = WeatherQuery(
+                intent=local_parsed["intent"], location=local_parsed["location"],
+                location_mode=local_parsed["location_mode"], time_reference=local_parsed["time_reference"],
+                request_type=local_parsed["request_type"],
+            )
+            # Local parsing removes one Gemini round trip, but Gemini remains
+            # available for questions that do not match an instant template.
+            ai_used = True
+            fallback_used = False
+            fallback_reason = None
+        else:
+            query = interpret_weather_query(message, previous_context)
     except LLMServiceError as exc:
-        parsed = parse_weather_query(message, previous_context)
+        parsed = local_parsed
         query = WeatherQuery(intent=parsed["intent"], location=parsed["location"], location_mode=parsed["location_mode"], time_reference=parsed["time_reference"], request_type=parsed["request_type"])
         ai_used = False
         fallback_used = True
@@ -1084,7 +1167,14 @@ def process_chat_message(
         )
         return _with_localized_suggestions(result, message, selected_language, profile, route_context)
 
-    if result["ai_used"]:
+    instant_response = _instant_weather_template(message, weather_data, resolved_location["name"], response_mode)
+    if instant_response:
+        result["response"] = instant_response
+        result["ai_used"] = False
+        result["fallback_used"] = False
+        result["fallback_reason"] = "approved_local_template"
+        result["response_source"] = "local_template"
+    elif result["ai_used"]:
         try:
             response_language = _response_language_name(selected_language, response_mode)
             result["response"] = generate_weather_response(message, query, weather_data, response_language, previous_context, profile)

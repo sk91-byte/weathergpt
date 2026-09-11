@@ -1,6 +1,8 @@
 """Service functions for retrieving weather data from IMD and Open-Meteo."""
 
 from datetime import datetime, timezone
+from copy import deepcopy
+from threading import Lock
 from typing import Any
 import logging
 
@@ -13,8 +15,12 @@ from backend.services.imd_service import IMDServiceError, get_current_weather as
 
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
-REQUEST_TIMEOUT_SECONDS = (5, 30)
+REQUEST_TIMEOUT_SECONDS = (3, 10)
 logger = logging.getLogger(__name__)
+_weather_cache: dict[tuple[str, float, float, int], tuple[float, dict[str, Any]]] = {}
+_weather_cache_lock = Lock()
+CURRENT_CACHE_SECONDS = 90.0
+FORECAST_CACHE_SECONDS = 300.0
 
 
 def _retrieved_at() -> str:
@@ -35,10 +41,10 @@ def _source_metadata(source: str, retrieved_at: str, timezone_name: str | None =
 def _http_session() -> requests.Session:
     """Create a resilient session for occasional provider/network failures."""
     retry = Retry(
-        total=2,
-        connect=2,
-        read=2,
-        status=2,
+        total=1,
+        connect=1,
+        read=1,
+        status=1,
         backoff_factor=0.6,
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=frozenset({"GET"}),
@@ -48,6 +54,32 @@ def _http_session() -> requests.Session:
     session.mount("https://", HTTPAdapter(max_retries=retry))
     session.headers.update({"User-Agent": "WeatherGPT/1.0 weather-client"})
     return session
+
+
+def _cache_key(kind: str, latitude: float, longitude: float, days: int = 0) -> tuple[str, float, float, int]:
+    return kind, round(float(latitude), 3), round(float(longitude), 3), int(days)
+
+
+def _cached(key: tuple[str, float, float, int], max_age: float) -> dict[str, Any] | None:
+    with _weather_cache_lock:
+        item = _weather_cache.get(key)
+        if not item:
+            return None
+        stored_at, payload = item
+        if (datetime.now(timezone.utc).timestamp() - stored_at) > max_age:
+            _weather_cache.pop(key, None)
+            return None
+        return deepcopy(payload)
+
+
+def _store_cached(key: tuple[str, float, float, int], payload: dict[str, Any]) -> dict[str, Any]:
+    with _weather_cache_lock:
+        # Keep this bounded on a small Render instance.
+        if len(_weather_cache) >= 256:
+            oldest = min(_weather_cache, key=lambda item: _weather_cache[item][0])
+            _weather_cache.pop(oldest, None)
+        _weather_cache[key] = (datetime.now(timezone.utc).timestamp(), deepcopy(payload))
+    return payload
 
 
 class WeatherServiceError(Exception):
@@ -123,9 +155,13 @@ def _weatherapi_current(latitude: float, longitude: float) -> dict[str, Any]:
 
 def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
     """Return current weather for the supplied coordinates."""
+    key = _cache_key("current", latitude, longitude)
+    cached = _cached(key, CURRENT_CACHE_SECONDS)
+    if cached is not None:
+        return cached
     if imd_access_configured() and is_india_coordinates(latitude, longitude):
         try:
-            return get_imd_current_weather(latitude, longitude)
+            return _store_cached(key, get_imd_current_weather(latitude, longitude))
         except IMDServiceError as exc:
             logger.info("IMD current weather unavailable; using fallback provider: %s", exc)
     try:
@@ -140,7 +176,7 @@ def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
             "timezone": "auto",
         })
     except WeatherServiceError:
-        return _weatherapi_current(latitude, longitude)
+        return _store_cached(key, _weatherapi_current(latitude, longitude))
     current = payload.get("current")
     if not isinstance(current, dict):
         raise WeatherServiceError("Open-Meteo returned no current weather data")
@@ -165,7 +201,7 @@ def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
             probability = probabilities[index]
     retrieved_at = _retrieved_at()
     timezone_name = payload.get("timezone") if isinstance(payload.get("timezone"), str) else None
-    return {
+    return _store_cached(key, {
         "location": {"latitude": latitude, "longitude": longitude},
         "current": {
             "temperature_c": current.get("temperature_2m"),
@@ -184,11 +220,16 @@ def get_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
         "is_live": True,
         "retrieved_at": retrieved_at,
         "source_metadata": _source_metadata("Open-Meteo", retrieved_at, timezone_name),
-    }
+    })
 
 
 def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> dict[str, Any]:
     """Return daily and hourly forecast data for the supplied coordinates."""
+    days = min(max(int(days), 1), 7)
+    key = _cache_key("forecast", latitude, longitude, days)
+    cached = _cached(key, FORECAST_CACHE_SECONDS)
+    if cached is not None:
+        return cached
     imd_forecast = None
     if imd_access_configured() and is_india_coordinates(latitude, longitude):
         try:
@@ -204,7 +245,7 @@ def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> di
         })
     except WeatherServiceError:
         if imd_forecast:
-            return imd_forecast
+            return _store_cached(key, imd_forecast)
         fallback = _weatherapi_request(latitude, longitude, days)
         forecast = []
         hourly_forecast = []
@@ -227,7 +268,7 @@ def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> di
                     "visibility_m": float(hour["vis_km"]) * 1000 if isinstance(hour.get("vis_km"), (int, float)) else None,
                 })
         retrieved_at = _retrieved_at()
-        return _merge_imd_daily({"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "WeatherAPI", "is_live": True, "retrieved_at": retrieved_at, "source_metadata": _source_metadata("WeatherAPI", retrieved_at)}, imd_forecast)
+        return _store_cached(key, _merge_imd_daily({"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "WeatherAPI", "is_live": True, "retrieved_at": retrieved_at, "source_metadata": _source_metadata("WeatherAPI", retrieved_at)}, imd_forecast))
     daily, hourly = payload.get("daily"), payload.get("hourly")
     daily_keys = ["time", "temperature_2m_max", "temperature_2m_min", "precipitation_sum", "precipitation_probability_max", "sunrise", "sunset", "weather_code"]
     if not isinstance(daily, dict) or not isinstance(hourly, dict) or any(not isinstance(daily.get(key), list) for key in daily_keys):
@@ -270,7 +311,7 @@ def get_weather_forecast(latitude: float, longitude: float, days: int = 7) -> di
         })
     retrieved_at = _retrieved_at()
     timezone_name = payload.get("timezone") if isinstance(payload.get("timezone"), str) else None
-    return _merge_imd_daily({"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "Open-Meteo", "is_live": True, "retrieved_at": retrieved_at, "source_metadata": _source_metadata("Open-Meteo", retrieved_at, timezone_name)}, imd_forecast)
+    return _store_cached(key, _merge_imd_daily({"location": {"latitude": latitude, "longitude": longitude}, "forecast": forecast, "hourly": hourly_forecast, "source": "Open-Meteo", "is_live": True, "retrieved_at": retrieved_at, "source_metadata": _source_metadata("Open-Meteo", retrieved_at, timezone_name)}, imd_forecast))
 
 
 def _merge_imd_daily(base: dict[str, Any], imd_forecast: dict[str, Any] | None) -> dict[str, Any]:

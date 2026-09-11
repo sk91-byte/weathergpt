@@ -2,6 +2,7 @@
 
 import json
 import logging
+import threading
 import time
 from typing import Any, Callable, Literal
 
@@ -14,6 +15,11 @@ from backend.config import settings
 
 logger = logging.getLogger(__name__)
 _gemini_client: genai.Client | None = None
+_gemini_state_lock = threading.Lock()
+_gemini_failures = 0
+_gemini_open_until = 0.0
+GEMINI_FAILURE_THRESHOLD = 2
+GEMINI_COOLDOWN_SECONDS = 30.0
 
 
 WEATHER_ASSISTANT_INSTRUCTIONS = """You are WeatherGPT, a warm, practical, conversational weather companion.
@@ -100,7 +106,9 @@ def _client() -> genai.Client:
     if _gemini_client is None:
         _gemini_client = genai.Client(
             api_key=settings.gemini_api_key,
-            http_options=types.HttpOptions(timeout=30000),
+            # A free-tier provider should fail fast enough for the deterministic
+            # weather fallback to answer instead of holding a Render worker.
+            http_options=types.HttpOptions(timeout=12000),
         )
     return _gemini_client
 
@@ -151,13 +159,24 @@ def _clean_generated_text(value: str) -> str:
 
 
 def _call_gemini_with_retry(func: Callable[[], Any], max_retries: int = 1) -> Any:
-    """Execute a Gemini API call with 1 controlled retry for transient errors."""
+    """Call Gemini with a small circuit breaker and no retry storm."""
+    global _gemini_failures, _gemini_open_until
+    now = time.monotonic()
+    with _gemini_state_lock:
+        if _gemini_open_until > now:
+            raise LLMServiceError("Gemini circuit breaker is open")
+        if _gemini_open_until:
+            _gemini_open_until = 0.0
+            _gemini_failures = 0
     last_exc = None
     for attempt in range(max_retries + 1):
         try:
             start = time.perf_counter()
             res = func()
             elapsed = time.perf_counter() - start
+            with _gemini_state_lock:
+                _gemini_failures = 0
+                _gemini_open_until = 0.0
             logger.info("Gemini call succeeded in %.2fs (attempt %d/%d)", elapsed, attempt + 1, max_retries + 1)
             return res
         except Exception as exc:
@@ -176,7 +195,14 @@ def _call_gemini_with_retry(func: Callable[[], Any], max_retries: int = 1) -> An
                 str(exc)[:500],
             )
             last_exc = exc
+            with _gemini_state_lock:
+                _gemini_failures += 1
+                if _gemini_failures >= GEMINI_FAILURE_THRESHOLD:
+                    _gemini_open_until = time.monotonic() + GEMINI_COOLDOWN_SECONDS
             if cat in {"authentication", "quota", "invalid_model"}:
+                break
+            # Retrying a slow free-tier request doubles the user-visible delay.
+            if cat in {"timeout", "network"}:
                 break
             if attempt < max_retries:
                 time.sleep(0.5)
@@ -189,15 +215,23 @@ def test_gemini() -> dict[str, Any]:
         def _do_test():
             return _client().models.generate_content(
                 model=settings.gemini_model,
-                contents="Reply with OK",
-                config=types.GenerateContentConfig(max_output_tokens=4),
+                contents="Reply with the single word OK. Do not reason aloud.",
+                config=types.GenerateContentConfig(max_output_tokens=32),
             )
         response = _call_gemini_with_retry(_do_test, max_retries=0)
         reply_received = bool(_response_text(response))
+        candidates = getattr(response, "candidates", None) or []
+        first_candidate = candidates[0] if candidates else None
+        finish_reason = getattr(first_candidate, "finish_reason", None) if first_candidate else None
+        prompt_feedback = getattr(response, "prompt_feedback", None)
+        block_reason = getattr(prompt_feedback, "block_reason", None) if prompt_feedback else None
         return {
             **gemini_health(),
             "status": "available" if reply_received else "unavailable",
             "reply_received": reply_received,
+            "candidate_count": len(candidates),
+            "finish_reason": str(finish_reason) if finish_reason else None,
+            "prompt_block_reason": str(block_reason) if block_reason else None,
             **({} if reply_received else {"error_type": "empty_response"}),
         }
     except Exception as exc:
