@@ -39,7 +39,8 @@ import {
   DEFAULT_FARMER_ADVISORY,
   INITIAL_WEATHER
 } from './data/weatherData';
-import { WeatherData, Language, APP_LANGUAGES, UserRole, DemoScenario, RouteTrip, WeatherAlert } from './types';
+import { WeatherData, Language, APP_LANGUAGES, UserRole, DemoScenario, RouteTrip, WeatherAlert, SavedPlace } from './types';
+import { loadSavedPlaces, persistSavedPlaces } from './services/savedItems';
 
 export default function App() {
   // First-time Onboarding State
@@ -82,6 +83,7 @@ export default function App() {
   });
   const [trip, setTrip] = useState<RouteTrip>(DEFAULT_ROUTE_TRIP);
   const [savedTrips, setSavedTrips] = useState<RouteTrip[]>(DEFAULT_SAVED_TRIPS);
+  const [savedPlaces, setSavedPlaces] = useState<SavedPlace[]>(() => loadSavedPlaces());
   const [tripModalMode, setTripModalMode] = useState<'details' | 'new' | 'all'>('details');
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
   const [alertCoordinates, setAlertCoordinates] = useState({ latitude: 28.6139, longitude: 77.2090 });
@@ -129,6 +131,64 @@ export default function App() {
     try {
       localStorage.setItem('weathergpt_language', newLang);
     } catch (e) {}
+  };
+
+  const handleSavePlace = (place: Omit<SavedPlace, 'id' | 'createdAt'>) => {
+    setSavedPlaces((previous) => {
+      const next: SavedPlace[] = [
+        ...previous.filter((item) => item.name.toLowerCase() !== place.name.toLowerCase()),
+        { ...place, id: `place_${Date.now()}`, createdAt: new Date().toISOString() },
+      ];
+      persistSavedPlaces(next);
+      return next;
+    });
+  };
+
+  const handleDeletePlace = (placeId: string) => {
+    setSavedPlaces((previous) => {
+      const next = previous.filter((place) => place.id !== placeId);
+      persistSavedPlaces(next);
+      return next;
+    });
+  };
+
+  const handleSelectSavedPlace = async (place: SavedPlace) => {
+    try {
+      const [latitude, longitude] = place.coords;
+      const result = await apiGetLocationWeather(latitude, longitude);
+      const liveWeather = result.weather;
+      if (!liveWeather) throw new Error('No weather returned');
+      setAlertCoordinates({ latitude, longitude });
+      setWeather((previous) => ({
+        ...previous,
+        city: result.location?.name || place.name,
+        temperature: liveWeather.temperature,
+        feelsLike: liveWeather.feels_like,
+        condition: liveWeather.condition,
+        conditionIcon: liveWeather.condition_icon as WeatherData['conditionIcon'],
+        humidity: liveWeather.humidity,
+        windSpeed: liveWeather.wind_speed,
+        windDirection: liveWeather.wind_direction,
+        rainChance: liveWeather.rain_probability,
+        maxTemp: liveWeather.maxTemp ?? previous.maxTemp,
+        minTemp: liveWeather.minTemp ?? previous.minTemp,
+        aqi: liveWeather.aqi,
+        riskScore: liveWeather.riskScore ?? previous.riskScore,
+        riskStatus: liveWeather.riskStatus ?? previous.riskStatus,
+        risks: liveWeather.risks ?? previous.risks,
+        weatherSource: liveWeather.weather_source ?? previous.weatherSource,
+        lastUpdated: 'Just now',
+      }));
+      setActiveTab('home');
+    } catch (error) {
+      console.warn('Saved place weather unavailable:', error);
+      setLocationError('Saved place weather is temporarily unavailable. Please try again.');
+    }
+  };
+
+  const handleSelectSavedTrip = (savedTrip: RouteTrip) => {
+    setTrip(savedTrip);
+    setActiveTab('map');
   };
 
   // Live GPS Geolocation Handler
@@ -458,6 +518,9 @@ export default function App() {
               currentWeather={weather}
               initialTrip={trip}
               onUpdateTrip={(updatedTrip) => setTrip(updatedTrip)}
+              savedPlaces={savedPlaces}
+              onSavePlace={handleSavePlace}
+              onSaveRoute={(savedRoute) => setSavedTrips((previous) => [savedRoute, ...previous.filter((item) => item.id !== savedRoute.id)])}
             />
           )}
 
@@ -486,6 +549,13 @@ export default function App() {
               onUserRoleChange={setUserRole}
               onSelectDemoScenario={handleSelectDemoScenario}
               onBackToHome={() => setActiveTab('home')}
+              savedPlaces={savedPlaces}
+              savedTrips={savedTrips}
+              onSavePlace={handleSavePlace}
+              onSelectSavedPlace={handleSelectSavedPlace}
+              onDeletePlace={handleDeletePlace}
+              onSelectSavedTrip={handleSelectSavedTrip}
+              onDeleteSavedTrip={(tripId) => setSavedTrips((previous) => previous.filter((item) => item.id !== tripId))}
             />
           )}
         </div>
