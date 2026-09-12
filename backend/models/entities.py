@@ -130,3 +130,21 @@ class CitizenReport(TimestampMixin, Base):
     confidence: Mapped[float | None] = mapped_column(Float)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     geometry: Mapped[object | None] = mapped_column(Geometry("POINT", srid=4326, spatial_index=True))
+
+
+class TemplateCandidate(TimestampMixin, Base):
+    """Reviewable Gemini-derived template; never used until approved."""
+    __tablename__ = "template_candidates"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    fingerprint: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    template_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    persona: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    language: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    intent: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    example_questions: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    required_live_data: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    draft_answer: Mapped[str] = mapped_column(Text, nullable=False)
+    recommended_questions: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    answer_template: Mapped[str | None] = mapped_column(Text)
+    approval_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
+    review_note: Mapped[str | None] = mapped_column(Text)

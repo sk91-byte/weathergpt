@@ -12,7 +12,7 @@ from backend.services.decision_engine import analyze_decision
 from backend.services.location_service import get_location
 from backend.services.risk_engine import calculate_risks, risk_level
 from backend.services.routing_service import RoutingServiceError, get_cached_route, get_route, sample_route
-from backend.services.weather_service import WeatherServiceError, get_weather_forecast
+from backend.services.weather_service import WeatherServiceError, get_current_weather, get_weather_forecast
 
 router = APIRouter(prefix="/route", tags=["route-intelligence"])
 
@@ -31,10 +31,26 @@ def _weather_for_route(route: dict[str, Any], departure_time: str | None = None)
     segments: list[dict[str, Any]] = []
     scores: list[int] = []
     for index, point in enumerate(samples):
+        forecast_source = "forecast"
         try:
             forecast = get_weather_forecast(point["latitude"], point["longitude"], days=2)
         except WeatherServiceError:
-            continue
+            try:
+                current = get_current_weather(point["latitude"], point["longitude"])
+            except WeatherServiceError:
+                continue
+            current_values = current.get("current") if isinstance(current, dict) else {}
+            forecast = {"hourly": [{
+                "time": current_values.get("observed_at"),
+                "temperature_c": current_values.get("temperature_c"),
+                "precipitation_probability_percent": current_values.get("precipitation_probability_percent"),
+                "precipitation_mm": current_values.get("precipitation_mm"),
+                "rain_mm": current_values.get("rain_mm"),
+                "wind_speed_kmh": current_values.get("wind_speed_kmh"),
+                "weather_code": current_values.get("weather_code"),
+                "condition": current_values.get("condition"),
+            }], "forecast": [], "source": current.get("source", "Open-Meteo current conditions"), "is_live": current.get("is_live", True)}
+            forecast_source = "current_conditions"
         hours = forecast.get("hourly", [])
         # WeatherAPI fallback responses expose daily forecast data but may not
         # expose hourly data. Preserve honest risk analysis by scoring the
@@ -65,7 +81,7 @@ def _weather_for_route(route: dict[str, Any], departure_time: str | None = None)
         if isinstance(score, int):
             scores.append(score)
         weather = hours[0] if hours else (forecast.get("forecast") or [{}])[0]
-        segments.append({"index": index + 1, "location": point, "start_time": weather.get("time"), "end_time": hours[-1].get("time") if hours else None, "weather": {"temperature_c": weather.get("temperature_c"), "rain_probability_percent": weather.get("precipitation_probability_percent"), "precipitation_mm": weather.get("precipitation_mm"), "wind_speed_kmh": weather.get("wind_speed_kmh"), "visibility_m": weather.get("visibility_m"), "condition": weather.get("condition") or "weather forecast"}, "risk": {"score": score, "level": overall.get("level"), "components": risks}})
+        segments.append({"index": index + 1, "location": point, "start_time": weather.get("time"), "end_time": hours[-1].get("time") if hours else None, "weather": {"temperature_c": weather.get("temperature_c"), "rain_probability_percent": weather.get("precipitation_probability_percent"), "precipitation_mm": weather.get("precipitation_mm"), "wind_speed_kmh": weather.get("wind_speed_kmh"), "visibility_m": weather.get("visibility_m"), "condition": weather.get("condition") or "weather forecast", "source_type": forecast_source}, "risk": {"score": score, "level": overall.get("level"), "components": risks}})
     if not segments:
         return {"overall_risk": {"score": None, "level": "unavailable"}, "segments": [], "data_available": False}
     # The highest meaningful segment is weighted most heavily; this prevents a
@@ -73,7 +89,7 @@ def _weather_for_route(route: dict[str, Any], departure_time: str | None = None)
     peak = max(scores) if scores else None
     average = sum(scores) / len(scores) if scores else None
     final_score = round(peak * 0.7 + average * 0.3) if peak is not None and average is not None else peak
-    return {"overall_risk": {"score": final_score, "level": risk_level(final_score)}, "segments": segments, "peak_segment": max(segments, key=lambda item: item["risk"].get("score") or -1), "data_available": True}
+    return {"overall_risk": {"score": final_score, "level": risk_level(final_score)}, "segments": segments, "peak_segment": max(segments, key=lambda item: item["risk"].get("score") or -1), "data_available": True, "data_mode": "live_current_conditions_fallback" if any(item["weather"].get("source_type") == "current_conditions" for item in segments) else "live_forecast"}
 
 
 @router.post("")

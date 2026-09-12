@@ -1,5 +1,6 @@
 """Business workflow for location-aware WeatherGPT chat."""
 
+import json
 import re
 from typing import Any
 
@@ -13,6 +14,7 @@ from backend.services.weather_service import WeatherServiceError, get_current_we
 from backend.services.conversation_service import add_message, conversation_context, create_conversation, get_conversation
 from backend.services.json_data_service import get_profile
 from backend.services.decision_engine import analyze_decision
+from backend.services.template_service import canonical_intent, match_template, match_template_for_intent, recommended_questions, save_pending_candidate
 
 
 def _response_language_name(selected_language: dict[str, Any], response_mode: str) -> str:
@@ -32,11 +34,17 @@ def _with_localized_suggestions(
     route_context: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """Keep suggestion chips local so they never add another Gemini request."""
-    # Suggestions are UI shortcuts, not AI content.  They are deliberately
-    # generated from a fixed, persona-aware list in under a millisecond.
+    # Suggestions are UI shortcuts, not AI content. They come from the
+    # approved template catalogue and never trigger a Gemini request.
+    template_questions = recommended_questions(
+        profile,
+        _response_mode(message, selected_language),
+        bool(route_context),
+        intent=str(result.get("intent") or "") or None,
+    )
     result.setdefault(
         "suggestions",
-        _follow_up_suggestions(
+        template_questions or _follow_up_suggestions(
             _response_mode(message, selected_language),
             profile,
             str(result.get("intent") or "current_weather"),
@@ -856,7 +864,16 @@ def process_chat_message(
     }
     result["language"] = selected_language
     result["analysis"] = _query_analysis(query, response_mode, profile, message)
-    result["suggestions"] = _follow_up_suggestions(response_mode, profile, query.intent, bool(route_context))
+    stable_intent = canonical_intent(query.request_type or query.intent)
+    result["suggestions"] = recommended_questions(profile, response_mode, bool(route_context), intent=stable_intent) or _follow_up_suggestions(response_mode, profile, query.intent, bool(route_context))
+    matched_template = match_template(message, profile, response_mode, bool(route_context))
+    # A Hindi, Gujarati, or Hinglish wording may not share English keywords
+    # with the catalogue. The parsed canonical intent is language-neutral, so
+    # safely reuse the same approved template while filling fresh live data.
+    if matched_template is None:
+        matched_template = match_template_for_intent(stable_intent, profile, response_mode, bool(route_context))
+    if matched_template:
+        result["template_id"] = matched_template.get("template_id")
     small_talk = _small_talk_response(message, response_mode)
     if small_talk:
         # Greetings are conversational requests too. Let Gemini generate the
@@ -1167,7 +1184,11 @@ def process_chat_message(
         )
         return _with_localized_suggestions(result, message, selected_language, profile, route_context)
 
-    instant_response = _instant_weather_template(message, weather_data, resolved_location["name"], response_mode)
+    instant_intents = {"rain_forecast", "umbrella_need", "current_temperature"}
+    instant_response = (
+        _instant_weather_template(message, weather_data, resolved_location["name"], response_mode)
+        if matched_template and matched_template.get("intent") in instant_intents else None
+    )
     if instant_response:
         result["response"] = instant_response
         result["ai_used"] = False
@@ -1208,6 +1229,20 @@ def process_chat_message(
     }
     add_message(conversation_id, "user", message)
     add_message(conversation_id, "assistant", result["response"], context=context)
+    if result.get("response_source") == "Gemini" and not matched_template:
+        try:
+            save_pending_candidate(
+                question=message,
+                answer=result["response"],
+                persona=profile,
+                language=response_mode,
+                intent=stable_intent,
+                required_live_data=[key for key in ("temperature_c", "rain_probability_percent", "wind_speed_kmh", "humidity_percent", "weather_source", "retrieved_at") if key in json.dumps(weather_data)],
+                follow_up_questions=result.get("suggestions", []),
+            )
+        except Exception:
+            # Template learning must never make a successful chat fail.
+            pass
     from backend.services.json_data_service import update_profile
     update_profile(
         {

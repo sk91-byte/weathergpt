@@ -33,7 +33,7 @@ def _now() -> str:
 
 
 def _empty() -> dict[str, Any]:
-    return {"schema_version": 1, "users": {}, "preferences": {}, "conversations": {}, "messages": {}, "locations": {}, "routes": {}, "alerts": [], "data_sources": [], "reports": [], "decisions": {}}
+    return {"schema_version": 1, "users": {}, "preferences": {}, "conversations": {}, "messages": {}, "locations": {}, "routes": {}, "alerts": [], "data_sources": [], "reports": [], "decisions": {}, "template_candidates": []}
 
 
 def _read() -> dict[str, Any]:
@@ -189,3 +189,20 @@ def save_decision(decision: dict[str, Any]) -> dict[str, Any]:
 def get_saved_decision(decision_id: str) -> dict[str, Any] | None:
     with _lock:
         return _read()["decisions"].get(decision_id)
+
+
+def save_template_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    """Store a new Gemini-derived pattern for review, never auto-approve it."""
+    with _lock:
+        data = _read()
+        item = {**candidate, "approval_status": "pending", "created_at": _now()}
+        data["template_candidates"].append(item)
+        data["template_candidates"] = data["template_candidates"][-500:]
+        _write(data)
+        return item
+
+
+def list_template_candidates(status: str | None = None) -> list[dict[str, Any]]:
+    with _lock:
+        values = _read().get("template_candidates", [])
+        return values if not status else [item for item in values if item.get("approval_status") == status]

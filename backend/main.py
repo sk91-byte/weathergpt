@@ -15,6 +15,7 @@ from backend.api.health import router as health_router  # noqa: E402
 from backend.api.chat import router as chat_router  # noqa: E402
 from backend.api.weather import router as weather_router  # noqa: E402
 from backend.api.languages import router as languages_router  # noqa: E402
+from backend.api.templates import router as templates_router  # noqa: E402
 
 # --- Optional routers (load gracefully if dependencies are missing) ---
 location_router = None
@@ -124,6 +125,7 @@ app.include_router(health_router)
 app.include_router(weather_router)
 app.include_router(chat_router)
 app.include_router(languages_router)
+app.include_router(templates_router)
 
 # Optional routers registered only if they loaded successfully
 _optional_routers = [
