@@ -6,7 +6,8 @@ import {
   NearbySafePlace,
   DepartureTimeOption,
   RouteSamplingPoint,
-  RouteTrip
+  RouteTrip,
+  SavedPlace
 } from '../types';
 import { DESTINATION_PRESETS, DestinationPreset } from '../data/liveMapData';
 import { AppLanguage } from '../utils/routeWeatherSummary';
@@ -53,6 +54,9 @@ interface WeatherMapScreenProps {
   isLocating?: boolean;
   initialTrip?: RouteTrip;
   onUpdateTrip?: (trip: RouteTrip) => void;
+  savedPlaces?: SavedPlace[];
+  onSavePlace?: (place: Omit<SavedPlace, 'id' | 'createdAt'>) => void;
+  onSaveRoute?: (trip: RouteTrip) => void;
   onBackToHome?: () => void;
   onSelectCity?: (city: string) => void;
   initialLayer?: string;
@@ -66,6 +70,9 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   isLocating,
   initialTrip,
   onUpdateTrip,
+  savedPlaces = [],
+  onSavePlace,
+  onSaveRoute,
   onBackToHome,
   onSelectCity,
   initialLayer,
@@ -82,6 +89,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const [originQuery, setOriginQuery] = useState<string>(
     initialTrip?.from || (currentWeather?.city ? `${currentWeather.city} (Current Location)` : 'DLF CyberCity, Gurgaon')
   );
+  const [originAddress, setOriginAddress] = useState<string>(initialTrip?.from || '');
   const [originCoords, setOriginCoords] = useState<[number, number]>(
     (initialTrip as any)?.originCoords ||
     ((currentWeather as any)?.latitude && (currentWeather as any)?.longitude
@@ -95,6 +103,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const [destinationQuery, setDestinationQuery] = useState<string>(
     (initialTrip as any)?.destinationCoords ? initialTrip?.to || '' : ''
   );
+  const [destinationAddress, setDestinationAddress] = useState<string>(initialTrip?.to || '');
   const [destinationCoords, setDestinationCoords] = useState<[number, number] | null>(
     (initialTrip as any)?.destinationCoords || null
   );
@@ -185,6 +194,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             }
 
             setOriginName(resolvedLabel);
+            setOriginAddress(resolvedLabel);
             setOriginQuery(resolvedLabel);
 
             if (onUpdateTrip) {
@@ -252,6 +262,11 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
       const requestId = ++routeRequestIdRef.current;
       setIsAnalyzing(true);
       setRouteError('');
+      // Amenities load after routing and weather. Mark them loading now so
+      // the panel cannot look like a completed empty search.
+      setIsLoadingNearbyPlaces(true);
+      setNearbyPlacesError(null);
+      setNearbyPlaces([]);
       const wakeupTimer = setTimeout(() => {
         setIsRenderWakingUp(true);
       }, 2500);
@@ -286,7 +301,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           type: 'recommended',
           distanceKm: routeData.distance_km,
           durationMinutes: routeData.duration_minutes,
-          safetyScore: 0,
+          safetyScore: null,
           summaryCondition: 'Loading live weather…',
           rainRisk: 'Unavailable',
           waterloggingRisk: 'Unavailable',
@@ -391,7 +406,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           type: 'recommended',
           distanceKm: calculatedDistanceKm,
           durationMinutes: calculatedDurationMin,
-          safetyScore: weatherAnalysis.safety_score ?? 0,
+          safetyScore: weatherAnalysis.safety_score,
           summaryCondition: weatherAnalysis.timeline?.[0]?.weather_condition || 'Unavailable',
           rainRisk: (weatherAnalysis.rain_risk as any) || 'Unavailable',
           waterloggingRisk: (weatherAnalysis.waterlogging_risk as any) || 'Unavailable',
@@ -541,12 +556,15 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const handleSwapLocations = () => {
     const tempName = originName;
     const tempCoords = originCoords;
+    const tempAddress = originAddress;
     setOriginName(destinationName);
     setOriginCoords(destinationCoords);
     setOriginQuery(destinationName);
+    setOriginAddress(destinationAddress);
     setDestinationName(tempName);
     setDestinationCoords(tempCoords);
     setDestinationQuery(tempName);
+    setDestinationAddress(tempAddress);
   };
 
   // Set Route & Destination from Plan Trip Modal
@@ -561,9 +579,11 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     setOriginName(params.originName);
     setOriginCoords(params.originCoords);
     setOriginQuery(params.originName);
+    setOriginAddress(params.originName);
     setDestinationName(params.destinationName);
     setDestinationCoords(params.destinationCoords);
     setDestinationQuery(params.destinationName);
+    setDestinationAddress(params.destinationName);
     setTravelMode(params.travelMode);
     setLeaveByTime(params.leaveBy);
 
@@ -581,6 +601,9 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         id: `trip-${Date.now()}`,
         from: params.originName,
         to: params.destinationName,
+        originCoords: params.originCoords,
+        destinationCoords: params.destinationCoords,
+        travelMode: params.travelMode,
         leaveBy: params.leaveBy,
         estDuration: '30 mins',
         status: 'Weather-Safe Corridor Calculated on Map',
@@ -621,6 +644,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         const resolvedCoords: [number, number] = [res.latitude, res.longitude];
         const resolvedName = res.name || destQuery.trim();
         setDestinationName(resolvedName);
+        setDestinationAddress(resolvedName);
         setDestinationCoords(resolvedCoords);
         setDestinationQuery(resolvedName);
 
@@ -629,6 +653,9 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             id: `trip-${Date.now()}`,
             from: originName,
             to: resolvedName,
+            originCoords,
+            destinationCoords: resolvedCoords,
+            travelMode,
             leaveBy: leaveByTime,
             estDuration: '35 mins',
             status: 'Route Active on Live Map',
@@ -813,18 +840,23 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             setOriginName(item.name);
             setOriginCoords([item.coords?.lat ?? item.lat, item.coords?.lon ?? item.lon]);
             setOriginQuery(item.name);
+            setOriginAddress(item.address || item.name);
           }}
           onSelectDestinationPreset={(item) => {
             setDestinationName(item.name);
             setDestinationCoords([item.coords?.lat ?? item.lat, item.coords?.lon ?? item.lon]);
             setDestinationQuery(item.name);
+            setDestinationAddress(item.address || item.name);
           }}
+          originAddress={originAddress}
+          destinationAddress={destinationAddress}
           presets={DESTINATION_PRESETS}
           currentLocationName={originName}
           selectedDestinationName={destinationName}
           onClearDestination={() => {
             setDestinationName('');
             setDestinationQuery('');
+            setDestinationAddress('');
             setDestinationCoords(null);
             setRouteError('');
             setRoutes([]);
@@ -839,7 +871,37 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           onSwapLocations={handleSwapLocations}
           onOpenPlanTripModal={() => setShowPlanTripModal(true)}
           onSubmitDestination={handleQuickSubmitDestination}
+          onSavePlace={onSavePlace}
+          savedPlaceNames={savedPlaces.map((place) => place.name)}
         />
+      )}
+
+      {onSaveRoute && destinationCoords && activeRoute && !isNavigating && (
+        <div className="relative z-20 px-3 pt-2 pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => onSaveRoute({
+              id: activeRoute.id,
+              from: originName,
+              to: destinationName,
+              originCoords,
+              destinationCoords,
+              travelMode,
+              leaveBy: leaveByTime,
+              estDuration: `${Math.round(activeRoute.durationMinutes)} mins`,
+              status: activeRoute.badge,
+              statusType: activeRoute.color === 'green' ? 'clear' : 'rain',
+              weatherOnRoute: activeRoute.summaryCondition,
+              safetyScore: activeRoute.safetyScore,
+              recommendation: activeRoute.departureAdvice,
+              stops: [],
+              alternativeAdvice: activeRoute.whyThisRoute
+            })}
+            className="w-full py-2 rounded-xl bg-slate-900 text-white text-xs font-bold border border-slate-700 hover:bg-slate-800 transition cursor-pointer"
+          >
+            ★ Save this route for later
+          </button>
+        </div>
       )}
 
       {/* Main Interactive Leaflet Map Canvas or Placeholder */}
@@ -899,6 +961,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               isOpen={isChatOpen}
               onClose={() => setIsChatOpen(false)}
               language={language}
+              userRole={userRole}
               routeContext={{
                 origin: originName,
                 destination: destinationName,
@@ -908,7 +971,19 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
                 summaryCondition: activeRoute?.summaryCondition,
                 bestDepartureTime: departureOptions.find((d) => d.isRecommended)?.time,
                 distanceKm: activeRoute?.distanceKm,
-                durationMinutes: activeRoute?.durationMinutes
+                durationMinutes: activeRoute?.durationMinutes,
+                destinationCoords: destinationCoords || undefined,
+                currentTemperature: activeRoute?.waypoints?.[0]?.temp,
+                currentWindSpeed: activeRoute?.waypoints?.[0]?.windSpeed,
+                nearbyPlaces: nearbyPlaces.slice(0, 30).map((place) => ({
+                  name: place.name,
+                  category: place.category,
+                  address: place.address,
+                  distanceFromRouteMeters: place.distanceFromRouteMeters,
+                  distanceFromStartKm: place.distanceFromStartKm,
+                  openStatus: place.openStatus,
+                  phone: place.phone,
+                }))
               }}
             />
           </>
@@ -961,7 +1036,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
       )}
 
       {/* Route Comparison Bottom Drawer */}
-      {destinationName && !isNavigating && !isAnalyzing && safeRoutes.length > 0 && (
+      {destinationName && !isNavigating && safeRoutes.length > 0 && (
         <RouteComparisonDrawer
           routes={safeRoutes}
           activeRouteId={activeRouteId}
@@ -973,6 +1048,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           onChangeLanguage={setLanguage}
           userRole={userRole}
           currentWeather={currentWeather}
+          isWeatherLoading={isAnalyzing}
           onStartNavigation={() => {
             setIsNavigating(true);
             setVehicleProgress(0);

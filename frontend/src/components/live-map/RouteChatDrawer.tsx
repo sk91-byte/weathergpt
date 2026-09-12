@@ -32,6 +32,15 @@ interface RouteChatDrawerProps {
     destinationCoords?: [number, number];
     currentTemperature?: number;
     currentWindSpeed?: number;
+    nearbyPlaces?: Array<{
+      name: string;
+      category?: string;
+      address?: string;
+      distanceFromRouteMeters?: number;
+      distanceFromStartKm?: number;
+      openStatus?: string;
+      phone?: string;
+    }>;
   };
 }
 
@@ -199,7 +208,8 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
           best_departure_time: routeContext.bestDepartureTime,
           distance_km: routeContext.distanceKm,
           duration_minutes: routeContext.durationMinutes,
-          destination_coords: routeContext.destinationCoords
+          destination_coords: routeContext.destinationCoords,
+          nearby_places: routeContext.nearbyPlaces || []
         }
       });
 
