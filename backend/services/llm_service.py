@@ -361,7 +361,7 @@ def generate_weather_response(
     prompt = (
         f"Answer in {language}. Be conversational and useful, not just a data dump. "
         f"The user's persona is {profile}; tailor examples and practical actions to that persona. "
-        f"Use ONLY the JSON weather data below and do not add values that are absent. "
+        f"Use ONLY the JSON weather data below and do not add values that are absent. If recent route context contains nearby_places, use only those real mapped places for location recommendations; never invent a café, hotel, hospital, or other venue. "
         f"Give the direct answer first, then practical advice and a brief reason. "
         f"If the question is a follow-up, use the recent context naturally.\n"
         f"Recent conversation context: {context_text}\n"
