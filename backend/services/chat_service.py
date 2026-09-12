@@ -1189,15 +1189,12 @@ def process_chat_message(
         )
         return _with_localized_suggestions(result, message, selected_language, profile, route_context)
 
-    instant_intents = {"rain_forecast", "umbrella_need", "current_temperature"}
-    locally_rendered_languages = {"en", "hi", "gu", "hinglish"}
-    instant_response = (
-        _instant_weather_template(message, weather_data, resolved_location["name"], response_mode)
-        if matched_template
-        and matched_template.get("intent") in instant_intents
-        and response_mode in locally_rendered_languages
-        else None
-    )
+    # Approved templates identify the intent and provide fast follow-up chips,
+    # but conversational answers must still go through the configured AI
+    # provider chain so persona, language, and wording are handled by Groq.
+    # _instant_weather_template remains available only as a final deterministic
+    # fallback when every AI provider is unavailable.
+    instant_response = None
     if instant_response:
         result["response"] = instant_response
         result["ai_used"] = False
