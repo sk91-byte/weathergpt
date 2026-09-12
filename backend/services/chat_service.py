@@ -1190,9 +1190,13 @@ def process_chat_message(
         return _with_localized_suggestions(result, message, selected_language, profile, route_context)
 
     instant_intents = {"rain_forecast", "umbrella_need", "current_temperature"}
+    locally_rendered_languages = {"en", "hi", "gu", "hinglish"}
     instant_response = (
         _instant_weather_template(message, weather_data, resolved_location["name"], response_mode)
-        if matched_template and matched_template.get("intent") in instant_intents else None
+        if matched_template
+        and matched_template.get("intent") in instant_intents
+        and response_mode in locally_rendered_languages
+        else None
     )
     if instant_response:
         result["response"] = instant_response
