@@ -7,6 +7,7 @@ fully functional without PostgreSQL.
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from backend.config import settings
 
@@ -33,9 +34,12 @@ _database_url = _async_database_url(settings.database_url)
 engine = create_async_engine(
     _database_url,
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-    pool_timeout=10,
+    # The synchronous FastAPI handlers call small async repository operations
+    # through asyncio.run(), which creates a new event loop per operation.
+    # asyncpg pooled connections belong to the loop that created them; reusing
+    # them across Render requests causes "Future attached to a different loop".
+    # NullPool opens/closes a connection per operation and is loop-safe here.
+    poolclass=NullPool,
 ) if settings.database_url else None
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False) if engine else None
 
