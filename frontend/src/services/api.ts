@@ -5,7 +5,7 @@ export interface ApiAutocompleteSuggestion { place_id: string; name: string; for
 export interface ApiRouteResponse { route_id: string; origin: ApiPoint; destination: ApiPoint; travel_mode: string; distance_km: number; duration_minutes: number; geometry: [number, number][]; steps: any[]; is_live: boolean; data_source: string; }
 export interface ApiRouteWeatherResponse { safety_score: number | null; rain_risk: any; waterlogging_risk: any; wind_risk: any; fog_risk: any; thunderstorm_risk: any; timeline: any[]; risk_zones: any[]; is_live: boolean; source: string; }
 export interface ApiBestDepartureTimeResponse { route_id: string; current_safety_score: number | null; warning: boolean; warning_message: string; best_departure_time: string; best_option: any; options: any[]; }
-export interface ApiPointWeatherResponse { latitude:number; longitude:number; location_name:string; temperature:number | null; feels_like:number | null; condition:string; condition_icon:string; rain_probability:number | null; current_precipitation:number | null; humidity:number | null; wind_speed:number | null; wind_direction:string; visibility?:number; weather_risk?:string; nearby_alerts?:string[]; updated_time?:string; weather_source:string; is_live:boolean; route_point_info?:any; }
+export interface ApiPointWeatherResponse { latitude:number; longitude:number; location_name:string; temperature:number | null; feels_like:number | null; condition:string; condition_icon:string; rain_probability:number | null; current_precipitation:number | null; humidity:number | null; wind_speed:number | null; wind_direction:string; visibility?:number; weather_risk?:string; nearby_alerts?:string[]; updated_time?:string; weather_source:string; is_live:boolean; route_point_info?:any; maxTemp?: number; minTemp?: number; aqi?: number | null; riskScore?: number; riskStatus?: string; risks?: any; }
 export interface ApiNearbyPlaceItem { id:string; name:string; category:any; category_label:string; rating:number; reviews:number; distance_meters:number; walking_minutes:number; address:string; latitude:number; longitude:number; open_status:string; shelter_feature:string; route_relevance:string; phone?:string; website?:string; opening_hours?:string; distance_from_route_km?:number; distance_from_start_km?:number; is_live:boolean; }
 export interface ApiNearbyPlacesResponse { places: ApiNearbyPlaceItem[]; recommended_wait_place?: ApiNearbyPlaceItem; is_live:boolean; }
 export interface ApiClimateSummary {
@@ -80,8 +80,6 @@ export async function apiGetNearbyAlerts(latitude: number, longitude: number, ra
 export const BACKEND_BASE_URL = ((import.meta as any).env?.VITE_BACKEND_BASE_URL || 'https://weathergpt-bjhy.onrender.com').replace(/\/$/, '');
 let latestRouteId: string | null = null;
 
-// Accept GeoJSON, plain coordinate arrays, or point objects and always return
-// Leaflet coordinates as [latitude, longitude].
 export function parseRouteGeometry(geometryData: any): [number, number][] {
   let rawCoords: any[] = [];
   if (Array.isArray(geometryData)) rawCoords = geometryData;
@@ -155,7 +153,6 @@ export async function apiCalculateRoute(origin: ApiPoint, destination: ApiPoint,
   const payload = await response.json();
   const rawGeometry = payload.geometry ?? payload.coordinates ?? payload.route?.geometry ?? payload.routes?.[0]?.geometry;
   const geometry = parseRouteGeometry(rawGeometry);
-  console.table({ routeId: payload.route_id, geometryType: rawGeometry?.type, coordinateCount: rawGeometry?.coordinates?.length ?? geometry.length, firstBackendCoordinate: rawGeometry?.coordinates?.[0], lastBackendCoordinate: rawGeometry?.coordinates?.at?.(-1), firstLeafletPoint: geometry[0], lastLeafletPoint: geometry.at(-1) });
   if (!payload.route_id || geometry.length < 3) throw new Error('Road route unavailable. No straight-line route is shown.');
   latestRouteId = payload.route_id;
   return { ...payload, geometry, is_live: true, data_source: 'OSRM road geometry' };
@@ -188,12 +185,56 @@ export async function apiGetPlacesAlongRoute(routePoints:[number,number][], radi
 export async function apiGetPointWeather(latitude:number,longitude:number,onSlow?:()=>void):Promise<ApiPointWeatherResponse|null>{const response=await fetchWithTimeout(`/weather/current?latitude=${latitude}&longitude=${longitude}`,{},20000,onSlow);const payload=await response.json();const c=payload.current;if(!c || typeof c !== 'object') throw new Error('Weather provider returned no current conditions.');const numberOrNull=(value:any)=>typeof value==='number'&&Number.isFinite(value)?value:null;return {latitude,longitude,location_name:'Selected map location',temperature:numberOrNull(c.temperature_c),feels_like:numberOrNull(c.apparent_temperature_c),condition:typeof c.condition==='string'?c.condition:'Unavailable',condition_icon:'partly-cloudy',rain_probability:numberOrNull(c.precipitation_probability_percent),current_precipitation:numberOrNull(c.rain_mm ?? c.precipitation_mm),humidity:numberOrNull(c.humidity_percent),wind_speed:numberOrNull(c.wind_speed_kmh),wind_direction:typeof c.wind_direction_degrees==='number'?`${c.wind_direction_degrees}°`:'Unavailable',updated_time:typeof c.observed_at==='string'?c.observed_at:undefined,weather_source:payload.source||'Weather provider',is_live:true};}
 
 export async function apiGetLocationWeather(latitude:number, longitude:number, onSlow?:()=>void){
-  const [weather, location] = await Promise.all([
+  const [weather, location, forecastResponse, riskResponse, aqi] = await Promise.allSettled([
     apiGetPointWeather(latitude, longitude, onSlow),
-    apiResolveLocation(undefined, latitude, longitude, onSlow).catch(() => ({ name: 'Current location', latitude, longitude }))
+    apiResolveLocation(undefined, latitude, longitude, onSlow).catch(() => ({ name: 'Current location', latitude, longitude })),
+    fetchWithTimeout(`/weather/forecast?latitude=${latitude}&longitude=${longitude}&days=1`, {}, 20000, onSlow).then(r => r.json()).catch(() => null),
+    fetchWithTimeout(`/decision/risk?latitude=${latitude}&longitude=${longitude}`, {}, 20000, onSlow).then(r => r.json()).catch(() => null),
+    apiGetAirQuality(latitude, longitude, onSlow)
   ]);
-  if (!weather) throw new Error('Current weather is unavailable.');
-  return { weather, location };
+
+  if (weather.status === 'rejected' || !weather.value) throw new Error('Current weather is unavailable.');
+  const w = weather.value;
+  const l = location.status === 'fulfilled' ? location.value : { name: 'Current location', latitude, longitude };
+  
+  if (forecastResponse.status === 'fulfilled' && forecastResponse.value?.forecast?.[0]) {
+    const today = forecastResponse.value.forecast[0];
+    w.maxTemp = today.temperature_max_c;
+    w.minTemp = today.temperature_min_c;
+    if (w.rain_probability == null) {
+      w.rain_probability = today.precipitation_probability_percent;
+    }
+  }
+
+  w.aqi = aqi.status === 'fulfilled' ? aqi.value : null;
+
+  if (riskResponse.status === 'fulfilled' && riskResponse.value?.risk_score != null) {
+    w.riskScore = riskResponse.value.risk_score;
+    w.riskStatus = riskResponse.value.risk_level;
+    const comps = riskResponse.value.risk_components || {};
+    w.risks = {
+      rain: comps.rain?.level || 'LOW',
+      flood: comps.flood?.level || 'LOW',
+      lightning: comps.lightning?.level || 'LOW',
+      heat: comps.heat?.level || 'LOW'
+    };
+  }
+
+  return { weather: w, location: l };
+}
+
+export async function apiGetAirQuality(latitude: number, longitude: number, onSlow?: () => void) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const response = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&current=european_aqi`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data?.current?.european_aqi ?? null;
+  } catch (e) {
+    return null;
+  }
 }
 
 export async function apiGetClimateSummary(latitude: number, longitude: number, startYear: number, endYear: number, onSlow?:()=>void): Promise<ApiClimateSummary> {
@@ -204,10 +245,11 @@ export async function apiGetClimateSummary(latitude: number, longitude: number, 
   return payload as ApiClimateSummary;
 }
 
-// Chat may include one provider call on a cold Render instance.  Keep the
-// request alive long enough for the backend's deterministic fallback to reply,
-// while the backend circuit breaker prevents repeated Gemini hangs.
 export async function apiSendChat(query:string,options:any={},onSlow?:()=>void){const response=await fetchWithTimeout('/chat',{method:'POST',body:JSON.stringify({message:query,conversation_id:options.conversation_id,language:options.language||'en',profile:options.role||'citizen',latitude:options.latitude,longitude:options.longitude,location:options.location||options.location_name||null,route_context:options.route_context||null})},60000,onSlow);return response.json();}
 
-
-
+export async function apiGetRecommendedQuestions(persona:string, language:string, hasRoute=false):Promise<string[]> {
+  const params = new URLSearchParams({persona, language, has_route: String(hasRoute)});
+  const response = await fetchWithTimeout(`/templates/recommended?${params.toString()}`, {}, 8000);
+  const payload = await response.json();
+  return Array.isArray(payload.questions) ? payload.questions.filter((item:any)=>typeof item === 'string').slice(0, 4) : [];
+}

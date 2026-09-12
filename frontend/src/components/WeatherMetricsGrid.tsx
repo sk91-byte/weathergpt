@@ -27,7 +27,7 @@ export const WeatherMetricsGrid: React.FC<WeatherMetricsGridProps> = ({
             Rain Chance
           </span>
           <span className="text-sm font-bold text-slate-800 mt-0.5">
-            {weather.rainChance}%
+            {weather.rainChance != null ? `${weather.rainChance}%` : 'Unavailable'}
           </span>
         </div>
 
@@ -44,7 +44,7 @@ export const WeatherMetricsGrid: React.FC<WeatherMetricsGridProps> = ({
             Max / Min
           </span>
           <span className="text-sm font-bold text-slate-800 mt-0.5">
-            {Math.round(weather.maxTemp)}° / {Math.round(weather.minTemp)}°
+            {weather.maxTemp != null ? Math.round(weather.maxTemp) + '°' : '--'} / {weather.minTemp != null ? Math.round(weather.minTemp) + '°' : '--'}
           </span>
         </div>
 
@@ -61,7 +61,7 @@ export const WeatherMetricsGrid: React.FC<WeatherMetricsGridProps> = ({
             Humidity
           </span>
           <span className="text-sm font-bold text-slate-800 mt-0.5">
-            {weather.humidity}%
+            {weather.humidity != null ? `${weather.humidity}%` : 'Unavailable'}
           </span>
         </div>
 
@@ -78,18 +78,24 @@ export const WeatherMetricsGrid: React.FC<WeatherMetricsGridProps> = ({
             AQI
           </span>
           <div className="flex flex-col items-center mt-0.5 leading-none">
-            <span className="text-sm font-bold text-slate-800">{weather.aqi}</span>
-            <span
-              className={`text-[9px] font-bold mt-0.5 px-1.5 py-0.5 rounded-full ${
-                weather.aqi <= 50
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : weather.aqi <= 100
-                  ? 'bg-yellow-100 text-yellow-700'
-                  : 'bg-red-100 text-red-700'
-              }`}
-            >
-              {weather.aqiStatus}
-            </span>
+            {weather.aqi != null ? (
+              <>
+                <span className="text-sm font-bold text-slate-800">{weather.aqi}</span>
+                <span
+                  className={`text-[9px] font-bold mt-0.5 px-1.5 py-0.5 rounded-full ${
+                    weather.aqi <= 50
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : weather.aqi <= 100
+                      ? 'bg-yellow-100 text-yellow-700'
+                      : 'bg-red-100 text-red-700'
+                  }`}
+                >
+                  {weather.aqiStatus || (weather.aqi <= 50 ? 'Good' : weather.aqi <= 100 ? 'Moderate' : 'Poor')}
+                </span>
+              </>
+            ) : (
+              <span className="text-[10px] text-slate-500 leading-tight mt-1">Air quality<br/>data unavailable</span>
+            )}
           </div>
         </div>
       </div>

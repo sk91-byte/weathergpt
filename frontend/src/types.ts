@@ -66,6 +66,8 @@ export interface WeatherData {
     modelAgreement: string;
     uncertaintyNote?: string;
   };
+  /** Last coordinates used to load this weather card, when available. */
+  locationCoordinates?: { latitude: number; longitude: number };
 }
 
 export interface HourlyForecast {
@@ -106,6 +108,10 @@ export interface RouteTrip {
   id: string;
   from: string;
   to: string;
+  /** Coordinates are [latitude, longitude] and allow a saved route to be reopened without geocoding again. */
+  originCoords?: [number, number];
+  destinationCoords?: [number, number];
+  travelMode?: string;
   leaveBy: string;
   estDuration: string;
   status: string;
@@ -123,6 +129,16 @@ export interface RouteTrip {
     hazard?: string;
   }[];
   alternativeAdvice: string;
+}
+
+export interface SavedPlace {
+  id: string;
+  label: string;
+  name: string;
+  address?: string;
+  coords: [number, number];
+  category?: string;
+  createdAt: string;
 }
 
 export interface FarmerAdvisory {

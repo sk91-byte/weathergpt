@@ -9,7 +9,7 @@ import { GreetingSection } from './components/GreetingSection';
 import { MainWeatherCard } from './components/MainWeatherCard';
 import { WeatherMetricsGrid } from './components/WeatherMetricsGrid';
 import { WeatherRiskSection } from './components/WeatherRiskSection';
-import { YourNextTripCard } from './components/YourNextTripCard';
+import { SavedPlacesSection } from './components/SavedPlacesSection';
 import { WeatherAlertsCard } from './components/WeatherAlertsCard';
 import { AskWeatherGPTCard } from './components/AskWeatherGPTCard';
 import { ExploreMoreSection } from './components/ExploreMoreSection';
@@ -162,6 +162,13 @@ export default function App() {
               windSpeed: liveWeather.wind_speed,
               windDirection: liveWeather.wind_direction,
               rainChance: liveWeather.rain_probability,
+              maxTemp: liveWeather.maxTemp ?? weather.maxTemp,
+              minTemp: liveWeather.minTemp ?? weather.minTemp,
+              aqi: liveWeather.aqi,
+              riskScore: liveWeather.riskScore ?? weather.riskScore,
+              riskStatus: liveWeather.riskStatus ?? weather.riskStatus,
+              risks: liveWeather.risks ?? weather.risks,
+              weatherSource: liveWeather.weather_source ?? weather.weatherSource,
               lastUpdated: 'Just now',
               aiRecommendation: 'This is your live weather at the detected location.',
               recommendationExplanation: { ...weather.recommendationExplanation, title: 'Live location weather' }
@@ -273,6 +280,13 @@ export default function App() {
         windSpeed: liveWeather.wind_speed,
         windDirection: liveWeather.wind_direction,
         rainChance: liveWeather.rain_probability,
+              maxTemp: liveWeather.maxTemp ?? weather.maxTemp,
+              minTemp: liveWeather.minTemp ?? weather.minTemp,
+              aqi: liveWeather.aqi,
+              riskScore: liveWeather.riskScore ?? weather.riskScore,
+              riskStatus: liveWeather.riskStatus ?? weather.riskStatus,
+              risks: liveWeather.risks ?? weather.risks,
+              weatherSource: liveWeather.weather_source ?? weather.weatherSource,
         lastUpdated: 'Just now',
         aiRecommendation: 'Live weather fetched for your selected location.',
         recommendationExplanation: { ...weather.recommendationExplanation, title: 'Live location weather' }
@@ -375,13 +389,14 @@ export default function App() {
               {/* 4. Weather Metrics Grid (Rain, Temp, Humidity, AQI) */}
               <WeatherMetricsGrid
                 weather={weather}
-                onOpenAQIDetails={() => {
-                  setForecastModalTab('aqi');
-                  setShowForecastDetails(true);
-                }}
-                onOpenRainForecast={() => {
-                  setForecastModalTab('hourly');
-                  setShowForecastDetails(true);
+                onOpenDetails={(tab) => {
+                  if (tab === 'aqi') {
+                    setForecastModalTab('aqi');
+                    setShowForecastDetails(true);
+                  } else {
+                    setForecastModalTab('hourly');
+                    setShowForecastDetails(true);
+                  }
                 }}
               />
 
@@ -391,22 +406,14 @@ export default function App() {
                 onOpenExplainableAI={() => setShowExplainableAI(true)}
               />
 
-              {/* 6. Your Next Trip Card */}
-              <YourNextTripCard
-                trip={trip}
-                onOpenTripDetails={() => {
-                  setTripModalMode('details');
-                  setShowTripDetails(true);
-                }}
-                onNewTrip={() => {
-                  setTripModalMode('new');
-                  setShowTripDetails(true);
-                }}
-                onViewAllTrips={() => {
-                  setTripModalMode('all');
-                  setShowTripDetails(true);
-                }}
-                onOpenLiveMap={() => setActiveTab('map')}
+              {/* 6. Saved Places Section */}
+              <SavedPlacesSection
+                savedPlaces={savedPlaces}
+                savedTrips={savedTrips}
+                onSelectSavedPlace={handleSelectSavedPlace}
+                onSelectSavedTrip={handleSelectSavedTrip}
+                onOpenMap={() => setActiveTab('map')}
+                onManagePlaces={() => setActiveTab('profile')}
               />
 
               {/* 7. Weather Alerts Card */}
