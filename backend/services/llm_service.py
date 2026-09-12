@@ -6,6 +6,8 @@ import threading
 import time
 from typing import Any, Callable, Literal
 
+import requests
+
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
@@ -74,6 +76,51 @@ class WeatherQuery(BaseModel):
 
 class LLMServiceError(Exception):
     """Raised for missing Gemini configuration or provider failures."""
+
+
+def groq_health() -> dict[str, Any]:
+    if not isinstance(settings.groq_api_key, str) or not settings.groq_api_key.strip():
+        return {"service": "Groq", "configured": False, "models": list(settings.groq_models), "status": "unavailable", "error_type": "missing_key"}
+    return {"service": "Groq", "configured": True, "models": list(settings.groq_models), "status": "configured"}
+
+
+def test_groq() -> dict[str, Any]:
+    try:
+        reply = _groq_chat("Reply with the single word OK.", "You are a connectivity test. Reply only with OK.", max_output_tokens=8)
+        return {**groq_health(), "status": "available", "reply_received": bool(reply)}
+    except Exception as exc:
+        return {**groq_health(), "status": "unavailable", "error_type": type(exc).__name__}
+
+
+def _groq_chat(prompt: str, system_instruction: str, max_output_tokens: int = 600, json_mode: bool = False) -> str:
+    """Call Groq models in order; expired/unavailable models fall through."""
+    if not isinstance(settings.groq_api_key, str) or not settings.groq_api_key.strip():
+        raise LLMServiceError("GROQ_API_KEY is not configured")
+    headers = {"Authorization": f"Bearer {settings.groq_api_key}", "Content-Type": "application/json"}
+    last_error: Exception | None = None
+    for model in settings.groq_models:
+        try:
+            body: dict[str, Any] = {
+                "model": model,
+                "messages": [{"role": "system", "content": system_instruction}, {"role": "user", "content": prompt}],
+                "temperature": 0.2,
+                "max_tokens": max_output_tokens,
+            }
+            if json_mode:
+                body["response_format"] = {"type": "json_object"}
+            response = requests.post(f"{settings.groq_base_url.rstrip('/')}/chat/completions", headers=headers, json=body, timeout=(3, 12))
+            if response.status_code >= 400:
+                raise RuntimeError(f"Groq {model} returned HTTP {response.status_code}: {response.text[:300]}")
+            payload = response.json()
+            text = payload.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if not isinstance(text, str) or not text.strip():
+                raise RuntimeError(f"Groq {model} returned an empty response")
+            logger.info("Groq call succeeded with %s", model)
+            return text.strip()
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Groq model %s failed; trying next model: %s", model, str(exc)[:300])
+    raise LLMServiceError("All configured Groq models are unavailable") from last_error
 
 
 def classify_gemini_error(exc: Exception) -> str:
@@ -240,6 +287,15 @@ def test_gemini() -> dict[str, Any]:
 
 def interpret_weather_query(message: str, conversation_context: dict[str, Any] | None = None) -> WeatherQuery:
     context_text = json.dumps(conversation_context or {}, ensure_ascii=False)
+    if isinstance(settings.groq_api_key, str) and settings.groq_api_key.strip():
+        try:
+            raw = _groq_chat(
+                f"Return ONLY JSON with keys intent, location, location_mode, time_reference, request_type. Use null for unknown location.\nRecent conversation context: {context_text}\nUser message: {message}",
+                QUERY_INSTRUCTIONS, max_output_tokens=220, json_mode=True,
+            )
+            return WeatherQuery.model_validate_json(raw)
+        except Exception as exc:
+            logger.warning("Groq query interpretation failed; falling back to Gemini: %s", str(exc)[:300])
     try:
         def _do_interpret():
             return _client().models.generate_content(
@@ -312,6 +368,11 @@ def generate_weather_response(
         f"Interpreted request: {query.model_dump_json()}\n"
         f"Weather data: {json.dumps(weather_data, ensure_ascii=False)}"
     )
+    if isinstance(settings.groq_api_key, str) and settings.groq_api_key.strip():
+        try:
+            return _clean_generated_text(_groq_chat(prompt, WEATHER_ASSISTANT_INSTRUCTIONS, max_output_tokens=600))
+        except Exception as exc:
+            logger.warning("Groq weather response failed; falling back to Gemini: %s", str(exc)[:300])
     try:
         def _do_generate():
             return _client().models.generate_content(
@@ -357,6 +418,11 @@ def generate_decision_response(
         f"Weather data: {json.dumps(weather_data, ensure_ascii=False)}\n"
         f"Deterministic decision result: {json.dumps(decision, ensure_ascii=False)}"
     )
+    if isinstance(settings.groq_api_key, str) and settings.groq_api_key.strip():
+        try:
+            return _clean_generated_text(_groq_chat(prompt, WEATHER_ASSISTANT_INSTRUCTIONS, max_output_tokens=450))
+        except Exception as exc:
+            logger.warning("Groq decision response failed; falling back to Gemini: %s", str(exc)[:300])
     try:
         response = _call_gemini_with_retry(
             lambda: _client().models.generate_content(
@@ -403,6 +469,11 @@ def generate_general_response(
         "Do not add markdown code fences.\n"
         f"Recent conversation context: {context_text}\nUser question: {question}"
     )
+    if isinstance(settings.groq_api_key, str) and settings.groq_api_key.strip():
+        try:
+            return _clean_generated_text(_groq_chat(prompt, WEATHER_ASSISTANT_INSTRUCTIONS, max_output_tokens=400))
+        except Exception as exc:
+            logger.warning("Groq general response failed; falling back to Gemini: %s", str(exc)[:300])
     try:
         config = types.GenerateContentConfig(max_output_tokens=400)
         if use_search and settings.gemini_search_grounding:
@@ -443,6 +514,16 @@ def generate_follow_up_suggestions(
         f"Persona: {profile}\nRoute context: {json.dumps(route_context or {}, ensure_ascii=False)}\n"
         f"User question: {question}\nWeatherGPT answer: {answer}"
     )
+    if isinstance(settings.groq_api_key, str) and settings.groq_api_key.strip():
+        try:
+            raw = _groq_chat(prompt, WEATHER_ASSISTANT_INSTRUCTIONS, max_output_tokens=220, json_mode=True)
+            values = json.loads(raw)
+            if isinstance(values, dict):
+                values = values.get("questions", [])
+            if isinstance(values, list) and len(values) == 4 and all(isinstance(item, str) and item.strip() for item in values):
+                return [item.strip() for item in values]
+        except Exception as exc:
+            logger.warning("Groq follow-up generation failed; falling back to Gemini: %s", str(exc)[:300])
     try:
         response = _call_gemini_with_retry(
             lambda: _client().models.generate_content(

@@ -1,7 +1,7 @@
 """Health-check route for the WeatherGPT API."""
 
 from fastapi import APIRouter
-from backend.services.llm_service import gemini_health, test_gemini
+from backend.services.llm_service import gemini_health, groq_health, test_gemini, test_groq
 import asyncio
 from backend.config import settings
 
@@ -28,8 +28,8 @@ def health_check() -> dict[str, str]:
 
 @router.get("/health/ai", tags=["health"])
 def ai_health() -> dict[str, object]:
-    """Report Gemini configuration without making an external request."""
-    return gemini_health()
+    """Report primary and fallback LLM configuration without provider calls."""
+    return {"primary": groq_health(), "fallback": gemini_health()}
 
 
 @router.get("/health/diagnostic", tags=["health"])
@@ -37,11 +37,14 @@ def health_diagnostic() -> dict[str, object]:
     """Report overall system diagnostic status without leaking sensitive keys."""
     database_stat = _database_status()
     gemini_stat = gemini_health()
+    groq_stat = groq_health()
     return {
         "service": "WeatherGPT API",
         "status": "healthy",
         "gemini_configured": gemini_stat["configured"],
         "gemini_model": settings.gemini_model,
+        "groq_configured": groq_stat["configured"],
+        "groq_models": groq_stat["models"],
         "weather_provider_configured": True,
         "database_configured": database_stat == "connected",
         "database_status": database_stat,
@@ -50,6 +53,5 @@ def health_diagnostic() -> dict[str, object]:
 
 @router.get("/health/ai/test", tags=["health"])
 def ai_health_test() -> dict[str, object]:
-    """Explicitly test Gemini connectivity when requested by an operator."""
-    return test_gemini()
-
+    """Explicitly test both providers when requested by an operator."""
+    return {"primary": test_groq(), "fallback": test_gemini()}

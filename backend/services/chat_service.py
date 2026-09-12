@@ -848,6 +848,7 @@ def process_chat_message(
     if language is None and previous_context.get("preferred_language") == "hi":
         selected_language = get_language("hi")
     response_mode = _response_mode(message, selected_language)
+    groq_configured = isinstance(settings.groq_api_key, str) and bool(settings.groq_api_key.strip())
     result: dict[str, Any] = {
         "message": message,
         "intent": query.intent,
@@ -855,8 +856,8 @@ def process_chat_message(
         "ai_used": ai_used,
         "fallback_used": fallback_used,
         "fallback_reason": fallback_reason,
-        "llm_provider": "Gemini" if settings.gemini_api_key else None,
-        "llm_model": settings.gemini_model if settings.gemini_api_key else None,
+        "llm_provider": "Groq" if groq_configured else ("Gemini" if settings.gemini_api_key else None),
+        "llm_model": settings.groq_models[0] if groq_configured else (settings.gemini_model if settings.gemini_api_key else None),
         "data_source": "none",
         "response_source": "unavailable",
         "is_live": True,
