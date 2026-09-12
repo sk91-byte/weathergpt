@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Mic, MicOff, Sparkles, Volume2, VolumeX, ArrowRight, Umbrella, CloudRain, RotateCcw, ChevronLeft, Bot, Loader2, AlertTriangle } from './Icons';
 import { APP_LANGUAGES, ChatMessage, Language, WeatherData, RouteTrip, UserRole } from '../types';
-import { apiSendChat } from '../services/api';
+import { apiGetRecommendedQuestions, apiSendChat } from '../services/api';
 
 interface AIChatScreenProps {
   weather: WeatherData;
@@ -11,6 +11,7 @@ interface AIChatScreenProps {
   onBackToHome: () => void;
   initialQuery?: string;
   userRole: UserRole;
+  currentCoordinates?: { latitude: number; longitude: number } | null;
 }
 
 export const AIChatScreen: React.FC<AIChatScreenProps> = ({
@@ -20,7 +21,8 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   onLanguageChange,
   onBackToHome,
   initialQuery,
-  userRole
+  userRole,
+  currentCoordinates
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -66,7 +68,10 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   // server response replaces these with conversation-aware suggestions.
   useEffect(() => {
     setServerSuggestions([]);
-  }, [currentLanguage, weather.city, weather.temperature, weather.rainChance]);
+    apiGetRecommendedQuestions(userRole, currentLanguage === 'hi' ? 'hi' : currentLanguage === 'gu' ? 'gu' : 'en', Boolean(trip.from && trip.to))
+      .then((questions) => { if (questions.length) setServerSuggestions(questions); })
+      .catch(() => { /* local persona suggestions remain available */ });
+  }, [currentLanguage, userRole, trip.from, trip.to, weather.city, weather.temperature, weather.rainChance]);
 
   useEffect(() => {
     return () => {
@@ -97,6 +102,23 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
           ? ['How should I stay safe in today’s heat?', 'Is it safe to go outside this afternoon?', 'How much water should I carry?', 'What should I wear today?']
           : ['What will today’s weather be like?', 'Is it safe to go outside today?', 'What should I carry today?', 'Explain the main weather risk.']);
   const suggestions = serverSuggestions.length ? serverSuggestions : localSuggestions;
+
+  // Use only the weather already loaded in the app if the chat backend is
+  // temporarily unavailable. This never invents a forecast.
+  const localWeatherFallback = (question: string): string | null => {
+    if (/(tomorrow|forecast|next few days|कल|पूर्वानुमान|આગાહી)/i.test(question)) return null;
+    if (!Number.isFinite(weather.temperature)) return null;
+    const temperature = `${weather.temperature}°C`;
+    const rainChance = Number.isFinite(weather.rainChance) ? `${weather.rainChance}%` : 'unavailable';
+    const wind = Number.isFinite(weather.windSpeed) ? `${weather.windSpeed} km/h` : 'unavailable';
+    if (currentLanguage === 'hi') {
+      return `${weather.city} का अभी का मौसम ${weather.condition} और ${temperature} है। बारिश की संभावना ${rainChance} और हवा की गति ${wind} है। यह जवाब ऐप में लोड किए गए लाइव मौसम डेटा पर आधारित है। पूर्वानुमान के लिए बाद में फिर कोशिश करें।`;
+    }
+    if (currentLanguage === 'gu') {
+      return `${weather.city}માં અત્યારે હવામાન ${weather.condition} અને તાપમાન ${temperature} છે. વરસાદની શક્યતા ${rainChance} અને પવનની ઝડપ ${wind} છે. આ જવાબ એપમાં લોડ થયેલા લાઇવ ડેટા પર આધારિત છે. આગાહી માટે થોડા સમય પછી ફરી પ્રયાસ કરો.`;
+    }
+    return `Current conditions for ${weather.city}: ${weather.condition}, ${temperature}. Rain probability is ${rainChance} and wind speed is ${wind}. This answer uses the live weather data already loaded in the app. Please try again later for a forecast.`;
+  };
 
   const needsCurrentLocation = (text: string) => {
     const value = text.trim().toLowerCase();
@@ -202,6 +224,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
 
   const handleSendMessage = async (textToSend: string) => {
     if (!textToSend.trim()) return;
+    const questionNeedsWeather = needsCurrentLocation(textToSend);
 
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -216,8 +239,18 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
 
     try {
       let coordinates = deviceCoordinates;
-      if (needsCurrentLocation(textToSend) && !coordinates) {
-        coordinates = await requestDeviceCoordinates();
+      if (questionNeedsWeather && !coordinates && currentCoordinates) {
+        coordinates = currentCoordinates;
+        setDeviceCoordinates(currentCoordinates);
+      }
+      if (questionNeedsWeather && !coordinates) {
+        try {
+          coordinates = await requestDeviceCoordinates();
+        } catch (locationError) {
+          // A blocked GPS prompt should not make chat unusable. The backend
+          // can resolve the selected city as a fallback.
+          console.warn('Chat location permission unavailable; using selected city:', locationError);
+        }
       }
       const data = await apiSendChat(textToSend, {
         conversation_id: conversationId,
@@ -225,6 +258,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
         role: userRole,
         latitude: coordinates?.latitude,
         longitude: coordinates?.longitude,
+        location: weather.city,
         route_context: { from: trip.from, to: trip.to, leave_by: trip.leaveBy }
       });
       if (data.conversation_id) setConversationId(data.conversation_id);
@@ -232,7 +266,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
       const botMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         sender: 'weathergpt',
-        text: data.response,
+        text: data.response || data.message || data.answer || data.reply || 'WeatherGPT did not return a response. Please try again.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         language: currentLanguage,
         cardData: {
@@ -256,35 +290,32 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
       setMessages((prev) => [...prev, botMsg]);
     } catch (err) {
       console.warn('Chat request failed:', err);
+      const localAnswer = questionNeedsWeather ? localWeatherFallback(textToSend) : null;
+      const serviceUnavailable = currentLanguage === 'hi'
+        ? 'WeatherGPT अभी अस्थायी रूप से उपलब्ध नहीं है। जो मौसम डेटा ऐप में पहले से लोड है, उसके आधार पर ऊपर की जानकारी दी गई है। कृपया थोड़ी देर बाद फिर कोशिश करें।'
+        : currentLanguage === 'gu'
+        ? 'WeatherGPT હાલમાં થોડા સમય માટે ઉપલબ્ધ નથી. ઉપરની માહિતી એપમાં પહેલેથી લોડ થયેલા હવામાન ડેટા પર આધારિત છે. થોડી વાર પછી ફરી પ્રયાસ કરો.'
+        : 'WeatherGPT is temporarily unavailable. The information above uses weather data already loaded in the app. Please try again shortly.';
       const botMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         sender: 'weathergpt',
-        text: !needsCurrentLocation(textToSend)
-          ? (currentLanguage === 'hi'
-            ? 'नमस्ते! मैं आपकी बातचीत, सामान्य सवालों और WeatherGPT के फीचर्स में मदद कर सकता हूँ। मैं आपकी कैसे सहायता करूँ?'
-            : currentLanguage === 'gu'
-            ? 'નમસ્તે! હું તમારી વાતચીત, સામાન્ય પ્રશ્નો અને WeatherGPT ફીચર્સમાં મદદ કરી શકું છું. હું તમારી કેવી રીતે મદદ કરું?'
-            : `Hi! I'm WeatherGPT. I can answer general questions, explain app features, and help with live weather whenever you need it. How can I assist you?`)
-          : err instanceof Error && err.message.includes('Location permission')
+        text: localAnswer
+          || (err instanceof Error && err.message.includes('Location permission')
           ? (currentLanguage === 'hi'
             ? 'आपके आसपास का मौसम बताने के लिए स्थान की अनुमति चाहिए। कृपया ब्राउज़र में Location Allow करें और फिर दोबारा पूछें।'
             : currentLanguage === 'gu'
             ? 'તમારા આસપાસનું હવામાન બતાવવા માટે લોકેશનની પરવાનગી જોઈએ. બ્રાઉઝરમાં Location Allow કરો અને ફરી પૂછો.'
             : 'I need your location to answer that. Please allow Location access in your browser and ask again.')
-          : currentLanguage === 'hi'
-          ? `अभी ${weather.city} के लिए लाइव मौसम सेवा उपलब्ध नहीं है। कृपया कुछ देर बाद फिर कोशिश करें।`
-          : currentLanguage === 'gu'
-          ? `હમણાં ${weather.city} માટે લાઇવ હવામાન સેવા ઉપલબ્ધ નથી. થોડા સમય પછી ફરી પ્રયાસ કરો.`
-          : `Live weather data for ${weather.city} is temporarily unavailable. I won't guess the conditions—please try again shortly.`,
+          : serviceUnavailable),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         cardData: {
           type: 'weather',
           payload: {
             ai_used: false,
-            fallback_used: needsCurrentLocation(textToSend),
-            fallback_reason: needsCurrentLocation(textToSend) ? 'request_failed' : undefined,
-            data_source: needsCurrentLocation(textToSend) ? 'none' : 'conversation',
-            is_live: false,
+            fallback_used: Boolean(localAnswer),
+            fallback_reason: localAnswer ? 'backend_request_failed_used_loaded_weather' : 'backend_request_failed',
+            data_source: localAnswer ? 'loaded_weather_card' : 'conversation',
+            is_live: Boolean(localAnswer),
           },
         },
       };
