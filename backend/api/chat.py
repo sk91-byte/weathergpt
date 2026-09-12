@@ -9,9 +9,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.services.chat_service import process_chat_message
-from backend.services.llm_service import LLMServiceError
+from backend.services.llm_service import LLMServiceError, generate_follow_up_suggestions
 from backend.services.weather_service import WeatherServiceError
-from backend.services.language_service import is_supported_language
+from backend.services.language_service import get_language, is_supported_language
 
 
 logger = logging.getLogger(__name__)
@@ -65,6 +65,25 @@ def chat(request: ChatRequest) -> JSONResponse:
             request.route_context,
             request.location,
         )
+        # Follow-up chips are generated from the completed answer so they can
+        # reflect the selected persona, language, route, and current topic.
+        # This is deliberately best-effort: a suggestions failure must never
+        # turn a valid weather answer into a failed chat request.
+        try:
+            language_info = get_language(request.language)
+            language_name = f"{language_info['name']} ({language_info['native_name']})"
+            ai_suggestions = generate_follow_up_suggestions(
+                request.message,
+                str(data.get("response") or ""),
+                language_name,
+                request.profile,
+                request.route_context,
+            )
+            if ai_suggestions:
+                data["suggestions"] = ai_suggestions
+                data["suggestions_source"] = "AI"
+        except Exception as exc:
+            logger.warning("AI follow-up generation failed; keeping local suggestions: %s", str(exc)[:300])
         json_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
         return JSONResponse(
             content=json.loads(json_bytes.decode("utf-8")),

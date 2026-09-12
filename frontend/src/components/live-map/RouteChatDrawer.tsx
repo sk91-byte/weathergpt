@@ -105,8 +105,15 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
   const [loadingStage, setLoadingStage] = useState('Preparing route context');
   const [conversationId, setConversationId] = useState<string>(`conv_${Date.now()}`);
   const [isListening, setIsListening] = useState(false);
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>(quickQuestionsFor(language, userRole));
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const quickQuestions = quickQuestionsFor(language, userRole);
+
+  useEffect(() => {
+    // Keep useful persona/language fallback chips visible until the first
+    // route answer returns AI-generated, conversation-aware suggestions.
+    setSuggestedQuestions(quickQuestions);
+  }, [language, userRole]);
 
   useEffect(() => {
     if (!isLoading) { setLoadingProgress(0); return; }
@@ -215,6 +222,9 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
 
       if (response.conversation_id) {
         setConversationId(response.conversation_id);
+      }
+      if (Array.isArray(response.suggestions) && response.suggestions.length) {
+        setSuggestedQuestions(response.suggestions.filter((item: unknown): item is string => typeof item === 'string').slice(0, 4));
       }
       const assistantMsg: ChatMessageItem = {
         id: `msg_bot_${Date.now()}`,
@@ -365,7 +375,7 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
 
       {/* Suggested Quick Prompt Chips */}
       <div className="px-3 py-2 border-t border-slate-800 bg-slate-900/90 overflow-x-auto no-scrollbar flex space-x-1.5">
-        {quickQuestions.map((q, idx) => (
+        {suggestedQuestions.map((q, idx) => (
           <button
             key={idx}
             onClick={() => handleSendMessage(q)}
