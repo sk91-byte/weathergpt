@@ -17,6 +17,10 @@ from backend.services.decision_engine import analyze_decision
 from backend.services.template_service import canonical_intent, match_template, match_template_for_intent, recommended_questions, save_pending_candidate
 
 
+def _active_llm_provider() -> str:
+    return "Groq" if isinstance(settings.groq_api_key, str) and settings.groq_api_key.strip() else "Gemini"
+
+
 def _response_language_name(selected_language: dict[str, Any], response_mode: str) -> str:
     """Give Gemini both the English language name and native label for reliable multilingual output."""
     if response_mode == "hinglish":
@@ -885,8 +889,8 @@ def process_chat_message(
             result["ai_used"] = True
             result["fallback_used"] = False
             result["fallback_reason"] = None
-            result["data_source"] = "Gemini"
-            result["response_source"] = "Gemini"
+            result["data_source"] = _active_llm_provider()
+            result["response_source"] = _active_llm_provider()
         except LLMServiceError:
             result["response"] = small_talk
             result["ai_used"] = False
@@ -987,7 +991,7 @@ def process_chat_message(
             )
             result["intent"] = query.intent
             result["data_source"] = "Gemini + Google Search" if search_requested and settings.gemini_search_grounding else "Gemini"
-            result["response_source"] = "Gemini"
+            result["response_source"] = _active_llm_provider()
         except LLMServiceError:
             result["ai_used"] = False
             result["fallback_used"] = True
@@ -1008,7 +1012,7 @@ def process_chat_message(
             result["fallback_used"] = False
             result["fallback_reason"] = None
             result["data_source"] = "Gemini + Google Search" if settings.gemini_search_grounding else "Gemini"
-            result["response_source"] = "Gemini"
+            result["response_source"] = _active_llm_provider()
         except LLMServiceError:
             result["ai_used"] = False
             result["fallback_used"] = True
@@ -1151,7 +1155,7 @@ def process_chat_message(
                 )
                 if response_mode == "hi":
                     result["response"] = _localize_hindi_response(result["response"])
-                result["response_source"] = "Gemini"
+                result["response_source"] = _active_llm_provider()
             except LLMServiceError:
                 result["ai_used"] = False
                 result["fallback_used"] = True
@@ -1202,7 +1206,7 @@ def process_chat_message(
             result["response"] = generate_weather_response(message, query, weather_data, response_language, previous_context, profile)
             if response_mode == "hi":
                 result["response"] = _localize_hindi_response(result["response"])
-            result["response_source"] = "Gemini"
+            result["response_source"] = _active_llm_provider()
         except LLMServiceError:
             result["ai_used"] = False
             result["fallback_used"] = True
@@ -1230,7 +1234,7 @@ def process_chat_message(
     }
     add_message(conversation_id, "user", message)
     add_message(conversation_id, "assistant", result["response"], context=context)
-    if result.get("response_source") == "Gemini" and not matched_template:
+    if result.get("response_source") in {"Gemini", "Groq"} and not matched_template:
         try:
             save_pending_candidate(
                 question=message,
