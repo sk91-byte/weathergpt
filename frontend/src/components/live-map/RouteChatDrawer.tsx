@@ -17,6 +17,8 @@ import {
 interface RouteChatDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  language?: string;
+  userRole?: string;
   routeContext: {
     origin?: string;
     destination?: string;
@@ -27,6 +29,9 @@ interface RouteChatDrawerProps {
     bestDepartureTime?: string;
     distanceKm?: number;
     durationMinutes?: number;
+    destinationCoords?: [number, number];
+    currentTemperature?: number;
+    currentWindSpeed?: number;
   };
 }
 
@@ -37,29 +42,49 @@ interface ChatMessageItem {
   timestamp: string;
 }
 
-const QUICK_QUESTIONS = [
-  'Should I leave now?',
-  'Will it rain on my route?',
-  'Where should I wait?',
-  'Why is this route safer?',
-  'क्या मुझे अभी निकलना चाहिए?',
-  'रास्ते में बारिश या जलभराव होगा क्या?',
-  'Paani bhara hoga kya raste me?',
-  'Safe jagah kahan hai rukne ke liye?'
-];
+const QUICK_QUESTIONS_BY_ROLE: Record<string, { en: string[]; hi: string[]; hinglish: string[] }> = {
+  student: {
+    en: ['Should I leave now for college?', 'Will rain affect my college trip?', 'What should I carry in my bag?', 'Where can I wait safely?'],
+    hi: ['कॉलेज के लिए अभी निकलना चाहिए?', 'क्या बारिश से कॉलेज का रास्ता प्रभावित होगा?', 'बैग में क्या लेकर जाऊं?', 'सुरक्षित जगह पर कहां रुकूं?'],
+    hinglish: ['College ke liye abhi nikalna chahiye?', 'Kya rain se college route affect hoga?', 'Bag mein kya carry karun?', 'Safe jagah par kahan rukun?']
+  },
+  traveller: {
+    en: ['Should I leave now?', 'Will it rain on my route?', 'What weather risk should I prepare for?', 'Where can I wait safely?'],
+    hi: ['क्या मुझे अभी निकलना चाहिए?', 'क्या मेरे रास्ते में बारिश होगी?', 'मुझे किस मौसम जोखिम की तैयारी करनी चाहिए?', 'सुरक्षित जगह पर कहां रुकूं?'],
+    hinglish: ['Kya mujhe abhi nikalna chahiye?', 'Kya mere route par rain hogi?', 'Kis weather risk ki preparation karun?', 'Safe jagah par kahan rukun?']
+  },
+  commuter: {
+    en: ['Should I leave now for work?', 'Will rain delay my commute?', 'What is the expected temperature?', 'Why is this route recommended?'],
+    hi: ['काम के लिए अभी निकलना चाहिए?', 'क्या बारिश से मेरा सफर देर होगा?', 'तापमान कितना रहेगा?', 'यह रास्ता क्यों सुझाया गया है?'],
+    hinglish: ['Work ke liye abhi nikalna chahiye?', 'Kya rain se commute late hoga?', 'Expected temperature kya hai?', 'Ye route kyun recommend hua hai?']
+  },
+  general_public: {
+    en: ['Should I leave now?', 'Will it rain on my route?', 'What is the expected temperature?', 'Where can I wait safely?'],
+    hi: ['क्या मुझे अभी निकलना चाहिए?', 'क्या मेरे रास्ते में बारिश होगी?', 'तापमान कितना रहेगा?', 'सुरक्षित जगह पर कहां रुकूं?'],
+    hinglish: ['Kya mujhe abhi nikalna chahiye?', 'Kya mere route par rain hogi?', 'Expected temperature kya hai?', 'Safe jagah par kahan rukun?']
+  }
+};
+
+const quickQuestionsFor = (language: string, userRole: string) => {
+  const set = QUICK_QUESTIONS_BY_ROLE[userRole] || QUICK_QUESTIONS_BY_ROLE.general_public;
+  return language === 'hi' ? set.hi : language === 'hinglish' ? set.hinglish : set.en;
+};
 
 export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
   isOpen,
   onClose,
+  language = 'en',
+  userRole = 'general_public',
   routeContext
 }) => {
+  const routeRiskScore = routeContext.safetyScore == null ? null : Math.max(0, Math.min(100, 100 - routeContext.safetyScore));
   const [messages, setMessages] = useState<ChatMessageItem[]>([
     {
       id: 'welcome',
       sender: 'assistant',
-      text: `Hello! I am WeatherGPT Copilot for your trip from **${routeContext.origin || 'Current Location'}** to **${routeContext.destination || 'Destination'}**. \n\nCurrent Route Safety Score: **${
-        routeContext.safetyScore !== null && routeContext.safetyScore !== undefined
-          ? `${routeContext.safetyScore}/100`
+      text: `Hello! I am WeatherGPT Copilot for your trip from **${routeContext.origin || 'Current Location'}** to **${routeContext.destination || 'Destination'}**. \n\nCurrent Route Weather Risk Score: **${
+        routeRiskScore !== null
+          ? `${routeRiskScore}/100`
           : 'Unavailable'
       }** (${routeContext.rainRisk || 'Unavailable'} rain risk). How can I assist your commute?`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -67,11 +92,69 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
   ]);
   const [inputQuery, setInputQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingStage, setLoadingStage] = useState('Preparing route context');
   const [conversationId, setConversationId] = useState<string>(`conv_${Date.now()}`);
-  const [serverSuggestions, setServerSuggestions] = useState<string[]>([]);
   const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const quickQuestions = serverSuggestions.length ? serverSuggestions : QUICK_QUESTIONS;
+  const quickQuestions = quickQuestionsFor(language, userRole);
+
+  useEffect(() => {
+    if (!isLoading) { setLoadingProgress(0); return; }
+    const stages = [[20, 'Understanding your route question'], [45, 'Reading live route weather'], [70, 'Applying your persona'], [86, 'Generating AI response']] as const;
+    let index = 0;
+    setLoadingProgress(8);
+    setLoadingStage(stages[0][1]);
+    const timer = window.setInterval(() => {
+      if (index < stages.length - 1) index += 1;
+      setLoadingProgress(stages[index][0]);
+      setLoadingStage(stages[index][1]);
+    }, 900);
+    return () => window.clearInterval(timer);
+  }, [isLoading]);
+
+  const localPresetAnswer = (query: string): string | null => {
+    const text = query.toLowerCase();
+    const risk = routeRiskScore;
+    const riskText = risk === null ? 'unavailable' : `${risk}/100`;
+    const personaAdvice = userRole === 'student'
+      ? 'As a student, keep extra travel time and carry water or rain protection.'
+      : userRole === 'commuter'
+        ? 'For your commute, allow extra time and recheck conditions before leaving.'
+        : 'Recheck live conditions before departure because weather can change.';
+
+    if (/(leave now|abhi nikal|अभी निकल|હમણાં નીકળ|should i leave)/i.test(text)) {
+      if (risk === null) return 'Live route risk is still loading. Please wait for the route analysis to finish.';
+      if (risk >= 60) return `The current Weather Risk Score is ${riskText}. Consider waiting${routeContext.bestDepartureTime ? ` until around ${routeContext.bestDepartureTime}` : ' and checking again'} before leaving. ${personaAdvice}`;
+      return `The current Weather Risk Score is ${riskText}. You can leave now, but continue to monitor the route and follow normal precautions. ${personaAdvice}`;
+    }
+    if (/(rain|बारिश|વરસાદ|rainfall|baarish|barish)/i.test(text)) {
+      return routeContext.rainRisk && routeContext.rainRisk !== 'Unavailable'
+        ? `Rain risk along this route is ${routeContext.rainRisk}. The route analysis is based on live provider data. ${routeContext.rainRisk === 'High' ? 'Carry rain protection and reduce speed.' : 'Keep rain protection ready in case conditions change.'}`
+        : 'Rain risk is still loading for this route. Please wait for the live route analysis.';
+    }
+    if (/(temperature|तापमान|તાપમાન)/i.test(text)) {
+      return Number.isFinite(routeContext.currentTemperature)
+        ? `The latest available temperature near the route is ${routeContext.currentTemperature}°C. ${personaAdvice}`
+        : 'The route temperature is still loading. Please wait for the live weather analysis.';
+    }
+    if (/(where.*wait|safe.*wait|कहां रुक|ક્યાં રોક|ruk|rukun)/i.test(text)) {
+      return 'Use the Places Along Your Route section below the map to find nearby hospitals, hotels, restaurants, petrol pumps, or EV charging stations where you can stop.';
+    }
+    if (/(why.*route|route.*recommend|क्यों.*रास्त|શા માટે.*રસ્ત)/i.test(text)) {
+      return `This route is recommended because it currently has a Weather Risk Score of ${riskText}, with ${routeContext.rainRisk || 'available'} rain risk. ${personaAdvice}`;
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    const risk = routeContext.safetyScore == null
+      ? 'Unavailable'
+      : `${Math.max(0, Math.min(100, 100 - routeContext.safetyScore))}/100`;
+    setMessages((previous) => previous.map((message, index) => index === 0 && message.id === 'welcome'
+      ? { ...message, text: `Hello! I am WeatherGPT Copilot for your trip from **${routeContext.origin || 'Current Location'}** to **${routeContext.destination || 'Destination'}**.\n\nCurrent Route Weather Risk Score: **${risk}** (${routeContext.rainRisk || 'Unavailable'} rain risk). How can I assist your commute?` }
+      : message));
+  }, [routeContext.origin, routeContext.destination, routeContext.safetyScore, routeContext.rainRisk]);
 
   useEffect(() => {
     if (isOpen) {
@@ -94,11 +177,18 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
 
     setMessages((prev) => [...prev, userMsg]);
     setInputQuery('');
+    setLoadingProgress(8);
+    setLoadingStage('Understanding your route question');
     setIsLoading(true);
 
     try {
       const response = await apiSendChat(query, {
         conversation_id: conversationId,
+        language,
+        role: userRole,
+        location: routeContext.destination,
+        latitude: routeContext.destinationCoords?.[0],
+        longitude: routeContext.destinationCoords?.[1],
         route_context: {
           origin: routeContext.origin,
           destination: routeContext.destination,
@@ -108,17 +198,14 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
           summary_condition: routeContext.summaryCondition,
           best_departure_time: routeContext.bestDepartureTime,
           distance_km: routeContext.distanceKm,
-          duration_minutes: routeContext.durationMinutes
+          duration_minutes: routeContext.durationMinutes,
+          destination_coords: routeContext.destinationCoords
         }
       });
 
       if (response.conversation_id) {
         setConversationId(response.conversation_id);
       }
-      if (Array.isArray(response.suggestions)) {
-        setServerSuggestions(response.suggestions.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0));
-      }
-
       const assistantMsg: ChatMessageItem = {
         id: `msg_bot_${Date.now()}`,
         sender: 'assistant',
@@ -129,12 +216,13 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (e) {
       console.error('Chat error:', e);
+      const detail = e instanceof Error ? e.message : 'Unknown assistant error';
       setMessages((prev) => [
         ...prev,
         {
           id: `msg_err_${Date.now()}`,
           sender: 'assistant',
-          text: 'Unable to connect to WeatherGPT assistant right now. Please drive carefully.',
+          text: `WeatherGPT Copilot could not answer this request (${detail}). Please try again shortly.`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -217,10 +305,10 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
           <span className="truncate">{routeContext.origin || 'Start'} → {routeContext.destination || 'End'}</span>
         </div>
         <div className="flex items-center space-x-1 shrink-0 ml-2">
-          <span className="text-slate-400">Score:</span>
+          <span className="text-slate-400">Weather Risk:</span>
           <span className="font-extrabold text-sky-400">
-            {routeContext.safetyScore !== null && routeContext.safetyScore !== undefined
-              ? `${routeContext.safetyScore}/100`
+            {routeRiskScore !== null
+              ? `${routeRiskScore}/100`
               : 'N/A'}
           </span>
         </div>
@@ -251,9 +339,14 @@ export const RouteChatDrawer: React.FC<RouteChatDrawerProps> = ({
         ))}
 
         {isLoading && (
-          <div className="flex items-center space-x-2 text-slate-400 text-xs py-1">
-            <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-            <span>Analyzing route weather conditions...</span>
+          <div className="text-slate-400 text-xs py-1 w-full">
+            <div className="flex items-center justify-between mb-1">
+              <span>{loadingStage}</span>
+              <span className="text-blue-400 font-bold">{loadingProgress}%</span>
+            </div>
+            <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-500" style={{ width: `${loadingProgress}%` }} />
+            </div>
           </div>
         )}
 

@@ -39,6 +39,8 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
 
   const [inputVal, setInputVal] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingStage, setLoadingStage] = useState('Preparing your live weather context');
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [isListeningVoice, setIsListeningVoice] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -57,6 +59,28 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingProgress(0);
+      return;
+    }
+    const stages = [
+      [18, 'Understanding your question'],
+      [42, 'Loading live weather data'],
+      [68, 'Preparing persona-aware context'],
+      [84, 'Generating your response'],
+    ] as const;
+    let index = 0;
+    setLoadingProgress(8);
+    setLoadingStage(stages[0][1]);
+    const timer = window.setInterval(() => {
+      if (index < stages.length - 1) index += 1;
+      setLoadingProgress(stages[index][0]);
+      setLoadingStage(stages[index][1]);
+    }, 900);
+    return () => window.clearInterval(timer);
+  }, [loading]);
 
   useEffect(() => {
     if (initialQuery) {
@@ -130,10 +154,24 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   // temporarily unavailable. This never invents a forecast.
   const localWeatherFallback = (question: string): string | null => {
     if (/(tomorrow|forecast|next few days|कल|पूर्वानुमान|આગાહી)/i.test(question)) return null;
-    if (!Number.isFinite(weather.temperature)) return null;
-    const temperature = `${weather.temperature}°C`;
-    const rainChance = Number.isFinite(weather.rainChance) ? `${weather.rainChance}%` : 'unavailable';
-    const wind = Number.isFinite(weather.windSpeed) ? `${weather.windSpeed} km/h` : 'unavailable';
+    const temperatureValue = Number(weather.temperature);
+    if (!Number.isFinite(temperatureValue)) return null;
+    const rainValue = Number(weather.rainChance);
+    const windValue = Number(weather.windSpeed);
+    const temperature = `${temperatureValue}°C`;
+    const rainChance = Number.isFinite(rainValue) ? `${rainValue}%` : 'unavailable';
+    const wind = Number.isFinite(windValue) ? `${windValue} km/h` : 'unavailable';
+    const isSafetyQuestion = /safe|risk|danger|outside|सुरक्षित|जोखिम|बाहर|સલામત|જોખમ/i.test(question);
+    if (isSafetyQuestion) {
+      const caution = rainValue >= 60 || windValue >= 35
+        ? 'Use extra caution and consider waiting for conditions to improve.'
+        : rainValue >= 30
+        ? 'Conditions may change, so carry rain protection and check again before leaving.'
+        : 'No strong rain or wind signal is present in the loaded data, but conditions can change.';
+      if (currentLanguage === 'hi') return `${weather.city} में अभी तापमान ${temperature}, बारिश की संभावना ${rainChance} और हवा ${wind} है। ${caution} यह केवल ऐप में लोड वर्तमान मौसम डेटा पर आधारित है, पूर्ण सुरक्षा की गारंटी नहीं।`;
+      if (currentLanguage === 'gu') return `${weather.city}માં અત્યારે તાપમાન ${temperature}, વરસાદની શક્યતા ${rainChance} અને પવન ${wind} છે. ${caution} આ ફક્ત એપમાં લોડ થયેલા વર્તમાન હવામાન ડેટા પર આધારિત છે, સંપૂર્ણ સલામતીની ગેરંટી નથી.`;
+      return `Current conditions for ${weather.city}: ${temperature}, rain probability ${rainChance}, and wind ${wind}. ${caution} This uses the current weather already loaded in the app and is not a guarantee of safety.`;
+    }
     if (currentLanguage === 'hi') {
       return `${weather.city} का अभी का मौसम ${weather.condition} और ${temperature} है। बारिश की संभावना ${rainChance} और हवा की गति ${wind} है। यह जवाब ऐप में लोड किए गए लाइव मौसम डेटा पर आधारित है। पूर्वानुमान के लिए बाद में फिर कोशिश करें।`;
     }
@@ -261,6 +299,8 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
     // Update chips immediately from the question itself. They no longer stay
     // stuck on the initial catalogue when Gemini or the backend is unavailable.
     setServerSuggestions(followUpSuggestionsFor(textToSend));
+    setLoadingProgress(8);
+    setLoadingStage('Understanding your question');
     setLoading(true);
 
     try {
@@ -347,6 +387,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
       };
       setMessages((prev) => [...prev, botMsg]);
     } finally {
+      setLoadingProgress(100);
       setLoading(false);
     }
   };
@@ -493,11 +534,14 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
         ))}
 
         {loading && (
-          <div className="flex items-center space-x-2 p-3 bg-white border border-slate-200 rounded-2xl w-36 shadow-2xs">
-            <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" />
-            <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '0.2s' }} />
-            <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '0.4s' }} />
-            <span className="text-[10px] font-bold text-slate-400 ml-1">Analyzing...</span>
+          <div className="p-3 bg-white border border-slate-200 rounded-2xl w-64 shadow-2xs">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-bold text-slate-500">{loadingStage}</span>
+              <span className="text-[10px] font-bold text-blue-600">{loadingProgress}%</span>
+            </div>
+            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-500" style={{ width: `${loadingProgress}%` }} />
+            </div>
           </div>
         )}
 
