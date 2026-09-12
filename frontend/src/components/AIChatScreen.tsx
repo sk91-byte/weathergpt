@@ -103,6 +103,29 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
           : ['What will today’s weather be like?', 'Is it safe to go outside today?', 'What should I carry today?', 'Explain the main weather risk.']);
   const suggestions = serverSuggestions.length ? serverSuggestions : localSuggestions;
 
+  const followUpSuggestionsFor = (question: string): string[] => {
+    const text = question.toLowerCase();
+    const isRain = /rain|rainfall|umbrella|बारिश|वर्षा|छाता|વરસાદ|છત્રી/i.test(text);
+    const isSafety = /safe|risk|danger|बाहर|सुरक्षित|જોખમ|સલામત/i.test(text);
+    const isTravel = /travel|route|drive|journey|यात्रा|रास्ता|મુસાફરી|રસ્તો/i.test(text);
+    if (currentLanguage === 'hi') {
+      if (isTravel) return ['क्या मुझे अभी निकलना चाहिए?', 'रास्ते में बारिश होगी?', 'यात्रा में क्या साथ रखूं?', 'रूट का मौसम जोखिम क्या है?'];
+      if (isRain) return ['क्या मुझे छाता या रेनकोट रखना चाहिए?', 'बारिश कब तक रहेगी?', 'क्या बारिश से बाहर जाना सुरक्षित है?', 'बारिश से यात्रा पर क्या असर होगा?'];
+      if (isSafety) return ['मुख्य मौसम जोखिम क्या है?', 'मुझे क्या सावधानी रखनी चाहिए?', 'क्या बाद में निकलना बेहतर होगा?', 'आज क्या साथ रखना चाहिए?'];
+      return ['आज का तापमान कितना रहेगा?', 'क्या आज बारिश होगी?', 'आज बाहर जाने का सबसे अच्छा समय क्या है?', 'आज क्या साथ रखना चाहिए?'];
+    }
+    if (currentLanguage === 'gu') {
+      if (isTravel) return ['શું મારે અત્યારે નીકળવું જોઈએ?', 'રસ્તામાં વરસાદ પડશે?', 'મુસાફરીમાં શું સાથે રાખવું?', 'રૂટનું હવામાન જોખમ શું છે?'];
+      if (isRain) return ['શું છત્રી કે રેઇનકોટ સાથે રાખું?', 'વરસાદ કેટલો સમય રહેશે?', 'વરસાદમાં બહાર જવું સલામત છે?', 'વરસાદથી મુસાફરી પર શું અસર થશે?'];
+      if (isSafety) return ['મુખ્ય હવામાન જોખમ શું છે?', 'મારે કઈ સાવચેતી રાખવી?', 'શું પછી નીકળવું વધુ સારું રહેશે?', 'આજે શું સાથે રાખવું?'];
+      return ['આજે તાપમાન કેટલું રહેશે?', 'આજે વરસાદ પડશે?', 'આજે બહાર જવાનો શ્રેષ્ઠ સમય કયો છે?', 'આજે શું સાથે રાખવું?'];
+    }
+    if (isTravel) return ['Should I leave now?', 'Will it rain along the route?', 'What should I carry for the journey?', 'What is the route weather risk?'];
+    if (isRain) return ['Should I carry an umbrella or raincoat?', 'How long will the rain last?', 'Is it safe to go outside in the rain?', 'Will rain affect my travel?'];
+    if (isSafety) return ['What is the main weather risk?', 'What precautions should I take?', 'Would it be better to leave later?', 'What should I carry today?'];
+    return ['What temperature should I expect today?', 'Will it rain today?', 'When is the best time to go outside?', 'What should I carry today?'];
+  };
+
   // Use only the weather already loaded in the app if the chat backend is
   // temporarily unavailable. This never invents a forecast.
   const localWeatherFallback = (question: string): string | null => {
@@ -235,6 +258,9 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
 
     setMessages((prev) => [...prev, userMsg]);
     setInputVal('');
+    // Update chips immediately from the question itself. They no longer stay
+    // stuck on the initial catalogue when Gemini or the backend is unavailable.
+    setServerSuggestions(followUpSuggestionsFor(textToSend));
     setLoading(true);
 
     try {
