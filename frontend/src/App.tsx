@@ -39,7 +39,7 @@ import {
   DEFAULT_FARMER_ADVISORY,
   INITIAL_WEATHER
 } from './data/weatherData';
-import { WeatherData, Language, APP_LANGUAGES, UserRole, DemoScenario, RouteTrip, WeatherAlert, SavedPlace, RouteChatContext } from './types';
+import { WeatherData, Language, APP_LANGUAGES, UserRole, DemoScenario, RouteTrip, WeatherAlert, SavedPlace } from './types';
 import { loadSavedPlaces, persistSavedPlaces } from './services/savedItems';
 
 export default function App() {
@@ -96,7 +96,6 @@ export default function App() {
   const [userRole, setUserRole] = useState<UserRole>('citizen');
   const [mapInitialLayer, setMapInitialLayer] = useState<string>('rain');
   const [chatInitialQuery, setChatInitialQuery] = useState<string | undefined>(undefined);
-  const [chatRouteContext, setChatRouteContext] = useState<RouteChatContext | undefined>(undefined);
 
   // Live Location states
   const [isLocating, setIsLocating] = useState<boolean>(false);
@@ -394,12 +393,6 @@ export default function App() {
     setActiveTab('chat');
   };
 
-  const handleAnalyzeRouteInChat = (context: RouteChatContext, query: string) => {
-    setChatRouteContext(context);
-    setChatInitialQuery(query);
-    setActiveTab('chat');
-  };
-
   // If first-time user hasn't completed onboarding, show modern 3-step setup flow
   if (!hasCompletedOnboarding) {
     return <OnboardingScreen onComplete={handleOnboardingComplete} />;
@@ -550,7 +543,6 @@ export default function App() {
                 setActiveTab('home');
               }}
               initialQuery={chatInitialQuery}
-              routeContext={chatRouteContext}
               userRole={userRole}
               userName={userName}
               currentCoordinates={weather.locationCoordinates || null}
