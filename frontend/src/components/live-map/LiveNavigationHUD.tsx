@@ -228,16 +228,16 @@ export const LiveNavigationHUD: React.FC<LiveNavigationHUDProps> = ({
             </span>
           </div>
 
-          {/* Live Weather Safety Score Badge */}
+          {/* Live Weather Risk Score Badge */}
           <div className="text-right">
             <div className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-xs font-black">
-                {typeof route?.safetyScore === 'number' ? `${route.safetyScore}/100` : 'Unavailable'}
+                {typeof route?.safetyScore === 'number' ? `${Math.max(0, Math.min(100, 100 - route.safetyScore))}/100` : 'Unavailable'}
               </span>
             </div>
             <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
-              Weather Safety Score
+              Weather Risk Score
             </div>
           </div>
         </div>

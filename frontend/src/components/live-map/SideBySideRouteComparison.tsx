@@ -53,7 +53,7 @@ export const SideBySideRouteComparison: React.FC<SideBySideRouteComparisonProps>
             </h3>
           </div>
           <p className="text-[10px] text-slate-400">
-            Compare weather hazards, pavement conditions, and safety scores across all alternatives.
+            Compare weather hazards, pavement conditions, and weather risk scores across all alternatives.
           </p>
         </div>
 
@@ -163,7 +163,7 @@ export const SideBySideRouteComparison: React.FC<SideBySideRouteComparisonProps>
                   {/* Safety Score Highlight Box */}
                   <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-750 mb-2.5">
                     <div className="flex items-baseline justify-between mb-1">
-                      <span className="text-[10px] font-bold text-slate-400">Weather Safety Score</span>
+                      <span className="text-[10px] font-bold text-slate-400">Weather Risk Score</span>
                       <span className={`text-sm font-black px-1.5 py-0.2 rounded-md border ${safetyBg}`}>
                         {route.safetyScore}/100
                       </span>
@@ -361,9 +361,9 @@ export const SideBySideRouteComparison: React.FC<SideBySideRouteComparisonProps>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 text-[11px]">
-                {/* Safety Score Row */}
+                {/* Weather Risk Score Row */}
                 <tr className="hover:bg-slate-800/40">
-                  <td className="p-2.5 font-bold text-slate-300">Safety Score</td>
+                  <td className="p-2.5 font-bold text-slate-300">Weather Risk Score</td>
                   {safeRoutes.map((r) => (
                     <td key={r.id} className="p-2.5 font-black">
                       <span
@@ -492,7 +492,7 @@ export const SideBySideRouteComparison: React.FC<SideBySideRouteComparisonProps>
               <strong className="text-white font-black">
                 {Math.max(1, safestRoute.durationMinutes - fastestRoute.durationMinutes)} minutes
               </strong>{' '}
-              compared to the fastest route, but increases your Weather Safety Score from{' '}
+              compared to the fastest route, but reduces your Weather Risk Score from{' '}
               <strong className="text-amber-400 font-black">{fastestRoute.safetyScore}/100</strong> to{' '}
               <strong className="text-emerald-400 font-black">{safestRoute.safetyScore}/100</strong>. It avoids{' '}
               <strong>standing water and low-lying underpasses</strong> that risk hydroplaning.

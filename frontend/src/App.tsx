@@ -53,9 +53,9 @@ export default function App() {
 
   const [userName, setUserName] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('weathergpt_username') || 'Anmol';
+      return localStorage.getItem('weathergpt_username') || 'Shubham';
     }
-    return 'Anmol';
+    return 'Shubham';
   });
 
   const [language, setLanguage] = useState<Language>(() => {
@@ -399,15 +399,6 @@ export default function App() {
         className="w-full max-w-md h-[100dvh] sm:h-[844px] flex flex-col relative sm:rounded-[36px] shadow-2xl border border-slate-200/80 overflow-hidden transition-all duration-700 ease-in-out"
         style={{ background: weatherTheme.appBackground }}
       >
-        {/* Top Status Bar (Cosmetic notch / time styling) */}
-        <div className="h-6 bg-transparent shrink-0 flex items-center justify-between px-6 text-[10px] font-bold text-slate-500/80 select-none z-30">
-          <span>09:41</span>
-          <div className="flex items-center space-x-1.5">
-            <span>5G</span>
-            <span>100%</span>
-          </div>
-        </div>
-
         {/* Dynamic Screen View Based on activeTab */}
         <div className="flex-1 min-h-0 overflow-y-auto relative">
           {activeTab === 'home' && (
@@ -536,6 +527,7 @@ export default function App() {
               }}
               initialQuery={chatInitialQuery}
               userRole={userRole}
+              userName={userName}
             />
           )}
 

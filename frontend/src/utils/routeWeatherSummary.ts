@@ -12,7 +12,7 @@ export interface RouteSummaryContext {
   distanceKm: number;
   durationMinutes: number;
   departureTime?: string;
-  safetyScore: number | null;
+  riskScore: number | null;
   rainRisk?: string;
   waterloggingRisk?: string;
   fogRisk?: string;
@@ -40,11 +40,17 @@ export function generateRouteWeatherSummary(
 ): string {
   const origin = ctx.originName.split(',')[0].trim();
   const dest = ctx.destinationName.split(',')[0].trim();
-  const score = ctx.safetyScore ?? 80;
+  const score = ctx.riskScore;
   const isRain = ctx.rainRisk === 'High' || ctx.rainRisk === 'Moderate' || (ctx.summaryCondition || '').toLowerCase().includes('rain');
   const isFlood = ctx.waterloggingRisk === 'High' || ctx.waterloggingRisk === 'Moderate';
   const isFog = ctx.fogRisk === 'High' || ctx.fogRisk === 'Moderate';
   const isStorm = ctx.thunderstormRisk === 'High';
+
+  if (score === null || score === undefined) {
+    if (lang === 'hi') return `लाइव मौसम डेटा उपलब्ध नहीं है, इसलिए ${origin} से ${dest} तक मौसम जोखिम स्कोर अभी उपलब्ध नहीं है। यात्रा से पहले मौसम फिर जांचें।`;
+    if (lang === 'hinglish') return `Live weather data available nahi hai, isliye ${origin} se ${dest} ka weather risk score abhi available nahi hai. Travel se pehle weather phir check kar lena.`;
+    return `Live weather data is unavailable, so a Weather Risk Score for the route from ${origin} to ${dest} cannot be calculated yet. Check the weather again before travelling.`;
+  }
 
   // Format arrival time estimate
   const now = new Date();
@@ -65,7 +71,7 @@ export function generateRouteWeatherSummary(
     if (isFog) {
       return `${origin} से ${dest} के बीच दृश्यता कम हो सकती है और हल्का कोहरा सम्भव है। फॉग लाइट का उपयोग करें और आगे वाले वाहन से सुरक्षित दूरी बनाए रखें।`;
     }
-    return `${origin} से ${dest} तक का रास्ता अनुकूल है (सुरक्षा स्कोर: ${score}/100)। समय पर निकलें और सामान्य सावधानी बरतें।`;
+    return `${origin} से ${dest} तक मौसम जोखिम स्कोर ${score}/100 है। समय पर निकलें और सामान्य सावधानी बरतें।`;
   }
 
   if (lang === 'hinglish') {
@@ -82,7 +88,7 @@ export function generateRouteWeatherSummary(
     if (isFog) {
       return `${origin} se ${dest} ke corridor me visibility thodi kam hai (fog risk). Headlights low beam pe rakho aur safe distance maintain karo.`;
     }
-    return `${origin} se ${dest} ka route overall theek hai (Safety Score: ${score}/100). On time nikal sakte hain, normal traffic rules follow karein.`;
+    return `${origin} se ${dest} ka Weather Risk Score ${score}/100 hai. On time nikal sakte hain, normal traffic rules follow karein.`;
   }
 
   // English Summary (Default)
@@ -98,7 +104,7 @@ export function generateRouteWeatherSummary(
   if (isFog) {
     return `Moderate fog and reduced visibility expected between ${origin} and ${dest}. Use low-beam fog headlights and maintain a safe following distance.`;
   }
-  return `Your trip from ${origin} to ${dest} is calculated with a ${score}/100 safety rating. Conditions are manageable—drive attentively and stay weather-aware.`;
+  return `Your trip from ${origin} to ${dest} has a Weather Risk Score of ${score}/100. Higher scores indicate greater weather danger; drive attentively and stay weather-aware.`;
 }
 
 /**
@@ -112,7 +118,7 @@ export function getActionableSuggestions(
   const isRain = ctx.rainRisk === 'High' || ctx.rainRisk === 'Moderate' || (ctx.summaryCondition || '').toLowerCase().includes('rain');
   const isFlood = ctx.waterloggingRisk === 'High' || ctx.waterloggingRisk === 'Moderate';
   const isFog = ctx.fogRisk === 'High' || ctx.fogRisk === 'Moderate';
-  const score = ctx.safetyScore ?? 85;
+  const score = ctx.riskScore ?? 0;
 
   if (lang === 'hi') {
     if (isRain) {
@@ -120,7 +126,7 @@ export function getActionableSuggestions(
       suggestions.push({ id: 'raincoat', icon: '🧥', text: 'रेनकोट तैयार रखें', priority: 'high' });
       suggestions.push({ id: 'slow_down', icon: '🚗', text: 'सड़क पर गति धीमी रखें', priority: 'medium' });
     }
-    if (isFlood || score < 75) {
+    if (isFlood || score >= 60) {
       suggestions.push({ id: 'safest_route', icon: '🟢', text: 'सबसे सुरक्षित रास्ता चुनें', priority: 'high' });
       suggestions.push({ id: 'avoid_underpass', icon: '⚠️', text: 'निचले अंडरपास से बचें', priority: 'high' });
       suggestions.push({ id: 'wait_20', icon: '⏱️', text: '20 मिनट रुककर निकलें', priority: 'medium' });
@@ -137,7 +143,7 @@ export function getActionableSuggestions(
       suggestions.push({ id: 'raincoat', icon: '🧥', text: 'Raincoat ready rakho', priority: 'high' });
       suggestions.push({ id: 'slow_down', icon: '🚗', text: 'Wet road pe speed slow rakho', priority: 'medium' });
     }
-    if (isFlood || score < 75) {
+    if (isFlood || score >= 60) {
       suggestions.push({ id: 'safest_route', icon: '🟢', text: 'Safest green route lo', priority: 'high' });
       suggestions.push({ id: 'avoid_underpass', icon: '⚠️', text: 'Waterlogged underpass avoid karo', priority: 'high' });
       suggestions.push({ id: 'wait_20', icon: '⏱️', text: '20 mins wait karke niklo', priority: 'medium' });
@@ -155,7 +161,7 @@ export function getActionableSuggestions(
       suggestions.push({ id: 'raincoat', icon: '🧥', text: 'Carry raincoat', priority: 'high' });
       suggestions.push({ id: 'slow_down', icon: '🚗', text: 'Reduce driving speed', priority: 'medium' });
     }
-    if (isFlood || score < 75) {
+    if (isFlood || score >= 60) {
       suggestions.push({ id: 'safest_route', icon: '🟢', text: 'Choose safest route', priority: 'high' });
       suggestions.push({ id: 'avoid_underpass', icon: '⚠️', text: 'Avoid low-lying roads', priority: 'high' });
       suggestions.push({ id: 'wait_20', icon: '⏱️', text: 'Wait 20 minutes', priority: 'medium' });

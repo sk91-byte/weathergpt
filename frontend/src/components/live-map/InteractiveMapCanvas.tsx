@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { LiveMapRoute, RouteRiskZone, NearbySafePlace, RouteSamplingPoint } from '../../types';
+import { DestinationPreset } from '../../data/liveMapData';
 import {
   Plus,
   Minus,
@@ -44,6 +45,13 @@ interface InteractiveMapCanvasProps {
   gpsCoords?: [number, number] | null;
   isRouteLoading?: boolean;
   routeError?: string;
+  destinationPresets?: DestinationPreset[];
+  onSelectDestinationPreset?: (preset: DestinationPreset) => void;
+  onOpenSearch?: () => void;
+  onAnalyzeRoute?: () => void;
+  onStartNavigation?: () => void;
+  onUseCurrentLocation?: () => void;
+  onClearDestination?: () => void;
 }
 
 export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
@@ -69,7 +77,14 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
   destinationCoords,
   gpsCoords,
   isRouteLoading = false,
-  routeError = ''
+  routeError = '',
+  destinationPresets = [],
+  onSelectDestinationPreset,
+  onOpenSearch,
+  onAnalyzeRoute,
+  onStartNavigation,
+  onUseCurrentLocation,
+  onClearDestination
 }) => {
   // Tile mode: 'streets' (Carto Voyager / OpenStreetMap), 'satellite' (ArcGIS), 'dark' (Carto Dark)
   const [tileMode, setTileMode] = useState<'streets' | 'satellite' | 'dark'>('streets');
@@ -127,6 +142,55 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
         isRouteLoading={isRouteLoading}
         routeError={routeError}
       />
+
+      {/* Reference-style map controls. These sit above the real Leaflet map;
+          every action delegates to the existing route/search handlers. */}
+      {!isNavigating && (
+        <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none">
+          <div className="pointer-events-auto rounded-2xl bg-white/95 shadow-xl border border-slate-200 overflow-hidden max-w-xl mx-auto">
+            <button
+              type="button"
+              onClick={onOpenSearch}
+              className="w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-slate-50 transition"
+              aria-label="Search destination"
+            >
+              <span className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-sm">⌕</span>
+              <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 truncate">{destinationName || 'Search destination'}</span>
+              <button type="button" onClick={onClearDestination} className="text-slate-400 text-lg leading-none hover:text-slate-700" aria-label="Clear destination">×</button>
+              <button type="button" onClick={onOpenSearch} className="text-slate-500 text-base hover:text-blue-600" aria-label="Open voice/search controls">♩</button>
+              <button type="button" onClick={onUseCurrentLocation} className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100" aria-label="Use current location">⌖</button>
+            </button>
+            <div className="px-3 py-1.5 border-t border-slate-100 flex items-center gap-1.5 text-[10px] font-bold text-slate-600 truncate">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+              <span className="truncate">{originName || 'Current location'}</span>
+              <span className="text-slate-300">↓</span>
+              <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+              <span className="truncate">{destinationName || 'Choose destination'}</span>
+            </div>
+          </div>
+
+          {destinationPresets.length > 0 && (
+            <div className="pointer-events-auto mt-2 flex gap-2 overflow-x-auto no-scrollbar pb-1">
+              {destinationPresets.slice(0, 5).map((preset) => {
+                const selected = destinationName === preset.name;
+                const icon = preset.category === 'home' ? '⌂' : preset.category === 'university' ? '◆' : preset.category === 'transport' ? '✦' : '▣';
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => onSelectDestinationPreset?.(preset)}
+                    className={`shrink-0 px-3 py-1.5 rounded-full border text-[11px] font-black shadow-sm transition ${
+                      selected ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white/95 border-slate-200 text-slate-700 hover:border-blue-400'
+                    }`}
+                  >
+                    {icon} {preset.name.replace(' (Vasant Kunj)', '').replace(' Terminal 3', '')}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Floating Route Options Quick Switcher Bar on Map */}
       {!isNavigating && safeRoutes.length > 1 && (
@@ -462,7 +526,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
 
       {/* Bottom Map Legend: only explains the live route line; no weather
           values are shown until a map point or route segment is tapped. */}
-      <div className="absolute bottom-3 left-3 z-20 pointer-events-auto bg-slate-900/90 backdrop-blur-md rounded-xl px-2.5 py-1.5 border border-slate-700 text-[10px] text-slate-300 flex items-center space-x-3">
+      <div className={`absolute ${activeRoute && !isNavigating ? 'bottom-[190px]' : 'bottom-3'} left-3 z-20 pointer-events-auto bg-slate-900/90 backdrop-blur-md rounded-xl px-2.5 py-1.5 border border-slate-700 text-[10px] text-slate-300 flex items-center space-x-3`}>
         <div className="flex items-center space-x-1">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
           <span>Lower live risk</span>
@@ -487,6 +551,50 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
           </div>
         )}
       </div>
+
+      {!isNavigating && activeRoute && (
+        <div className="absolute bottom-3 left-3 right-3 z-30 pointer-events-none">
+          <div className="pointer-events-auto max-w-xl mx-auto rounded-2xl bg-white/95 shadow-2xl border border-slate-200 p-3 text-slate-900">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-black uppercase">
+                ● WeatherGPT safest route
+              </span>
+              <span className="text-xs font-black text-emerald-600">Safety: {activeRoute.safetyScore}/100</span>
+            </div>
+            <div className="text-xs font-black truncate">{originName} → {destinationName}</div>
+            <div className="mt-1 text-[11px] text-slate-500 flex items-center gap-2">
+              <span>{activeRoute.distanceKm} km</span>
+              <span>•</span>
+              <span>{activeRoute.durationMinutes} min</span>
+              <span>•</span>
+              <span>🌧️ Rain risk: {activeRoute.rainRisk || 'Low'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={onAnalyzeRoute}
+              className="mt-2 w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black transition"
+            >
+              ✨ Analyze Weather & Safety (Route Intelligence) →
+            </button>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onAnalyzeRoute?.()}
+                className="py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-[11px] font-black hover:bg-amber-100 transition"
+              >
+                ◷ Should I Leave Now?
+              </button>
+              <button
+                type="button"
+                onClick={onStartNavigation}
+                className="py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-black transition"
+              >
+                ➤ Start Navigation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

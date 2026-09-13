@@ -129,7 +129,7 @@ export const SmartWaitModeOverlay: React.FC<SmartWaitModeOverlayProps> = ({
               </h4>
             </div>
             <p className="text-xs text-emerald-800 leading-relaxed mb-3">
-              Rain intensity has eased significantly. Your recommended route is now safer to travel (Safety Score improved from 78 → 96).
+              Rain intensity has eased significantly. Your recommended route now has lower weather risk (Weather Risk Score improved from 78 → 96).
             </p>
             <button
               onClick={onStartNavigation}

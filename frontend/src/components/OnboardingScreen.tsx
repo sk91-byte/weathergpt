@@ -39,7 +39,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
   const [isSearchingManual, setIsSearchingManual] = useState<boolean>(false);
 
   // Step 2: Name States
-  const [userName, setUserName] = useState<string>('Anmol');
+  // Keep the suggested name as a placeholder, not as editable input text.
+  const [userName, setUserName] = useState<string>('');
   const [nameError, setNameError] = useState<string | null>(null);
 
   // Step 3: Language State
@@ -157,7 +158,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
   };
 
   const handleFinalSubmit = () => {
-    const finalName = userName.trim() || 'Friend';
+    const finalName = userName.trim() || 'Shubham';
     // Persist to local storage so returning users never see this again
     try {
       localStorage.setItem('weathergpt_onboarded', 'true');
@@ -454,7 +455,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') handleNextFromStep2();
                     }}
-                    placeholder="e.g. Anmol"
+                    placeholder="e.g. Shubham"
                     maxLength={30}
                     autoFocus
                     className="w-full pl-13 pr-4 py-3.5 bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-2xl text-base font-bold text-white placeholder-slate-500 focus:outline-none transition shadow-inner"
@@ -473,7 +474,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
               <div className="space-y-1.5">
                 <span className="text-[11px] font-semibold text-slate-400">Quick suggestions:</span>
                 <div className="flex flex-wrap gap-2">
-                  {['Anmol', 'Rahul', 'Priya', 'Amit', 'Neha', 'Dr. Patel'].map((chip) => (
+                  {['Shubham', 'Rahul', 'Priya', 'Amit', 'Neha', 'Dr. Patel'].map((chip) => (
                     <button
                       key={chip}
                       type="button"
@@ -498,7 +499,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">
-                      Good Morning, {userName.trim() || 'Friend'}!
+                      Good Morning, {userName.trim() || 'Shubham'}!
                     </h3>
                     <p className="text-[11px] text-slate-400 mt-0.5">
                       Your AI morning briefing in {selectedWeather.city} will greet you like this.

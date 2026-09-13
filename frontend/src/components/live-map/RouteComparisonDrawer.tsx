@@ -49,6 +49,7 @@ interface RouteComparisonDrawerProps {
   onChangeLanguage?: (lang: AppLanguage) => void;
   userRole?: string;
   currentWeather?: any;
+  isWeatherLoading?: boolean;
 }
 
 export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
@@ -76,7 +77,8 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
   language = 'en',
   onChangeLanguage,
   userRole = 'citizen',
-  currentWeather
+  currentWeather,
+  isWeatherLoading = false
 }) => {
   const [showSteps, setShowSteps] = useState(false);
   const [viewMode, setViewMode] = useState<'overview' | 'comparison'>('overview');
@@ -87,16 +89,18 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
 
   if (!activeRoute) return null;
 
-  const isLowSafety = activeRoute?.safetyScore !== undefined && activeRoute.safetyScore !== null && activeRoute.safetyScore < 80;
+  const riskScore = activeRoute?.safetyScore == null ? null : Math.max(0, Math.min(100, 100 - activeRoute.safetyScore));
+  const isHighRisk = riskScore !== null && riskScore >= 60;
+  const weatherLoading = isWeatherLoading || activeRoute.summaryCondition === 'Loading live weather…';
 
   // Generate dynamic multilingual AI summary
-  const summaryText = generateRouteWeatherSummary(
+  const summaryText = weatherLoading ? 'Live route weather is loading. Weather details and travel advice will appear when the live analysis is complete.' : generateRouteWeatherSummary(
     {
       originName,
       destinationName,
       distanceKm: activeRoute.distanceKm,
       durationMinutes: activeRoute.durationMinutes,
-      safetyScore: activeRoute.safetyScore,
+      riskScore,
       rainRisk: activeRoute.rainRisk,
       waterloggingRisk: activeRoute.waterloggingRisk,
       fogRisk,
@@ -109,13 +113,13 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
   );
 
   // Generate actionable suggestions
-  const actionableSuggestions = getActionableSuggestions(
+  const actionableSuggestions = weatherLoading ? [] : getActionableSuggestions(
     {
       originName,
       destinationName,
       distanceKm: activeRoute.distanceKm,
       durationMinutes: activeRoute.durationMinutes,
-      safetyScore: activeRoute.safetyScore,
+      riskScore,
       rainRisk: activeRoute.rainRisk,
       waterloggingRisk: activeRoute.waterloggingRisk,
       fogRisk,
@@ -255,15 +259,15 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                 <div className="flex flex-col">
                   <span className="text-[10px] text-slate-400 font-semibold">Weather & Rain Probability</span>
                   <span className="text-xs font-black text-sky-300">
-                    {activeRoute.summaryCondition || currentWeather?.condition || 'Unavailable'} • {typeof activeRoute.waypoints?.[0]?.rainProb === 'number' ? `${activeRoute.waypoints[0].rainProb}%` : 'Unavailable'}
+                    {weatherLoading ? 'Loading live weather…' : `${activeRoute.summaryCondition || currentWeather?.condition || 'Unavailable'} • ${typeof activeRoute.waypoints?.[0]?.rainProb === 'number' ? `${activeRoute.waypoints[0].rainProb}%` : 'Unavailable'}`}
                   </span>
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[10px] text-slate-400 font-semibold">Wind & Route Safety</span>
                   <div className="flex items-center space-x-1">
                     <span className="text-xs font-bold text-slate-200">{currentWeather?.windSpeed != null ? `${currentWeather.windSpeed} km/h ${currentWeather.windDirection || ''}` : 'Unavailable'}</span>
-                    <span className="text-xs font-black text-emerald-400 bg-emerald-950/60 px-1 py-0.2 rounded-md border border-emerald-800/50">
-                      🛡️ {activeRoute.safetyScore}/100
+                    <span className={`text-xs font-black px-1 py-0.2 rounded-md border ${riskScore === null ? 'text-slate-400 bg-slate-900 border-slate-700' : riskScore >= 60 ? 'text-red-300 bg-red-950/60 border-red-800/50' : riskScore >= 40 ? 'text-amber-300 bg-amber-950/60 border-amber-800/50' : 'text-emerald-300 bg-emerald-950/60 border-emerald-800/50'}`}>
+                      ⚠️ {weatherLoading ? 'Loading…' : riskScore === null ? 'Unavailable' : `${riskScore}/100`}
                     </span>
                   </div>
                 </div>
@@ -278,7 +282,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                 <Sparkles className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
                 <div>
                   <strong className="text-white font-bold block mb-0.5">Practical Weather Advice:</strong>
-                  <span>{activeRoute.departureAdvice || 'No live route advice is available yet.'}</span>
+                  <span>{weatherLoading ? 'Loading live departure advice…' : activeRoute.departureAdvice || 'No live route advice is available yet.'}</span>
                 </div>
               </div>
 
@@ -308,12 +312,12 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
             </div>
 
             {/* Safety Alert Warning Banner if score < 80 */}
-            {isLowSafety && (
+            {isHighRisk && (
               <div className="p-3 rounded-2xl bg-red-950/80 border border-red-500/50 text-red-200 text-xs shadow-lg animate-pulse flex items-start space-x-2.5">
                 <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <div className="font-black text-red-100 flex items-center justify-between">
-                    <span>⚠️ Safety Score: {activeRoute.safetyScore}/100</span>
+                    <span>⚠️ Weather Risk Score: {riskScore}/100</span>
                   </div>
                   <p className="text-[11px] text-red-200/90 mt-0.5">
                     Weather risks detected along this corridor. Consider departing around{' '}
@@ -429,22 +433,22 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                   </span>
                 </div>
 
-                {/* Weather Safety Score Badge */}
+                {/* Weather Risk Score Badge */}
                 <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700">
-                  <span className="text-[10px] font-bold text-slate-400">Safety:</span>
+                  <span className="text-[10px] font-bold text-slate-400">Weather Risk:</span>
                   <span
                     className={`text-xs font-black ${
-                      activeRoute.safetyScore !== undefined && activeRoute.safetyScore !== null
-                        ? activeRoute.safetyScore >= 80
-                          ? 'text-emerald-400'
-                          : activeRoute.safetyScore >= 60
+                      riskScore !== null
+                        ? riskScore >= 60
+                          ? 'text-red-400'
+                          : riskScore >= 40
                           ? 'text-amber-400'
-                          : 'text-red-400'
+                          : 'text-emerald-400'
                         : 'text-slate-400'
                     }`}
                   >
-                    {activeRoute.safetyScore !== undefined && activeRoute.safetyScore !== null
-                      ? `${activeRoute.safetyScore}/100`
+                    {riskScore !== null
+                      ? `${riskScore}/100`
                       : 'Unavailable'}
                   </span>
                 </div>
@@ -469,35 +473,35 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
                 <div className="p-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-center">
                   <div className="text-slate-400 text-[9px] mb-0.5">Rain</div>
                   <div className={`font-black ${activeRoute.rainRisk === 'Low' ? 'text-emerald-400' : activeRoute.rainRisk === 'Moderate' ? 'text-amber-400' : activeRoute.rainRisk === 'High' ? 'text-red-400' : 'text-slate-400'}`}>
-                    {activeRoute.rainRisk || 'Unavailable'}
+                    {weatherLoading ? 'Loading…' : activeRoute.rainRisk || 'Unavailable'}
                   </div>
                 </div>
 
                 <div className="p-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-center">
                   <div className="text-slate-400 text-[9px] mb-0.5">Flood</div>
                   <div className={`font-black ${activeRoute.waterloggingRisk === 'Low' ? 'text-emerald-400' : activeRoute.waterloggingRisk === 'Moderate' ? 'text-amber-400' : activeRoute.waterloggingRisk === 'High' ? 'text-red-400' : 'text-slate-400'}`}>
-                    {activeRoute.waterloggingRisk || 'Unavailable'}
+                    {weatherLoading ? 'Loading…' : activeRoute.waterloggingRisk || 'Unavailable'}
                   </div>
                 </div>
 
                 <div className="p-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-center">
                   <div className="text-slate-400 text-[9px] mb-0.5">Wind</div>
                   <div className={`font-black ${windRisk === 'Low' ? 'text-emerald-400' : windRisk === 'Moderate' ? 'text-amber-400' : windRisk === 'High' ? 'text-red-400' : 'text-slate-400'}`}>
-                    {windRisk || 'Unavailable'}
+                    {weatherLoading ? 'Loading…' : windRisk || 'Unavailable'}
                   </div>
                 </div>
 
                 <div className="p-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-center">
                   <div className="text-slate-400 text-[9px] mb-0.5">Fog</div>
                   <div className={`font-black ${fogRisk === 'Low' ? 'text-emerald-400' : fogRisk === 'Moderate' ? 'text-amber-400' : fogRisk === 'High' ? 'text-red-400' : 'text-slate-400'}`}>
-                    {fogRisk || 'Unavailable'}
+                    {weatherLoading ? 'Loading…' : fogRisk || 'Unavailable'}
                   </div>
                 </div>
 
                 <div className="p-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-center">
                   <div className="text-slate-400 text-[9px] mb-0.5">Storm</div>
                   <div className={`font-black ${thunderstormRisk === 'Low' ? 'text-emerald-400' : thunderstormRisk === 'Moderate' ? 'text-amber-400' : thunderstormRisk === 'High' ? 'text-red-400' : 'text-slate-400'}`}>
-                    {thunderstormRisk || 'Unavailable'}
+                    {weatherLoading ? 'Loading…' : thunderstormRisk || 'Unavailable'}
                   </div>
                 </div>
               </div>

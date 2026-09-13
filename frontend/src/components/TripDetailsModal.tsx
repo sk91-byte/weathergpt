@@ -384,6 +384,9 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
         id: `trip-${Date.now()}`,
         from: newFrom.trim(),
         to: newTo.trim(),
+        originCoords: [origPt.latitude, origPt.longitude],
+        destinationCoords: [destPt.latitude, destPt.longitude],
+        travelMode: 'driving',
         leaveBy: newLeaveBy,
         estDuration,
         status: typeof calculatedScore === 'number' ? (calculatedScore >= 80 ? 'Favorable commute corridor with low weather risk' : 'Precaution advised: wet road conditions possible') : 'Route calculated; weather data unavailable',
@@ -394,7 +397,7 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
           ? 'The live route weather was used for this summary. Recheck before leaving because conditions can change.'
           : 'No departure recommendation is shown because live route weather was unavailable.',
         stops: timelineStops,
-        alternativeAdvice: typeof calculatedScore === 'number' ? 'Recheck the live forecast before departure because conditions can change.' : 'Try again when live route weather is available; no safety score is being estimated.'
+        alternativeAdvice: typeof calculatedScore === 'number' ? 'Recheck the live forecast before departure because conditions can change.' : 'Try again when live route weather is available; no weather risk score is being estimated.'
       };
 
       if (onSaveTrip) onSaveTrip(newTripObj);
@@ -520,12 +523,12 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
                 </div>
               </div>
 
-              {/* Weather Safety Score Highlight */}
+              {/* Weather Risk Score Highlight */}
               <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center justify-between">
                 <div>
-                  <span className="text-xs font-bold text-slate-800 block">Weather Safety Score</span>
+                  <span className="text-xs font-bold text-slate-800 block">Weather Risk Score</span>
                   <span className="text-[11px] text-slate-500">
-                    {typeof safetyScore === 'number' ? (safetyScore >= 80 ? 'Safe conditions with low risk' : 'Moderate precautions advised') : 'Live weather score unavailable'}
+                    {typeof safetyScore === 'number' ? (safetyScore >= 80 ? 'High weather risk — extra precautions advised' : safetyScore >= 60 ? 'Moderate weather risk — precautions advised' : 'Lower weather risk based on available conditions') : 'Live weather risk is unavailable'}
                   </span>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -1053,9 +1056,9 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
                 </span>
                 <div className="space-y-1.5">
                   {[
-                    { from: 'Home', to: 'Sushant University', time: '08:00 AM' },
-                    { from: 'DLF Cyber Hub', to: 'IGI Airport T3', time: '09:30 AM' },
-                    { from: 'Clock Tower Dehradun', to: 'UPES Campus Bidholi', time: '08:15 AM' }
+                    { from: 'Home', fromCoords: [28.4986, 77.0878] as [number, number], to: 'Sushant University', toCoords: [28.4358, 77.1082] as [number, number], time: '08:00 AM' },
+                    { from: 'DLF Cyber Hub', fromCoords: [28.4952, 77.0886] as [number, number], to: 'IGI Airport T3', toCoords: [28.5562, 77.1000] as [number, number], time: '09:30 AM' },
+                    { from: 'Clock Tower Dehradun', fromCoords: [30.3255, 78.0436] as [number, number], to: 'UPES Campus Bidholi', toCoords: [30.4158, 77.9658] as [number, number], time: '08:15 AM' }
                   ].map((p, idx) => (
                     <button
                       key={idx}
@@ -1064,8 +1067,8 @@ export const TripDetailsModal: React.FC<TripDetailsModalProps> = ({
                         setNewFrom(p.from);
                         setNewTo(p.to);
                         setNewLeaveBy(p.time);
-                        setOriginCoords(null);
-                        setDestinationCoords(null);
+                        setOriginCoords(p.fromCoords);
+                        setDestinationCoords(p.toCoords);
                       }}
                       className="w-full text-left p-2.5 bg-slate-50 hover:bg-blue-50 border border-slate-200/80 rounded-xl text-xs flex items-center justify-between transition cursor-pointer"
                     >

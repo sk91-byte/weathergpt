@@ -2,7 +2,7 @@
 import type { WeatherAlert } from '../types';
 export interface ApiPoint { latitude: number; longitude: number; name?: string; }
 export interface ApiAutocompleteSuggestion { place_id: string; name: string; formatted_address: string; latitude: number; longitude: number; type?: string; }
-export interface ApiRouteResponse { route_id: string; origin: ApiPoint; destination: ApiPoint; travel_mode: string; distance_km: number; duration_minutes: number; geometry: [number, number][]; steps: any[]; is_live: boolean; data_source: string; }
+export interface ApiRouteResponse { route_id: string; origin: ApiPoint; destination: ApiPoint; travel_mode: string; distance_km: number; duration_minutes: number; geometry: [number, number][]; steps: any[]; is_live: boolean; data_source: string; alternatives?: Array<{ route_id: string; distance_km: number; duration_minutes: number; geometry: [number, number][]; steps: any[]; alternative_index?: number; }>; }
 export interface ApiRouteWeatherResponse { safety_score: number | null; rain_risk: any; waterlogging_risk: any; wind_risk: any; fog_risk: any; thunderstorm_risk: any; timeline: any[]; risk_zones: any[]; is_live: boolean; source: string; }
 export interface ApiBestDepartureTimeResponse { route_id: string; current_safety_score: number | null; warning: boolean; warning_message: string; best_departure_time: string; best_option: any; options: any[]; }
 export interface ApiPointWeatherResponse { latitude:number; longitude:number; location_name:string; temperature:number | null; feels_like:number | null; condition:string; condition_icon:string; rain_probability:number | null; current_precipitation:number | null; humidity:number | null; wind_speed:number | null; wind_direction:string; visibility?:number; weather_risk?:string; nearby_alerts?:string[]; updated_time?:string; weather_source:string; is_live:boolean; route_point_info?:any; maxTemp?: number; minTemp?: number; aqi?: number | null; riskScore?: number; riskStatus?: string; risks?: any; }
@@ -155,7 +155,14 @@ export async function apiCalculateRoute(origin: ApiPoint, destination: ApiPoint,
   const geometry = parseRouteGeometry(rawGeometry);
   if (!payload.route_id || geometry.length < 3) throw new Error('Road route unavailable. No straight-line route is shown.');
   latestRouteId = payload.route_id;
-  return { ...payload, geometry, is_live: true, data_source: 'OSRM road geometry' };
+  const alternatives = Array.isArray(payload.alternatives)
+    ? payload.alternatives.map((item: any) => ({
+        ...item,
+        geometry: parseRouteGeometry(item.geometry),
+        steps: Array.isArray(item.steps) ? item.steps : []
+      })).filter((item: any) => item.route_id && item.geometry.length >= 3)
+    : [];
+  return { ...payload, geometry, alternatives, is_live: true, data_source: 'OSRM road geometry' };
 }
 export async function apiGetRouteWeather(routeOrGeometry:[number,number][]|string, _travelMode='driving', onSlow?:()=>void):Promise<ApiRouteWeatherResponse> {
   const routeId=typeof routeOrGeometry==='string'?routeOrGeometry:latestRouteId;

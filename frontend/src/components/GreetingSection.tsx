@@ -11,7 +11,7 @@ interface GreetingSectionProps {
 
 export const GreetingSection: React.FC<GreetingSectionProps> = ({
   name,
-  userName = 'Anmol',
+  userName = 'Shubham',
   greetingText,
   subtitleText,
   onOpenBriefing

@@ -40,12 +40,16 @@ class OSRMProvider:
         routes = payload.get("routes") if isinstance(payload, dict) else None
         if not isinstance(payload, dict) or payload.get("code") != "Ok" or not isinstance(routes, list) or not routes:
             raise RoutingServiceError("Route service returned no usable route")
-        selected = routes[0]
-        steps: list[dict[str, Any]] = []
-        for step in selected.get("legs", [])[0].get("steps", []) if selected.get("legs") else []:
-            steps.append({"name": step.get("name") or "Unnamed road", "distance_km": round(float(step.get("distance", 0)) / 1000, 2), "duration_minutes": round(float(step.get("duration", 0)) / 60), "geometry": step.get("geometry")})
-        route_id = hashlib.sha256(f"{request.origin.latitude},{request.origin.longitude}|{request.destination.latitude},{request.destination.longitude}|{request.travel_mode}".encode()).hexdigest()[:24]
-        return {"route_id": route_id, "origin": request.origin.model_dump(), "destination": request.destination.model_dump(), "travel_mode": request.travel_mode, "distance_km": round(float(selected.get("distance", 0)) / 1000, 2), "duration_minutes": round(float(selected.get("duration", 0)) / 60), "geometry": selected.get("geometry") or {"type": "LineString", "coordinates": []}, "steps": steps, "alternatives_available": len(routes) > 1}
+        base_key = f"{request.origin.latitude},{request.origin.longitude}|{request.destination.latitude},{request.destination.longitude}|{request.travel_mode}"
+        alternative_payloads: list[dict[str, Any]] = []
+        for index, candidate in enumerate(routes[:3]):
+            steps: list[dict[str, Any]] = []
+            for step in candidate.get("legs", [])[0].get("steps", []) if candidate.get("legs") else []:
+                steps.append({"name": step.get("name") or "Unnamed road", "distance_km": round(float(step.get("distance", 0)) / 1000, 2), "duration_minutes": round(float(step.get("duration", 0)) / 60), "geometry": step.get("geometry")})
+            route_id = hashlib.sha256(f"{base_key}|alternative:{index}".encode()).hexdigest()[:24]
+            alternative_payloads.append({"route_id": route_id, "origin": request.origin.model_dump(), "destination": request.destination.model_dump(), "travel_mode": request.travel_mode, "distance_km": round(float(candidate.get("distance", 0)) / 1000, 2), "duration_minutes": round(float(candidate.get("duration", 0)) / 60), "geometry": candidate.get("geometry") or {"type": "LineString", "coordinates": []}, "steps": steps, "alternative_index": index})
+        selected = alternative_payloads[0]
+        return {**selected, "alternatives": alternative_payloads, "alternatives_available": len(alternative_payloads) > 1}
 
 
 class OpenRouteServiceProvider:
@@ -90,6 +94,8 @@ def get_route(request: RouteRequest) -> dict[str, Any]:
     route = provider.get_route(request)
     cache.set(key, route, ttl_seconds=3600)
     cache.set(f"route-id:{route['route_id']}", route, ttl_seconds=3600)
+    for alternative in route.get("alternatives", []):
+        cache.set(f"route-id:{alternative['route_id']}", alternative, ttl_seconds=3600)
     return route
 
 

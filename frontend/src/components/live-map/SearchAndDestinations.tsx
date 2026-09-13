@@ -64,8 +64,10 @@ interface SearchAndDestinationsProps {
   isOpen: boolean;
   onOpen: () => void;
   onClose: () => void;
-  onSelectOriginPreset?: (item: { name: string; lat: number; lon: number }) => void;
-  onSelectDestinationPreset: (preset: DestinationPreset | { name: string; lat: number; lon: number }) => void;
+  onSelectOriginPreset?: (item: { name: string; lat: number; lon: number; address?: string }) => void;
+  onSelectDestinationPreset: (preset: DestinationPreset | { name: string; lat: number; lon: number; address?: string }) => void;
+  originAddress?: string;
+  destinationAddress?: string;
   presets: DestinationPreset[];
   currentLocationName: string;
   selectedDestinationName: string | null;
@@ -79,6 +81,8 @@ interface SearchAndDestinationsProps {
   onSwapLocations?: () => void;
   onOpenPlanTripModal?: () => void;
   onSubmitDestination?: (destQuery: string) => void;
+  onSavePlace?: (place: { label: string; name: string; address?: string; coords: [number, number]; category?: string }) => void;
+  savedPlaceNames?: string[];
 }
 
 function formatCoordsBadge(coords: any): string | null {
@@ -102,9 +106,11 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
   originQuery,
   onOriginChange,
   originCoords,
+  originAddress,
   destinationQuery,
   onDestinationChange,
   destinationCoords,
+  destinationAddress,
   isOpen,
   onOpen,
   onClose,
@@ -122,7 +128,9 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
   onChangeTravelMode,
   onSwapLocations,
   onOpenPlanTripModal,
-  onSubmitDestination
+  onSubmitDestination,
+  onSavePlace,
+  savedPlaceNames = []
 }) => {
   const [activeField, setActiveField] = useState<'origin' | 'destination'>('destination');
   const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<ApiAutocompleteSuggestion[]>([]);
@@ -134,6 +142,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
 
   const originCoordsBadge = formatCoordsBadge(originCoords);
   const destCoordsBadge = formatCoordsBadge(destinationCoords);
+  const isSaved = (name: string) => savedPlaceNames.some((savedName) => savedName.trim().toLowerCase() === name.trim().toLowerCase());
 
   // Friendly bilingual labels
   const labels = {
@@ -332,9 +341,20 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
               <span>{labels.originTitle}</span>
             </label>
             {originCoordsBadge && (
-              <span className="text-[9px] font-mono text-emerald-300/80 bg-emerald-950/60 border border-emerald-800/50 px-1.5 py-0.2 rounded-md">
-                {originCoordsBadge}
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-mono text-emerald-300/80 bg-emerald-950/60 border border-emerald-800/50 px-1.5 py-0.2 rounded-md">
+                  {originCoordsBadge}
+                </span>
+                {onSavePlace && originCoords && originQuery.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => onSavePlace({ label: 'Saved place', name: originQuery.trim(), address: originAddress, coords: originCoords })}
+                    className="text-[9px] font-bold text-emerald-200 bg-emerald-900/70 border border-emerald-700/70 px-1.5 py-0.5 rounded-md cursor-pointer"
+                  >
+                    {isSaved(originQuery) ? 'Saved' : 'Save'}
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -393,9 +413,20 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
               <span>{labels.destTitle}</span>
             </label>
             {destCoordsBadge && (
-              <span className="text-[9px] font-mono text-sky-300/80 bg-sky-950/60 border border-sky-800/50 px-1.5 py-0.2 rounded-md">
-                {destCoordsBadge}
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-mono text-sky-300/80 bg-sky-950/60 border border-sky-800/50 px-1.5 py-0.2 rounded-md">
+                  {destCoordsBadge}
+                </span>
+                {onSavePlace && destinationCoords && destinationQuery.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => onSavePlace({ label: 'Saved place', name: destinationQuery.trim(), address: destinationAddress, coords: destinationCoords })}
+                    className="text-[9px] font-bold text-sky-200 bg-sky-900/70 border border-sky-700/70 px-1.5 py-0.5 rounded-md cursor-pointer"
+                  >
+                    {isSaved(destinationQuery) ? 'Saved' : 'Save'}
+                  </button>
+                )}
+              </div>
             )}
           </div>
 

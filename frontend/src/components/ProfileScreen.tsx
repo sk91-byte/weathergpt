@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, Settings, Bell, MapPin, Navigation, ShieldAlert, CheckCircle2, Sparkles } from './Icons';
-import { APP_LANGUAGES, Language, UserRole, DemoScenario } from '../types';
+import { APP_LANGUAGES, Language, UserRole, DemoScenario, SavedPlace, RouteTrip } from '../types';
 
 interface ProfileScreenProps {
   userName?: string;
@@ -11,22 +11,62 @@ interface ProfileScreenProps {
   onUserRoleChange: (role: UserRole) => void;
   onSelectDemoScenario: (scenario: DemoScenario) => void;
   onBackToHome: () => void;
+  savedPlaces: SavedPlace[];
+  savedTrips: RouteTrip[];
+  onSavePlace: (place: Omit<SavedPlace, 'id' | 'createdAt'>) => void;
+  onSelectSavedPlace: (place: SavedPlace) => void;
+  onDeletePlace: (placeId: string) => void;
+  onSelectSavedTrip: (trip: RouteTrip) => void;
+  onDeleteSavedTrip: (tripId: string) => void;
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
-  userName = 'Anmol',
+  userName = 'Shubham',
   onRerunOnboarding,
   currentLanguage,
   onLanguageChange,
   userRole,
   onUserRoleChange,
   onSelectDemoScenario,
-  onBackToHome
+  onBackToHome,
+  savedPlaces,
+  savedTrips,
+  onSavePlace,
+  onSelectSavedPlace,
+  onDeletePlace,
+  onSelectSavedTrip,
+  onDeleteSavedTrip
 }) => {
   const [unit, setUnit] = useState<'C' | 'F'>('C');
   const [forecastChangeNotif, setForecastChangeNotif] = useState(true);
   const [dailyBriefingNotif, setDailyBriefingNotif] = useState(true);
   const [severeAlertNotif, setSevereAlertNotif] = useState(true);
+  const [showPlaceForm, setShowPlaceForm] = useState(false);
+  const [placeLabel, setPlaceLabel] = useState('');
+  const [placeName, setPlaceName] = useState('');
+  const [placeAddress, setPlaceAddress] = useState('');
+  const [placeLatitude, setPlaceLatitude] = useState('');
+  const [placeLongitude, setPlaceLongitude] = useState('');
+
+  const submitPlace = (event: React.FormEvent) => {
+    event.preventDefault();
+    const latitude = Number(placeLatitude);
+    const longitude = Number(placeLongitude);
+    if (!placeName.trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+    onSavePlace({
+      label: placeLabel.trim() || 'Saved place',
+      name: placeName.trim(),
+      address: placeAddress.trim() || undefined,
+      coords: [latitude, longitude],
+      category: 'place'
+    });
+    setPlaceLabel('');
+    setPlaceName('');
+    setPlaceAddress('');
+    setPlaceLatitude('');
+    setPlaceLongitude('');
+    setShowPlaceForm(false);
+  };
 
   return (
     <div className="flex flex-col h-full bg-slate-50 select-none pb-24 overflow-y-auto">
@@ -96,14 +136,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             App Preferences
           </span>
 
-          <div className="flex items-center justify-between text-xs pt-1">
-            <span className="font-semibold text-slate-700">Language</span>
-            <div className="flex max-w-[70vw] overflow-x-auto bg-slate-100 p-0.5 rounded-xl text-[11px] font-bold">
+          <div className="space-y-2 text-xs pt-1">
+            <span className="font-semibold text-slate-700 block">Language</span>
+            <div className="w-full max-h-52 overflow-y-auto bg-slate-100 p-1 rounded-xl text-[11px] font-bold space-y-1">
               {APP_LANGUAGES.map((language) => (
                 <button
                   key={language.code}
                   onClick={() => onLanguageChange(language.code)}
-                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer whitespace-nowrap ${
+                  className={`w-full px-3 py-2 rounded-lg transition cursor-pointer text-left ${
                     currentLanguage === language.code
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
@@ -190,31 +230,60 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </label>
         </div>
 
-        {/* Saved Locations */}
-        <div className="p-4 bg-white rounded-3xl border border-slate-200 shadow-xs space-y-2">
-          <span className="text-xs font-bold text-slate-800 uppercase tracking-wide block">
-            Saved Places & Routes
-          </span>
-          <div className="space-y-1.5">
-            <div className="p-2.5 bg-slate-50 rounded-xl flex items-center justify-between text-xs font-medium">
-              <span className="flex items-center gap-2">
-                <span>🏠</span> Home: Vasant Vihar, Dehradun
-              </span>
-              <span className="text-[10px] text-emerald-600 font-bold">Active</span>
-            </div>
-            <div className="p-2.5 bg-slate-50 rounded-xl flex items-center justify-between text-xs font-medium">
-              <span className="flex items-center gap-2">
-                <span>🎓</span> College: Graphic Era / UPES Campus
-              </span>
-              <span className="text-[10px] text-blue-600 font-bold">Route Linked</span>
-            </div>
-            <div className="p-2.5 bg-slate-50 rounded-xl flex items-center justify-between text-xs font-medium">
-              <span className="flex items-center gap-2">
-                <span>🌾</span> Agricultural Farm: Terai Block 4
-              </span>
-              <span className="text-[10px] text-slate-400 font-bold">Configured</span>
-            </div>
+        {/* Saved Places & Routes */}
+        <div className="p-4 bg-white rounded-3xl border border-slate-200 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+              Saved Places & Routes
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowPlaceForm((value) => !value)}
+              className="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 transition cursor-pointer"
+            >
+              + Add place
+            </button>
           </div>
+
+          {showPlaceForm && (
+            <form onSubmit={submitPlace} className="p-3 bg-blue-50 rounded-2xl border border-blue-100 space-y-2">
+              <p className="text-[11px] font-bold text-blue-900">Add a place manually</p>
+              <input value={placeLabel} onChange={(e) => setPlaceLabel(e.target.value)} placeholder="Label (Home, College...)" className="w-full px-2.5 py-2 rounded-lg border border-blue-200 text-xs outline-none" />
+              <input required value={placeName} onChange={(e) => setPlaceName(e.target.value)} placeholder="Place name" className="w-full px-2.5 py-2 rounded-lg border border-blue-200 text-xs outline-none" />
+              <input value={placeAddress} onChange={(e) => setPlaceAddress(e.target.value)} placeholder="Address (optional)" className="w-full px-2.5 py-2 rounded-lg border border-blue-200 text-xs outline-none" />
+              <div className="grid grid-cols-2 gap-2">
+                <input required inputMode="decimal" value={placeLatitude} onChange={(e) => setPlaceLatitude(e.target.value)} placeholder="Latitude" className="px-2.5 py-2 rounded-lg border border-blue-200 text-xs outline-none" />
+                <input required inputMode="decimal" value={placeLongitude} onChange={(e) => setPlaceLongitude(e.target.value)} placeholder="Longitude" className="px-2.5 py-2 rounded-lg border border-blue-200 text-xs outline-none" />
+              </div>
+              <p className="text-[10px] text-blue-700">Tip: the map’s Save button fills these coordinates automatically.</p>
+              <button type="submit" className="w-full py-2 rounded-lg bg-slate-900 text-white text-xs font-bold cursor-pointer">Save place</button>
+            </form>
+          )}
+
+          {savedPlaces.length === 0 && savedTrips.length === 0 ? (
+            <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-500">No saved items yet. Save a searched place or route from Live Map.</div>
+          ) : (
+            <div className="space-y-2">
+              {savedPlaces.map((place) => (
+                <div key={place.id} className="p-2.5 bg-slate-50 rounded-xl flex items-start justify-between gap-2 text-xs">
+                  <button type="button" onClick={() => onSelectSavedPlace(place)} className="min-w-0 text-left cursor-pointer">
+                    <span className="font-bold text-slate-800 block">📍 {place.label}: {place.name}</span>
+                    <span className="text-[10px] text-slate-500 block truncate">{place.address || `${place.coords[0].toFixed(5)}, ${place.coords[1].toFixed(5)}`}</span>
+                  </button>
+                  <button type="button" onClick={() => onDeletePlace(place.id)} className="text-[10px] font-bold text-red-600 cursor-pointer">Remove</button>
+                </div>
+              ))}
+              {savedTrips.map((savedTrip) => (
+                <div key={savedTrip.id} className="p-2.5 bg-blue-50 rounded-xl flex items-start justify-between gap-2 text-xs border border-blue-100">
+                  <button type="button" onClick={() => onSelectSavedTrip(savedTrip)} className="min-w-0 text-left cursor-pointer">
+                    <span className="font-bold text-blue-900 block">🛣️ {savedTrip.from} → {savedTrip.to}</span>
+                    <span className="text-[10px] text-blue-700 block">{savedTrip.estDuration} · Open route</span>
+                  </button>
+                  <button type="button" onClick={() => onDeleteSavedTrip(savedTrip.id)} className="text-[10px] font-bold text-red-600 cursor-pointer">Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Reconfigure Onboarding Walkthrough Option */}

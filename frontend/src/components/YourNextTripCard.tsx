@@ -17,16 +17,20 @@ export const YourNextTripCard: React.FC<YourNextTripCardProps> = ({
   onViewAllTrips,
   onOpenLiveMap
 }) => {
-  const safetyScore = trip.safetyScore ?? 78;
+  const riskScore = typeof trip.safetyScore === 'number' ? trip.safetyScore : null;
 
-  // Determine color accents for safety score
+  // Weather Risk Score: higher values mean greater weather danger.
   const getScoreColor = (score: number) => {
-    if (score >= 80) return { bar: 'bg-emerald-500', text: 'text-emerald-700', badge: 'bg-emerald-50 border-emerald-200' };
+    if (score >= 80) return { bar: 'bg-red-500', text: 'text-red-700', badge: 'bg-red-50 border-red-200' };
     if (score >= 60) return { bar: 'bg-amber-500', text: 'text-amber-700', badge: 'bg-amber-50 border-amber-200' };
-    return { bar: 'bg-red-500', text: 'text-red-700', badge: 'bg-red-50 border-red-200' };
+    return { bar: 'bg-emerald-500', text: 'text-emerald-700', badge: 'bg-emerald-50 border-emerald-200' };
   };
 
-  const scoreTheme = getScoreColor(safetyScore);
+  const scoreTheme = riskScore === null ? {
+    bar: 'bg-slate-300',
+    text: 'text-slate-500',
+    badge: 'bg-slate-50 border-slate-200'
+  } : getScoreColor(riskScore);
 
   return (
     <div className="px-5 mt-4">
@@ -96,24 +100,24 @@ export const YourNextTripCard: React.FC<YourNextTripCardProps> = ({
             <span>Weather on Route</span>
           </div>
           <p className="text-xs text-slate-600 font-medium pl-6 leading-relaxed">
-            {trip.weatherOnRoute || trip.status || 'Heavy rain possible after 9 AM'}
+            {trip.weatherOnRoute || trip.status || 'Live route weather will appear after analysis.'}
           </p>
         </div>
 
-        {/* Weather Safety Score Section */}
+        {/* Weather Risk Score Section */}
         <div className="bg-slate-50/90 rounded-xl p-2.5 border border-slate-200/70 flex items-center justify-between">
           <span className="text-xs font-bold text-slate-700">
-            Weather Safety Score:
+            Weather Risk Score:
           </span>
           <div className="flex items-center space-x-2">
             <div className="w-20 h-2 bg-slate-200 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${scoreTheme.bar}`}
-                style={{ width: `${Math.min(100, Math.max(0, safetyScore))}%` }}
+                style={{ width: `${riskScore === null ? 0 : Math.min(100, Math.max(0, riskScore))}%` }}
               />
             </div>
             <span className={`text-xs font-extrabold px-2 py-0.5 rounded-md border ${scoreTheme.text} ${scoreTheme.badge}`}>
-              {safetyScore}/100
+              {riskScore === null ? 'Unavailable' : `${riskScore}/100`}
             </span>
           </div>
         </div>

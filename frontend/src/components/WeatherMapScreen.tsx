@@ -34,7 +34,8 @@ import {
   apiGetPointWeather,
   apiGetLocationWeather,
   apiResolveLocation,
-  ApiPointWeatherResponse
+  ApiPointWeatherResponse,
+  apiSendChat
 } from '../services/api';
 import {
   MessageSquare,
@@ -150,6 +151,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   // 7. Modals & Drawers
   const [showTimelineModal, setShowTimelineModal] = useState<boolean>(false);
   const [explainModalMode, setExplainModalMode] = useState<'why-route' | 'why-wait' | null>(null);
+  const [aiRouteAnalysis, setAiRouteAnalysis] = useState('');
+  const [isAiRouteAnalysisLoading, setIsAiRouteAnalysisLoading] = useState(false);
   const [isDrawerExpanded, setIsDrawerExpanded] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
 
@@ -321,6 +324,20 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         setRoutes([routeOnly]);
         setActiveRouteId(routeOnly.id);
 
+        // OSRM can return up to three real road alternatives. Keep the
+        // geometries separate so each option can receive its own weather risk
+        // score instead of painting one route three different colours.
+        const routeCandidates = Array.isArray(routeData.alternatives) && routeData.alternatives.length > 0
+          ? routeData.alternatives.slice(0, 3)
+          : [{
+              route_id: routeData.route_id,
+              distance_km: routeData.distance_km,
+              duration_minutes: routeData.duration_minutes,
+              geometry: geoPts,
+              steps: routeData.steps || [],
+              alternative_index: 0
+            }];
+
         // Step 2: Fetch Route Weather & Safety analysis from Open-Meteo.
         // Weather is an enhancement to the road route: if the weather
         // provider is sleeping, rate-limited, or temporarily unavailable, do
@@ -364,6 +381,27 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           setNearbyPlacesError('Route places are temporarily unavailable.');
           return null;
         });
+        if (routeRequestIdRef.current !== requestId) return;
+
+        const alternativeWeather = await Promise.all(routeCandidates.map(async (candidate) => {
+          if (candidate.route_id === routeData.route_id) return weatherAnalysis;
+          try {
+            return await apiGetRouteWeather(candidate.route_id, mode);
+          } catch (error) {
+            console.warn(`Weather unavailable for alternative route ${candidate.route_id}:`, error);
+            return {
+              safety_score: null,
+              rain_risk: 'Unavailable',
+              waterlogging_risk: 'Unavailable',
+              thunderstorm_risk: 'Unavailable',
+              timeline: [],
+              risk_zones: [],
+              is_live: false,
+              source: 'Weather temporarily unavailable'
+            };
+          }
+        }));
+
         if (routeRequestIdRef.current !== requestId) return;
         if (placesResponse?.places && placesResponse.places.length > 0) {
           // Adapt ApiNearbyPlaceItem to NearbySafePlace
@@ -447,10 +485,63 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           whyWait: 'Check the live forecast again before leaving; conditions may change.'
         };
 
-        // Only show the route returned by OSRM and the live route-weather
-        // analysis. Do not manufacture alternative geometries or weather.
-        setRoutes([primaryRoute]);
-        setActiveRouteId(primaryRoute.id);
+        const liveRoutes: LiveMapRoute[] = routeCandidates.map((candidate, index) => {
+          const analysis = alternativeWeather[index] || weatherAnalysis;
+          const score = analysis.safety_score;
+          const color = score === null ? 'orange' : score >= 70 ? 'green' : score >= 40 ? 'orange' : 'red';
+          const routeType = index === 0 ? 'safest' : index === 1 ? 'fastest' : 'avoid';
+          const label = index === 0 ? 'Safest route' : index === 1 ? 'Alternative route' : 'Higher-risk route';
+          return {
+            ...primaryRoute,
+            id: candidate.route_id,
+            name: `${label} to ${endName.split(',')[0]}`,
+            badge: color === 'green' ? 'LOW WEATHER RISK' : color === 'orange' ? 'MODERATE WEATHER RISK' : color === 'red' ? 'HIGH WEATHER RISK' : 'WEATHER UNAVAILABLE',
+            type: index === 0 ? 'recommended' : index === 2 ? 'avoid' : 'alternative',
+            routeOptionType: routeType,
+            distanceKm: candidate.distance_km,
+            durationMinutes: candidate.duration_minutes,
+            safetyScore: score,
+            summaryCondition: analysis.timeline?.[0]?.weather_condition || 'Unavailable',
+            rainRisk: analysis.rain_risk || 'Unavailable',
+            waterloggingRisk: analysis.waterlogging_risk || 'Unavailable',
+            thunderstormRisk: analysis.thunderstorm_risk || 'Unavailable',
+            hazardCount: analysis.risk_zones?.length || 0,
+            color,
+            strokeColor: color === 'green' ? '#16a34a' : color === 'orange' ? '#eab308' : color === 'red' ? '#dc2626' : '#64748b',
+            geoPoints: candidate.geometry,
+            waypoints: (analysis.timeline || []).map((tl: any, idx: number) => ({
+              id: tl.id || `${candidate.route_id}_wp_${idx}`,
+              name: tl.name,
+              expectedTime: tl.expected_time,
+              distanceFromStartKm: tl.distance_from_start_km,
+              weatherCondition: tl.weather_condition,
+              temp: tl.temp_c,
+              rainProb: tl.rain_prob,
+              rainIntensity: tl.rain_intensity,
+              waterloggingRisk: tl.waterlogging_risk,
+              safetyScore: tl.safety_score,
+              hazard: tl.hazard,
+              coords: { x: 500, y: 500, lat: tl.latitude, lng: tl.longitude }
+            })),
+            riskZones: (analysis.risk_zones || []).map((rz: any, idx: number) => ({
+              id: rz.id || `${candidate.route_id}_rz_${idx}`,
+              type: rz.type || 'waterlogging',
+              title: rz.title,
+              locationName: rz.location_name,
+              coords: { x: 500, y: 500, lat: rz.latitude, lng: rz.longitude },
+              severity: rz.severity || 'Moderate',
+              description: rz.description,
+              icon: rz.icon || '⚠️'
+            })),
+            whyThisRoute: `${label} selected from live OSRM road alternatives and scored using weather conditions along this route.`,
+            whyWait: 'Check the live forecast again before leaving; conditions may change.'
+          } as LiveMapRoute;
+        });
+
+        // Show only real provider-returned road alternatives. No synthetic
+        // straight-line geometries are created when the provider has one route.
+        setRoutes(liveRoutes.length ? liveRoutes : [primaryRoute]);
+        setActiveRouteId(liveRoutes[0]?.id || primaryRoute.id);
 
         if (departures?.options && departures.options.length > 0) {
           setDepartureOptions(
@@ -685,6 +776,70 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
   const safeRoutes = Array.isArray(routes) ? routes : [];
   const activeRoute = safeRoutes.find((r) => r.id === activeRouteId) || safeRoutes[0];
+
+  const handleAnalyzeRouteWithAI = useCallback(async () => {
+    if (!activeRoute) return;
+    setExplainModalMode('why-route');
+    setAiRouteAnalysis('');
+    setIsAiRouteAnalysisLoading(true);
+    try {
+      const result = await apiSendChat(
+        'Analyze this route for weather and travel safety. Explain the risk score, route hazards, whether I should leave now, what to carry, and why this route is recommended. Keep the answer practical and grounded only in the supplied live route data.',
+        {
+          language,
+          role: userRole,
+          location: destinationName,
+          latitude: destinationCoords?.[0],
+          longitude: destinationCoords?.[1],
+          route_context: {
+            origin: originName,
+            destination: destinationName,
+            origin_coords: originCoords,
+            destination_coords: destinationCoords,
+            safety_score: activeRoute.safetyScore,
+            rain_risk: activeRoute.rainRisk,
+            waterlogging_risk: activeRoute.waterloggingRisk,
+            thunderstorm_risk: activeRoute.thunderstormRisk,
+            summary_condition: activeRoute.summaryCondition,
+            distance_km: activeRoute.distanceKm,
+            duration_minutes: activeRoute.durationMinutes,
+            departure_advice: activeRoute.departureAdvice,
+            route_name: activeRoute.name,
+            route_type: activeRoute.routeOptionType,
+            nearby_places: nearbyPlaces.slice(0, 8)
+          }
+        }
+      );
+      setAiRouteAnalysis(result.response || 'The AI could not return a route analysis right now. Please try again.');
+    } catch (error) {
+      console.warn('AI route analysis unavailable:', error);
+      setAiRouteAnalysis('AI route analysis is temporarily unavailable. The live score and weather factors below are still available.');
+    } finally {
+      setIsAiRouteAnalysisLoading(false);
+    }
+  }, [activeRoute, destinationCoords, destinationName, language, nearbyPlaces, originCoords, originName, userRole]);
+
+  const handleStartGoogleMapsNavigation = useCallback(() => {
+    if (!destinationCoords || !originCoords) return;
+
+    const origin = `${originCoords[0]},${originCoords[1]}`;
+    const destination = `${destinationCoords[0]},${destinationCoords[1]}`;
+    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=${travelMode === 'walking' ? 'walking' : 'driving'}`;
+
+    // Use the current PWA window so mobile users are taken directly into the
+    // Google Maps directions flow instead of seeing a simulated drive screen.
+    if (typeof window !== 'undefined') {
+      window.location.assign(mapsUrl);
+    }
+  }, [destinationCoords, originCoords, travelMode]);
+
+  const handleSelectMapPreset = useCallback((preset: DestinationPreset) => {
+    const coords: [number, number] = [preset.coords.lat, preset.coords.lon];
+    setDestinationName(preset.name);
+    setDestinationAddress(preset.subtitle);
+    setDestinationCoords(coords);
+    setDestinationQuery(preset.name);
+  }, []);
 
   return (
     <div className="relative w-full min-h-[calc(100vh-68px)] max-w-5xl mx-auto overflow-y-auto flex flex-col bg-slate-900 select-none">
@@ -934,6 +1089,21 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               gpsCoords={gpsCoords}
               isRouteLoading={isAnalyzing}
               routeError={routeError}
+              destinationPresets={DESTINATION_PRESETS}
+              onSelectDestinationPreset={handleSelectMapPreset}
+              onOpenSearch={() => setIsSearchOpen(true)}
+              onAnalyzeRoute={handleAnalyzeRouteWithAI}
+              onStartNavigation={handleStartGoogleMapsNavigation}
+              onUseCurrentLocation={handleGpsLocationClick}
+              onClearDestination={() => {
+                setDestinationName('');
+                setDestinationQuery('');
+                setDestinationAddress('');
+                setDestinationCoords(null);
+                setRouteError('');
+                setRoutes([]);
+                setActiveRouteId('');
+              }}
             />
 
             {/* Map Point Weather Popup (When any point or waypoint is clicked) */}
@@ -1050,14 +1220,13 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           currentWeather={currentWeather}
           isWeatherLoading={isAnalyzing}
           onStartNavigation={() => {
-            setIsNavigating(true);
-            setVehicleProgress(0);
+            handleStartGoogleMapsNavigation();
           }}
           onActivateSmartWait={(mins) => {
             setSmartWaitMinutes(mins);
             setIsSmartWaitActive(true);
           }}
-          onOpenWhyRoute={() => setExplainModalMode('why-route')}
+          onOpenWhyRoute={handleAnalyzeRouteWithAI}
           onOpenTimeline={() => setShowTimelineModal(true)}
           onOpenNearby={() => setShowNearbyPlaces(true)}
           isExpanded={isDrawerExpanded}
@@ -1098,8 +1267,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           onCancel={() => setIsSmartWaitActive(false)}
           onStartNavigation={() => {
             setIsSmartWaitActive(false);
-            setIsNavigating(true);
-            setVehicleProgress(0);
+            handleStartGoogleMapsNavigation();
           }}
           onOpenNearby={() => setShowNearbyPlaces(true)}
           nearbyPlaces={nearbyPlaces}
@@ -1135,6 +1303,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         isOpen={explainModalMode !== null}
         onClose={() => setExplainModalMode(null)}
         mode={explainModalMode || 'why-route'}
+        aiExplanation={aiRouteAnalysis}
+        isAiLoading={isAiRouteAnalysisLoading}
       />
 
       {/* Set Destination & Plan Trip Modal */}

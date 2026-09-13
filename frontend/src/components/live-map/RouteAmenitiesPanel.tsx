@@ -54,7 +54,7 @@ export const RouteAmenitiesPanel: React.FC<RouteAmenitiesPanelProps> = ({ places
         ))}
       </div>
 
-      {loading && <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-xs text-slate-300">Finding hospitals, fuel, food, hotels, and EV chargers along the road…</div>}
+      {loading && <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 p-4 text-xs text-sky-200"><div className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-sky-300 border-t-transparent rounded-full animate-spin" />Loading places along your route…</div><p className="mt-2 text-[10px] text-sky-300/80">Searching nearby hospitals, petrol pumps, restaurants, hotels, and EV charging stations. This may take a few seconds.</p></div>}
       {!loading && error && <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200">Route places are temporarily unavailable. The road route is still available.</div>}
       {!loading && !error && filteredPlaces.length === 0 && <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-xs text-slate-400">No mapped places in this category were found within 800 m of the route.</div>}
 

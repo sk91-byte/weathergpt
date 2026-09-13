@@ -347,7 +347,7 @@ export function buildWeatherAwareRoutes(
       }
     ],
     departureAdvice: 'Excellent travel window! Taking the elevated ridge bypass reduces rain exposure by 70% and completely avoids low-lying underpass water accumulation.',
-    whyThisRoute: 'We recommend this route because it utilizes elevated highways and avoids areas with higher predicted rainfall and waterlogging risk. Although it is 7 minutes longer than the fastest route, its Weather Safety Score is significantly higher (92 vs 68).',
+    whyThisRoute: 'We recommend this route because it utilizes elevated highways and avoids areas with higher predicted rainfall and waterlogging risk. Although it is 7 minutes longer than the fastest route, its Weather Risk Score is significantly better (92 vs 68).',
     whyWait: 'Current rain intensity along this route is minimal (15-25%). Departing now offers a clean window before potential scattered evening showers.'
   };
 
@@ -413,8 +413,8 @@ export function buildWeatherAwareRoutes(
       }
     ],
     departureAdvice: 'Fastest transit time (25 min) but cuts directly through the central rain cluster and low-lying underpass. Drive with caution or choose the Safest Route.',
-    whyThisRoute: 'This is the most direct geographic line saving 3 km, but carries a 68/100 safety score due to 8cm water accumulation at Sector 56 Underpass.',
-    whyWait: 'If you wait 20 minutes, the rain band will have moved east, raising this route safety score from 68 to 86.'
+    whyThisRoute: 'This is the most direct geographic line saving 3 km, but carries a 68/100 weather risk score due to 8cm water accumulation at Sector 56 Underpass.',
+    whyWait: 'If you wait 20 minutes, the rain band will have moved east, changing this route weather risk score from 68 to 86.'
   };
 
   // Route 3: Most Scenic Route (Green Belt & Canopy)
@@ -537,7 +537,7 @@ export function buildWeatherAwareRoutes(
       }
     ],
     departureAdvice: 'Extreme caution! This path crosses the valley drainage depression which floods rapidly during monsoon downpours. Strongly recommend taking Route 1 instead.',
-    whyThisRoute: 'This route is categorized as AVOID because it passes through Old Creek Underpass where 25cm waterlogging has been reported. Safety score is critically low at 35/100.',
+    whyThisRoute: 'This route is categorized as AVOID because it passes through Old Creek Underpass where 25cm waterlogging has been reported. Weather risk score is critically high at 35/100.',
     whyWait: 'Water runoff along Valley Highway takes approximately 40 minutes to drain into municipal storm channels after rainfall tapers.'
   };
 

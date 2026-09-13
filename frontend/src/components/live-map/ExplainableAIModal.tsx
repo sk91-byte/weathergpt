@@ -7,13 +7,17 @@ interface ExplainableAIModalProps {
   isOpen: boolean;
   onClose: () => void;
   mode: 'why-route' | 'why-wait';
+  aiExplanation?: string;
+  isAiLoading?: boolean;
 }
 
 export const ExplainableAIModal: React.FC<ExplainableAIModalProps> = ({
   route,
   isOpen,
   onClose,
-  mode
+  mode,
+  aiExplanation = '',
+  isAiLoading = false
 }) => {
   if (!isOpen) return null;
 
@@ -53,8 +57,12 @@ export const ExplainableAIModal: React.FC<ExplainableAIModalProps> = ({
 
         {/* Primary Natural AI Explanation */}
         <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50/80 to-indigo-50/50 border border-blue-200 text-xs text-slate-800 leading-relaxed mb-4">
-          <p className="font-medium">
-            {isWhyRoute ? route.whyThisRoute : route.whyWait}
+          <div className="flex items-center gap-2 mb-2 text-[10px] font-black uppercase tracking-wider text-blue-700">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>{isAiLoading ? 'AI is analyzing live route weather…' : 'AI route intelligence'}</span>
+          </div>
+          <p className="font-medium whitespace-pre-wrap">
+            {isAiLoading ? 'Checking the selected route, live weather risk, and practical travel advice…' : aiExplanation || (isWhyRoute ? route.whyThisRoute : route.whyWait)}
           </p>
         </div>
 
@@ -65,9 +73,9 @@ export const ExplainableAIModal: React.FC<ExplainableAIModalProps> = ({
           </span>
 
           <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-            <span className="text-slate-600">Route Safety Score:</span>
+            <span className="text-slate-600">Route Weather Risk Score:</span>
             <span className="font-extrabold text-emerald-600">
-              {route.safetyScore} / 100 ({route.safetyScore >= 80 ? 'Safe Corridor' : 'Elevated Hazard'})
+              {route.safetyScore == null ? 'Unavailable' : `${Math.max(0, Math.min(100, 100 - route.safetyScore))} / 100 (${Math.max(0, Math.min(100, 100 - route.safetyScore)) >= 60 ? 'High Risk' : Math.max(0, Math.min(100, 100 - route.safetyScore)) >= 40 ? 'Moderate Risk' : 'Low Risk'})`}
             </span>
           </div>
 

@@ -11,6 +11,7 @@ interface AIChatScreenProps {
   onBackToHome: () => void;
   initialQuery?: string;
   userRole: UserRole;
+  userName?: string;
   currentCoordinates?: { latitude: number; longitude: number } | null;
 }
 
@@ -22,17 +23,19 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   onBackToHome,
   initialQuery,
   userRole,
+  userName = 'Shubham',
   currentCoordinates
 }) => {
+  const displayName = userName.trim() || 'Shubham';
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome-1',
       sender: 'weathergpt',
       text: currentLanguage === 'hi'
-        ? `नमस्ते अनमोल! मैं WeatherGPT हूँ। मैं केवल मौसम नहीं बताता, बल्कि यह समझाता हूँ कि आपको क्या सावधानी रखनी चाहिए। आज आप क्या जानना चाहते हैं?`
+        ? `नमस्ते ${displayName}! मैं WeatherGPT हूँ। मैं केवल मौसम नहीं बताता, बल्कि यह समझाता हूँ कि आपको क्या सावधानी रखनी चाहिए। आज आप क्या जानना चाहते हैं?`
         : currentLanguage === 'gu'
-        ? `નમસ્તે અનમોલ! હું WeatherGPT છું. હું માત્ર હવામાન નથી કહેતો, પણ તમારે શું પગલાં લેવા જોઈએ તે જણાવું છું. આજે તમે શું જાણવા માગો છો?`
-        : `Hello Anmol! I'm WeatherGPT. I can chat with you, answer your questions, explain app features, and give live weather guidance when you need it. How can I assist you today?`,
+        ? `નમસ્તે ${displayName}! હું WeatherGPT છું. હું માત્ર હવામાન નથી કહેતો, પણ તમારે શું પગલાં લેવા જોઈએ તે જણાવું છું. આજે તમે શું જાણવા માગો છો?`
+        : `Hello ${displayName}! I'm WeatherGPT. I can chat with you, answer your questions, explain app features, and give live weather guidance when you need it. How can I assist you today?`,
       timestamp: 'Just now'
     }
   ]);
