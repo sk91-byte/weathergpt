@@ -28,10 +28,23 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
   error = null
 }) => {
   const [filter, setFilter] = useState<PlaceCategoryFilter>(initialFilter);
+  const [loadingProgress, setLoadingProgress] = useState(8);
 
   useEffect(() => {
     if (isOpen) setFilter(initialFilter);
   }, [initialFilter, isOpen]);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingProgress(0);
+      return;
+    }
+    setLoadingProgress(8);
+    const timer = window.setInterval(() => {
+      setLoadingProgress((current) => Math.min(92, current + 8));
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [loading]);
 
   if (!isOpen) return null;
 
@@ -43,8 +56,8 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
       });
 
   return (
-    <div className="absolute inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex flex-col justify-end pointer-events-auto">
-      <div className="bg-slate-900 text-white rounded-t-3xl shadow-2xl border-t border-slate-700 max-h-[85vh] flex flex-col animate-in slide-in-from-bottom duration-200">
+    <div className="fixed inset-0 z-[80] bg-slate-950/70 backdrop-blur-sm flex items-end justify-center pointer-events-auto">
+      <div className="w-full max-w-md bg-slate-900 text-white rounded-t-3xl shadow-2xl border-t border-slate-700 max-h-[85dvh] flex flex-col animate-in slide-in-from-bottom duration-200">
         {/* Header */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div>
@@ -135,7 +148,8 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
         <div className="overflow-y-auto px-4 pb-6 space-y-2.5 flex-1">
           {loading && (
             <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 p-5 text-sm text-sky-200">
-              <div className="flex items-center gap-2 font-bold"><span className="w-4 h-4 border-2 border-sky-300 border-t-transparent rounded-full animate-spin" />Loading live nearby places…</div>
+              <div className="flex items-center justify-between gap-2 font-bold"><span className="flex items-center gap-2"><span className="w-4 h-4 border-2 border-sky-300 border-t-transparent rounded-full animate-spin" />Loading live nearby places…</span><span className="text-sky-300">{loadingProgress}%</span></div>
+              <div className="mt-3 h-2 rounded-full bg-slate-800 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-cyan-300 transition-all duration-500" style={{ width: `${loadingProgress}%` }} /></div>
               <p className="mt-2 text-xs text-sky-300/80">Geoapify is searching hospitals, petrol pumps, hotels, restaurants, and cafes around this route.</p>
             </div>
           )}
