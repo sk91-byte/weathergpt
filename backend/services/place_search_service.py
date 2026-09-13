@@ -312,6 +312,14 @@ def nearby_places(latitude: float, longitude: float, radius_km: float = 5, limit
     saved = cache.get(key)
     if saved is not None:
         return saved
+    # Prefer the configured Geoapify account for point searches as well as
+    # route-corridor searches.  The public OSM query remains a safe fallback
+    # when Geoapify is unavailable or not configured.
+    if settings.geoapify_api_key:
+        try:
+            return _geoapify_nearby_places(latitude, longitude, radius_km, limit, key)
+        except (requests.RequestException, ValueError, KeyError) as exc:
+            last_error = exc
     # Nearby amenities need a geographic query.  Nominatim's text search does
     # not support boolean amenity queries reliably, so use OpenStreetMap's
     # public Overpass endpoint.  Results are actual mapped places, never seeds.
@@ -347,6 +355,70 @@ def nearby_places(latitude: float, longitude: float, radius_km: float = 5, limit
     result.sort(key=lambda item: item["distance_km"])
     result = result[:limit]
     cache.set(key, result, ttl_seconds=120)
+    return result
+
+
+def _geoapify_nearby_places(latitude: float, longitude: float, radius_km: float, limit: int, cache_key: str) -> list[dict[str, Any]]:
+    categories = ','.join((
+        'healthcare.hospital', 'healthcare.pharmacy', 'service.vehicle.fuel',
+        'catering.restaurant', 'catering.cafe', 'accommodation.hotel',
+        'service.vehicle.charging_station', 'commercial.supermarket'
+    ))
+    response = requests.get(
+        'https://api.geoapify.com/v2/places',
+        params={
+            'categories': categories,
+            'filter': f'circle:{longitude},{latitude},{max(250, min(int(radius_km * 1000), 10000))}',
+            'bias': f'proximity:{longitude},{latitude}',
+            'limit': min(max(limit, 1), 20),
+            'apiKey': settings.geoapify_api_key,
+        },
+        headers={'User-Agent': 'WeatherGPT/2.0 nearby-places'},
+        timeout=12,
+    )
+    response.raise_for_status()
+    features = response.json().get('features', [])
+    result: list[dict[str, Any]] = []
+    for feature in features if isinstance(features, list) else []:
+        props = feature.get('properties', {}) if isinstance(feature, dict) else {}
+        place_lat, place_lon = props.get('lat'), props.get('lon')
+        name = str(props.get('name') or '').strip()
+        if not name or place_lat is None or place_lon is None:
+            continue
+        categories_raw = props.get('categories') or []
+        category_text = ' '.join(categories_raw) if isinstance(categories_raw, list) else str(categories_raw)
+        if 'charging_station' in category_text:
+            category = 'ev_charging'
+        elif 'fuel' in category_text:
+            category = 'petrol'
+        elif 'hospital' in category_text or 'pharmacy' in category_text:
+            category = 'hospital'
+        elif 'hotel' in category_text:
+            category = 'hotel'
+        elif 'cafe' in category_text:
+            category = 'cafe'
+        elif 'restaurant' in category_text:
+            category = 'restaurant'
+        else:
+            category = 'convenience'
+        distance = sqrt(((float(place_lat) - latitude) * 111) ** 2 + ((float(place_lon) - longitude) * 111 * cos(radians(latitude))) ** 2)
+        contact = props.get('contact') if isinstance(props.get('contact'), dict) else {}
+        result.append({
+            'place_id': str(props.get('place_id') or f'{category}:{name.lower()}'),
+            'name': name,
+            'address': props.get('formatted') or 'Address not listed',
+            'formatted_address': props.get('formatted') or 'Address not listed',
+            'latitude': float(place_lat),
+            'longitude': float(place_lon),
+            'category': category,
+            'distance_km': round(distance, 2),
+            'opening_hours': props.get('opening_hours'),
+            'phone': contact.get('phone'),
+            'website': contact.get('website'),
+        })
+    result.sort(key=lambda item: item['distance_km'])
+    result = result[:limit]
+    cache.set(cache_key, result, ttl_seconds=120)
     return result
 
 

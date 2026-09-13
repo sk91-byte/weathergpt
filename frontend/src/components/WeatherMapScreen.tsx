@@ -149,6 +149,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const [nearbyPlaces, setNearbyPlaces] = useState<NearbySafePlace[]>([]);
   const [isLoadingNearbyPlaces, setIsLoadingNearbyPlaces] = useState<boolean>(false);
   const [nearbyPlacesError, setNearbyPlacesError] = useState<string | null>(null);
+  const [nearbyCategory, setNearbyCategory] = useState<'all' | 'cafe' | 'restaurant' | 'hotel' | 'petrol' | 'hospital'>('all');
   const [selectedNearbyPlace, setSelectedNearbyPlace] = useState<NearbySafePlace | null>(null);
 
   // 7. Modals & Drawers
@@ -744,12 +745,14 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
   const loadNearbyPlaces = useCallback(async () => {
     const points = activeRoute?.geoPoints || [];
-    if (points.length < 2 || isLoadingNearbyPlaces) return;
+    if ((points.length < 2 && !destinationCoords) || isLoadingNearbyPlaces) return;
     setShowNearbyPlaces(true);
     setIsLoadingNearbyPlaces(true);
     setNearbyPlacesError(null);
     try {
-      const response = await apiGetPlacesAlongRoute(points);
+      const response = points.length >= 2
+        ? await apiGetPlacesAlongRoute(points)
+        : await apiGetNearbyPlaces(destinationCoords![0], destinationCoords![1], 5);
       const adaptedPlaces = response.places.map((p) => ({
         id: p.id,
         name: p.name,
@@ -778,7 +781,12 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     } finally {
       setIsLoadingNearbyPlaces(false);
     }
-  }, [activeRoute, isLoadingNearbyPlaces]);
+  }, [activeRoute, destinationCoords, isLoadingNearbyPlaces]);
+
+  const handleNearbyCategory = useCallback((category: 'all' | 'cafe' | 'restaurant' | 'hotel' | 'petrol' | 'hospital') => {
+    setNearbyCategory(category);
+    if (!showNearbyPlaces) void loadNearbyPlaces();
+  }, [loadNearbyPlaces, showNearbyPlaces]);
 
   const handleToggleNearbyPlaces = useCallback(() => {
     if (showNearbyPlaces) {
@@ -1116,6 +1124,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               vehicleProgress={vehicleProgress}
               showNearbyPlaces={showNearbyPlaces}
               onToggleNearbyPlaces={handleToggleNearbyPlaces}
+              onNearbyCategory={handleNearbyCategory}
               nearbyPlaces={nearbyPlaces}
               selectedNearbyPlace={selectedNearbyPlace}
               onSelectNearbyPlace={setSelectedNearbyPlace}
@@ -1299,6 +1308,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           }
         }}
         selectedPlaceId={selectedNearbyPlace?.id}
+        initialFilter={nearbyCategory}
       />
 
       {/* Smart Wait Mode Overlay */}

@@ -16,6 +16,8 @@ interface AIChatScreenProps {
   routeContext?: RouteChatContext;
 }
 
+const CHAT_HISTORY_KEY = 'weathergpt_chat_history_v1';
+
 export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   weather,
   trip,
@@ -29,8 +31,14 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   routeContext
 }) => {
   const displayName = userName.trim() || 'Shubham';
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = JSON.parse(localStorage.getItem(CHAT_HISTORY_KEY) || 'null');
+        if (Array.isArray(saved) && saved.length) return saved.slice(-60) as ChatMessage[];
+      } catch { /* use a fresh welcome message */ }
+    }
+    return [{
       id: 'welcome-1',
       sender: 'weathergpt',
       text: currentLanguage === 'hi'
@@ -39,8 +47,8 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
         ? `નમસ્તે ${displayName}! હું WeatherGPT છું. હું માત્ર હવામાન નથી કહેતો, પણ તમારે શું પગલાં લેવા જોઈએ તે જણાવું છું. આજે તમે શું જાણવા માગો છો?`
         : `Hello ${displayName}! I'm WeatherGPT. I can chat with you, answer your questions, explain app features, and give live weather guidance when you need it. How can I assist you today?`,
       timestamp: 'Just now'
-    }
-  ]);
+    }];
+  });
 
   const [inputVal, setInputVal] = useState('');
   const [loading, setLoading] = useState(false);
@@ -56,6 +64,12 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const transcriptBufferRef = useRef<string>('');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages.slice(-60))); } catch { /* storage is optional */ }
+    }
+  }, [messages]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

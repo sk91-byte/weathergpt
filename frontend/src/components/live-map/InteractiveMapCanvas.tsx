@@ -31,6 +31,7 @@ interface InteractiveMapCanvasProps {
   vehicleProgress: number; // 0 to 100
   showNearbyPlaces: boolean;
   onToggleNearbyPlaces?: () => void;
+  onNearbyCategory?: (category: 'all' | 'cafe' | 'restaurant' | 'hotel' | 'petrol' | 'hospital') => void;
   nearbyPlaces: NearbySafePlace[];
   selectedNearbyPlace: NearbySafePlace | null;
   onSelectNearbyPlace: (place: NearbySafePlace | null) => void;
@@ -64,6 +65,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
   vehicleProgress,
   showNearbyPlaces,
   onToggleNearbyPlaces,
+  onNearbyCategory,
   nearbyPlaces,
   selectedNearbyPlace,
   onSelectNearbyPlace,
@@ -153,12 +155,19 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
               { label: 'College', icon: '◆', preset: destinationPresets.find((item) => item.category === 'university') },
               { label: 'Work', icon: '▣', preset: destinationPresets.find((item) => item.category === 'office') },
               { label: 'Airport', icon: '✦', preset: destinationPresets.find((item) => item.category === 'transport') },
-              { label: 'Restaurant', icon: '♨', preset: undefined }
+              { label: 'Restaurant', icon: '♨', preset: undefined, category: 'restaurant' as const },
+              { label: 'Hospital', icon: '✚', preset: undefined, category: 'hospital' as const },
+              { label: 'Petrol', icon: '⛽', preset: undefined, category: 'petrol' as const },
+              { label: 'Hotel', icon: '⌂', preset: undefined, category: 'hotel' as const }
             ].map((item) => (
               <button
                 key={item.label}
                 type="button"
-                onClick={() => item.preset ? onSelectDestinationPreset?.(item.preset) : onToggleNearbyPlaces?.()}
+                onClick={() => item.preset
+                  ? onSelectDestinationPreset?.(item.preset)
+                  : onNearbyCategory
+                    ? onNearbyCategory(item.category || 'all')
+                    : onToggleNearbyPlaces?.()}
                 className="shrink-0 px-3 py-1.5 rounded-full border border-slate-200 bg-white/95 text-slate-700 text-[11px] font-black shadow-lg hover:border-blue-400 hover:text-blue-700 transition"
               >
                 {item.icon} {item.label}

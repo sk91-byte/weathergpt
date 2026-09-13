@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NearbySafePlace } from '../../types';
 import { X, Utensils, Coffee, Store, Building2, Fuel, Hospital, MapPin, ExternalLink, ChevronRight, Plus, Navigation } from '../Icons';
 
@@ -9,6 +9,7 @@ interface NearbyPlacesDrawerProps {
   onSelectPlace: (place: NearbySafePlace) => void;
   onUseAsStop?: (place: NearbySafePlace) => void;
   selectedPlaceId?: string;
+  initialFilter?: PlaceCategoryFilter;
 }
 
 type PlaceCategoryFilter = 'all' | 'shelter' | 'cafe' | 'restaurant' | 'hotel' | 'petrol' | 'hospital';
@@ -19,9 +20,14 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
   onClose,
   onSelectPlace,
   onUseAsStop,
-  selectedPlaceId
+  selectedPlaceId,
+  initialFilter = 'all'
 }) => {
-  const [filter, setFilter] = useState<PlaceCategoryFilter>('all');
+  const [filter, setFilter] = useState<PlaceCategoryFilter>(initialFilter);
+
+  useEffect(() => {
+    if (isOpen) setFilter(initialFilter);
+  }, [initialFilter, isOpen]);
 
   if (!isOpen) return null;
 
@@ -41,7 +47,7 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
             <div className="flex items-center space-x-1.5">
               <span className="text-amber-400 text-base">☕</span>
               <h3 className="text-sm font-black text-white">
-                NEARBY PLACES ALONG ROUTE
+                NEARBY PLACES · GEOAPIFY LIVE
               </h3>
             </div>
             <p className="text-xs text-slate-400">

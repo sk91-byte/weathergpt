@@ -407,7 +407,7 @@ export default function App() {
         style={{ background: weatherTheme.appBackground }}
       >
         {/* Dynamic Screen View Based on activeTab */}
-        <div className="flex-1 min-h-0 overflow-y-auto relative">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-16 relative">
           {activeTab === 'home' && (
             <div className="h-full overflow-y-auto pb-24 scroll-smooth">
               {/* 1. Header */}
@@ -564,7 +564,10 @@ export default function App() {
         {/* Bottom Persistent Navigation Bar */}
         <BottomNavigation
           activeTab={activeTab}
-          onChangeTab={setActiveTab}
+          onChangeTab={(tab) => {
+            if (tab !== 'chat') setChatInitialQuery(undefined);
+            setActiveTab(tab);
+          }}
           onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
         />
 
