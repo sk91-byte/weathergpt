@@ -334,7 +334,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
         </div>
 
         {/* 1. Origin Section */}
-        <div className="space-y-1 pb-2 border-b border-slate-800/80">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2 pb-2 border-b border-slate-800/80">
           <div className="flex items-center justify-between">
             <label className="text-[11px] font-bold text-emerald-400 flex items-center space-x-1.5">
               <span>ðŸ“</span>
@@ -405,8 +405,10 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
           </div>
         </div>
 
+        <div className="text-slate-500 text-sm font-black pb-3">→</div>
+
         {/* 2. Destination Section */}
-        <div className="space-y-1 pt-2">
+        <div className="space-y-1">
           <div className="flex items-center justify-between">
             <label className="text-[11px] font-bold text-sky-400 flex items-center space-x-1.5">
               <span>ðŸŽ¯</span>

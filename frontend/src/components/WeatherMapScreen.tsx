@@ -265,9 +265,9 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
       const requestId = ++routeRequestIdRef.current;
       setIsAnalyzing(true);
       setRouteError('');
-      // Amenities load after routing and weather. Mark them loading now so
-      // the panel cannot look like a completed empty search.
-      setIsLoadingNearbyPlaces(true);
+      // Nearby places are intentionally loaded on demand from the category
+      // panel, not during every route calculation.
+      setIsLoadingNearbyPlaces(false);
       setNearbyPlacesError(null);
       setNearbyPlaces([]);
       const wakeupTimer = setTimeout(() => {
@@ -373,16 +373,6 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           return { warning_message: '', options: [] };
         });
 
-        // Step 4: Search real mapped amenities along the returned road geometry.
-        setIsLoadingNearbyPlaces(true);
-        setNearbyPlacesError(null);
-        const placesResponse = await apiGetPlacesAlongRoute(geoPts).catch((error) => {
-          console.warn('Route amenities unavailable:', error);
-          setNearbyPlacesError('Route places are temporarily unavailable.');
-          return null;
-        });
-        if (routeRequestIdRef.current !== requestId) return;
-
         const alternativeWeather = await Promise.all(routeCandidates.map(async (candidate) => {
           if (candidate.route_id === routeData.route_id) return weatherAnalysis;
           try {
@@ -403,35 +393,6 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         }));
 
         if (routeRequestIdRef.current !== requestId) return;
-        if (placesResponse?.places && placesResponse.places.length > 0) {
-          // Adapt ApiNearbyPlaceItem to NearbySafePlace
-          const adaptedPlaces = placesResponse.places.map((p) => ({
-            id: p.id,
-            name: p.name,
-            category: p.category as any,
-            categoryLabel: p.category_label,
-            rating: p.rating,
-            reviews: p.reviews,
-            distanceMeters: p.distance_meters,
-            walkingMinutes: p.walking_minutes,
-            address: p.address,
-            coords: { x: 500, y: 500, lat: p.latitude, lng: p.longitude },
-            openStatus: p.open_status,
-            shelterFeature: p.shelter_feature,
-            routeRelevance: p.route_relevance,
-            phone: p.phone,
-            website: p.website,
-            openingHours: p.opening_hours,
-            distanceFromRouteMeters: typeof p.distance_from_route_km === 'number' ? Math.round(p.distance_from_route_km * 1000) : p.distance_meters,
-            distanceFromStartKm: p.distance_from_start_km
-          }));
-          setNearbyPlaces(adaptedPlaces);
-        } else if (!placesResponse) {
-          setNearbyPlaces([]);
-        } else {
-          setNearbyPlaces([]);
-        }
-        setIsLoadingNearbyPlaces(false);
 
         // Map backend analysis into LiveMapRoute format
         const calculatedDistanceKm = routeData.distance_km;
@@ -777,6 +738,52 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const safeRoutes = Array.isArray(routes) ? routes : [];
   const activeRoute = safeRoutes.find((r) => r.id === activeRouteId) || safeRoutes[0];
 
+  const loadNearbyPlaces = useCallback(async () => {
+    const points = activeRoute?.geoPoints || [];
+    if (points.length < 2 || isLoadingNearbyPlaces) return;
+    setShowNearbyPlaces(true);
+    setIsLoadingNearbyPlaces(true);
+    setNearbyPlacesError(null);
+    try {
+      const response = await apiGetPlacesAlongRoute(points);
+      const adaptedPlaces = response.places.map((p) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category as any,
+        categoryLabel: p.category_label,
+        rating: p.rating,
+        reviews: p.reviews,
+        distanceMeters: p.distance_meters,
+        walkingMinutes: p.walking_minutes,
+        address: p.address,
+        coords: { x: 500, y: 500, lat: p.latitude, lng: p.longitude },
+        openStatus: p.open_status,
+        shelterFeature: p.shelter_feature,
+        routeRelevance: p.route_relevance,
+        phone: p.phone,
+        website: p.website,
+        openingHours: p.opening_hours,
+        distanceFromRouteMeters: typeof p.distance_from_route_km === 'number' ? Math.round(p.distance_from_route_km * 1000) : p.distance_meters,
+        distanceFromStartKm: p.distance_from_start_km
+      }));
+      setNearbyPlaces(adaptedPlaces);
+    } catch (error) {
+      console.warn('Route amenities unavailable:', error);
+      setNearbyPlaces([]);
+      setNearbyPlacesError('Route places are temporarily unavailable.');
+    } finally {
+      setIsLoadingNearbyPlaces(false);
+    }
+  }, [activeRoute, isLoadingNearbyPlaces]);
+
+  const handleToggleNearbyPlaces = useCallback(() => {
+    if (showNearbyPlaces) {
+      setShowNearbyPlaces(false);
+    } else {
+      void loadNearbyPlaces();
+    }
+  }, [loadNearbyPlaces, showNearbyPlaces]);
+
   const handleAnalyzeRouteWithAI = useCallback(async () => {
     if (!activeRoute) return;
     setExplainModalMode('why-route');
@@ -1074,7 +1081,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               isNavigating={isNavigating}
               vehicleProgress={vehicleProgress}
               showNearbyPlaces={showNearbyPlaces}
-              onToggleNearbyPlaces={() => setShowNearbyPlaces(!showNearbyPlaces)}
+              onToggleNearbyPlaces={handleToggleNearbyPlaces}
               nearbyPlaces={nearbyPlaces}
               selectedNearbyPlace={selectedNearbyPlace}
               onSelectNearbyPlace={setSelectedNearbyPlace}
@@ -1180,7 +1187,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         )}
       </div>
 
-      {destinationName && (safeRoutes.length > 0 || isLoadingNearbyPlaces) && (
+      {destinationName && showNearbyPlaces && (safeRoutes.length > 0 || isLoadingNearbyPlaces) && (
         <RouteAmenitiesPanel
           places={nearbyPlaces}
           loading={isLoadingNearbyPlaces}
@@ -1228,7 +1235,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           }}
           onOpenWhyRoute={handleAnalyzeRouteWithAI}
           onOpenTimeline={() => setShowTimelineModal(true)}
-          onOpenNearby={() => setShowNearbyPlaces(true)}
+          onOpenNearby={() => { void loadNearbyPlaces(); }}
           isExpanded={isDrawerExpanded}
           onToggleExpand={() => setIsDrawerExpanded(!isDrawerExpanded)}
           onOpenChat={() => setIsChatOpen(true)}
@@ -1269,7 +1276,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             setIsSmartWaitActive(false);
             handleStartGoogleMapsNavigation();
           }}
-          onOpenNearby={() => setShowNearbyPlaces(true)}
+          onOpenNearby={() => { void loadNearbyPlaces(); }}
           nearbyPlaces={nearbyPlaces}
         />
       )}
