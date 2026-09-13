@@ -7,8 +7,7 @@ import {
   DepartureTimeOption,
   RouteSamplingPoint,
   RouteTrip,
-  SavedPlace,
-  RouteChatContext
+  SavedPlace
 } from '../types';
 import { DESTINATION_PRESETS, DestinationPreset } from '../data/liveMapData';
 import { AppLanguage } from '../utils/routeWeatherSummary';
@@ -63,7 +62,6 @@ interface WeatherMapScreenProps {
   initialLayer?: string;
   initialLanguage?: AppLanguage;
   userRole?: string;
-  onAnalyzeRouteInChat?: (context: RouteChatContext, query: string) => void;
 }
 
 export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
@@ -79,8 +77,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   onSelectCity,
   initialLayer,
   initialLanguage = 'en',
-  userRole = 'citizen',
-  onAnalyzeRouteInChat: _onAnalyzeRouteInChat
+  userRole = 'citizen'
 }) => {
   const detectedLocation = currentWeather.locationCoordinates;
 

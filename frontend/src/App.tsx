@@ -536,7 +536,6 @@ export default function App() {
               savedPlaces={savedPlaces}
               onSavePlace={handleSavePlace}
               onSaveRoute={(savedRoute) => setSavedTrips((previous) => [savedRoute, ...previous.filter((item) => item.id !== savedRoute.id)])}
-              onAnalyzeRouteInChat={handleAnalyzeRouteInChat}
             />
           )}
 
