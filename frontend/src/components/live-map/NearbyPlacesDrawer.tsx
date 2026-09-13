@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { NearbySafePlace } from '../../types';
 import { X, Utensils, Coffee, Store, Building2, Fuel, Hospital, MapPin, ExternalLink, ChevronRight, Plus, Navigation } from '../Icons';
 
@@ -55,7 +56,7 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
         return p.category === filter;
       });
 
-  return (
+  return createPortal((
     <div className="fixed inset-0 z-[80] bg-slate-950/70 backdrop-blur-sm flex items-end justify-center pointer-events-auto">
       <div className="w-full max-w-md bg-slate-900 text-white rounded-t-3xl shadow-2xl border-t border-slate-700 max-h-[85dvh] flex flex-col animate-in slide-in-from-bottom duration-200">
         {/* Header */}
@@ -241,6 +242,6 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 };
 
