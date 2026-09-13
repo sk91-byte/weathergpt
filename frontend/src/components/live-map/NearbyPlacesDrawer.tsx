@@ -10,6 +10,8 @@ interface NearbyPlacesDrawerProps {
   onUseAsStop?: (place: NearbySafePlace) => void;
   selectedPlaceId?: string;
   initialFilter?: PlaceCategoryFilter;
+  loading?: boolean;
+  error?: string | null;
 }
 
 type PlaceCategoryFilter = 'all' | 'shelter' | 'cafe' | 'restaurant' | 'hotel' | 'petrol' | 'hospital';
@@ -21,7 +23,9 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
   onSelectPlace,
   onUseAsStop,
   selectedPlaceId,
-  initialFilter = 'all'
+  initialFilter = 'all',
+  loading = false,
+  error = null
 }) => {
   const [filter, setFilter] = useState<PlaceCategoryFilter>(initialFilter);
 
@@ -129,6 +133,21 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
 
         {/* Places List */}
         <div className="overflow-y-auto px-4 pb-6 space-y-2.5 flex-1">
+          {loading && (
+            <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 p-5 text-sm text-sky-200">
+              <div className="flex items-center gap-2 font-bold"><span className="w-4 h-4 border-2 border-sky-300 border-t-transparent rounded-full animate-spin" />Loading live nearby places…</div>
+              <p className="mt-2 text-xs text-sky-300/80">Geoapify is searching hospitals, petrol pumps, hotels, restaurants, and cafes around this route.</p>
+            </div>
+          )}
+          {!loading && error && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5 text-sm text-amber-200">
+              <p className="font-bold">Nearby places could not be loaded.</p>
+              <p className="mt-1 text-xs">{error} Confirm GEOAPIFY_API_KEY is configured on the backend.</p>
+            </div>
+          )}
+          {!loading && !error && filteredPlaces.length === 0 && (
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/70 p-5 text-sm text-slate-300">No mapped places were found in this category.</div>
+          )}
           {filteredPlaces.map((place) => {
             const isSelected = place.id === selectedPlaceId;
             return (

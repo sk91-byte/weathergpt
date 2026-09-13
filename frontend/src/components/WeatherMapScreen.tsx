@@ -83,6 +83,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   userRole = 'citizen',
   onAnalyzeRouteInChat
 }) => {
+  const detectedLocation = currentWeather.locationCoordinates;
+
   // 0. Multilingual State
   const [language, setLanguage] = useState<AppLanguage>(initialLanguage || 'en');
 
@@ -96,7 +98,9 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const [originAddress, setOriginAddress] = useState<string>(initialTrip?.from || '');
   const [originCoords, setOriginCoords] = useState<[number, number]>(
     (initialTrip as any)?.originCoords ||
-    ((currentWeather as any)?.latitude && (currentWeather as any)?.longitude
+    (detectedLocation
+      ? [detectedLocation.latitude, detectedLocation.longitude]
+      : (currentWeather as any)?.latitude && (currentWeather as any)?.longitude
       ? [(currentWeather as any).latitude, (currentWeather as any).longitude]
       : [28.4986, 77.0878])
   );
@@ -1309,6 +1313,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         }}
         selectedPlaceId={selectedNearbyPlace?.id}
         initialFilter={nearbyCategory}
+        loading={isLoadingNearbyPlaces}
+        error={nearbyPlacesError}
       />
 
       {/* Smart Wait Mode Overlay */}

@@ -29,7 +29,7 @@ import { CitySelectorModal } from './components/CitySelectorModal';
 import { NotificationsModal } from './components/NotificationsModal';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
 import { getWeatherTheme } from './utils/weatherGradients';
-import { apiGetLocationWeather, apiGetNearbyAlerts, apiResolveLocation } from './services/api';
+import { apiGetLocationWeather, apiGetNearbyAlerts, apiGetNearbyPlaces, apiResolveLocation } from './services/api';
 
 import {
   DEFAULT_HOURLY_FORECAST,
@@ -115,6 +115,16 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showVoiceAssistant, setShowVoiceAssistant] = useState(false);
 
+  // Warm nearby-place data after a verified homepage location is available.
+  // The map reuses the API module cache when a category popup is opened.
+  useEffect(() => {
+    const coords = weather.locationCoordinates;
+    if (!coords || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)) return;
+    void apiGetNearbyPlaces(coords.latitude, coords.longitude, 5).catch((error) => {
+      console.warn('Background nearby-place prefetch unavailable:', error);
+    });
+  }, [weather.locationCoordinates?.latitude, weather.locationCoordinates?.longitude]);
+
   // Onboarding Completion Handler
   const handleOnboardingComplete = (data: {
     userName: string;
@@ -179,6 +189,7 @@ export default function App() {
         risks: liveWeather.risks ?? previous.risks,
         weatherSource: liveWeather.weather_source ?? previous.weatherSource,
         lastUpdated: 'Just now',
+        locationCoordinates: { latitude, longitude },
       }));
       setActiveTab('home');
     } catch (error) {
@@ -231,6 +242,7 @@ export default function App() {
               risks: liveWeather.risks ?? weather.risks,
               weatherSource: liveWeather.weather_source ?? weather.weatherSource,
               lastUpdated: 'Just now',
+              locationCoordinates: { latitude, longitude },
               aiRecommendation: 'This is your live weather at the detected location.',
               recommendationExplanation: { ...weather.recommendationExplanation, title: 'Live location weather' }
             };
@@ -333,6 +345,7 @@ export default function App() {
         city: location?.name || resolved?.name || cityName,
         state: resolved?.state || '',
         country: resolved?.country || 'India',
+        locationCoordinates: { latitude, longitude },
         temperature: liveWeather.temperature,
         feelsLike: liveWeather.feels_like,
         condition: liveWeather.condition,
@@ -514,7 +527,11 @@ export default function App() {
               onUseLiveLocation={handleGetLiveLocation}
               isLocating={isLocating}
               currentWeather={weather}
-              initialTrip={trip}
+              initialTrip={weather.locationCoordinates ? {
+                ...trip,
+                from: `${weather.city} (Current Location)`,
+                originCoords: [weather.locationCoordinates.latitude, weather.locationCoordinates.longitude]
+              } : trip}
               onUpdateTrip={(updatedTrip) => setTrip(updatedTrip)}
               savedPlaces={savedPlaces}
               onSavePlace={handleSavePlace}
@@ -537,6 +554,7 @@ export default function App() {
               routeContext={chatRouteContext}
               userRole={userRole}
               userName={userName}
+              currentCoordinates={weather.locationCoordinates || null}
             />
           )}
 
