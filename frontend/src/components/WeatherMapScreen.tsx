@@ -81,7 +81,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   initialLayer,
   initialLanguage = 'en',
   userRole = 'citizen',
-  onAnalyzeRouteInChat
+  onAnalyzeRouteInChat: _onAnalyzeRouteInChat
 }) => {
   const detectedLocation = currentWeather.locationCoordinates;
 
@@ -162,6 +162,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const [aiRouteAnalysis, setAiRouteAnalysis] = useState('');
   const [isAiRouteAnalysisLoading, setIsAiRouteAnalysisLoading] = useState(false);
   const [isDrawerExpanded, setIsDrawerExpanded] = useState<boolean>(false);
+  const [showRouteAnalysis, setShowRouteAnalysis] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
 
 
@@ -803,36 +804,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
   const handleAnalyzeRouteWithAI = useCallback(async () => {
     if (!activeRoute) return;
-    const routeContext: RouteChatContext = {
-      origin: originName,
-      destination: destinationName,
-      originCoords,
-      destinationCoords: destinationCoords || undefined,
-      safetyScore: activeRoute.safetyScore,
-      rainRisk: activeRoute.rainRisk,
-      waterloggingRisk: activeRoute.waterloggingRisk,
-      thunderstormRisk: activeRoute.thunderstormRisk,
-      summaryCondition: activeRoute.summaryCondition,
-      bestDepartureTime: departureOptions.find((d) => d.isRecommended)?.time,
-      departureAdvice: activeRoute.departureAdvice,
-      distanceKm: activeRoute.distanceKm,
-      durationMinutes: activeRoute.durationMinutes,
-      currentTemperature: activeRoute.waypoints?.[0]?.temp,
-      currentWindSpeed: activeRoute.waypoints?.[0]?.windSpeed,
-      routeName: activeRoute.name,
-      routeType: activeRoute.routeOptionType,
-      nearbyPlaces: nearbyPlaces.slice(0, 8).map((place) => ({
-        name: place.name,
-        category: place.category,
-        address: place.address,
-        distanceFromRouteMeters: place.distanceFromRouteMeters,
-        distanceFromStartKm: place.distanceFromStartKm
-      }))
-    };
-    if (onAnalyzeRouteInChat) {
-      onAnalyzeRouteInChat(routeContext, 'Analyze this selected route for live weather, safety risks, best departure time, and practical travel advice.');
-      return;
-    }
+    setShowRouteAnalysis(true);
     setExplainModalMode('why-route');
     setAiRouteAnalysis('');
     setIsAiRouteAnalysisLoading(true);
@@ -871,7 +843,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     } finally {
       setIsAiRouteAnalysisLoading(false);
     }
-  }, [activeRoute, departureOptions, destinationCoords, destinationName, language, nearbyPlaces, onAnalyzeRouteInChat, originCoords, originName, userRole]);
+  }, [activeRoute, departureOptions, destinationCoords, destinationName, language, nearbyPlaces, originCoords, originName, userRole]);
 
   const handleStartGoogleMapsNavigation = useCallback(() => {
     if (!destinationCoords || !originCoords) return;
@@ -1261,37 +1233,49 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
       )}
 
       {/* Route Comparison Bottom Drawer */}
-      {false && destinationName && !isNavigating && safeRoutes.length > 0 && (
-        <RouteComparisonDrawer
-          routes={safeRoutes}
-          activeRouteId={activeRouteId}
-          onSelectRoute={setActiveRouteId}
-          departureOptions={departureOptions}
-          originName={originName}
-          destinationName={destinationName}
-          language={language}
-          onChangeLanguage={setLanguage}
-          userRole={userRole}
-          currentWeather={currentWeather}
-          isWeatherLoading={isAnalyzing}
-          onStartNavigation={() => {
-            handleStartGoogleMapsNavigation();
-          }}
-          onActivateSmartWait={(mins) => {
-            setSmartWaitMinutes(mins);
-            setIsSmartWaitActive(true);
-          }}
-          onOpenWhyRoute={handleAnalyzeRouteWithAI}
-          onOpenTimeline={() => setShowTimelineModal(true)}
-          onOpenNearby={() => { void loadNearbyPlaces(); }}
-          isExpanded={isDrawerExpanded}
-          onToggleExpand={() => setIsDrawerExpanded(!isDrawerExpanded)}
-          onOpenChat={() => setIsChatOpen(true)}
-          isLive={isLive}
-          dataSource={dataSource}
-          recommendedWaitPlaceName={recommendedWaitPlace?.name}
-          routeSteps={routeSteps}
-        />
+      {showRouteAnalysis && destinationName && !isNavigating && safeRoutes.length > 0 && (
+        <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-950 text-white">
+          <div className="mx-auto min-h-full w-full max-w-md">
+            <div className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur-md">
+              <button
+                type="button"
+                onClick={() => setShowRouteAnalysis(false)}
+                className="rounded-xl bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
+              >
+                ← Back to Live Map
+              </button>
+              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Live AI analysis</span>
+            </div>
+            <RouteComparisonDrawer
+              routes={safeRoutes}
+              activeRouteId={activeRouteId}
+              onSelectRoute={setActiveRouteId}
+              departureOptions={departureOptions}
+              originName={originName}
+              destinationName={destinationName}
+              language={language}
+              onChangeLanguage={setLanguage}
+              userRole={userRole}
+              currentWeather={currentWeather}
+              isWeatherLoading={isAnalyzing}
+              onStartNavigation={handleStartGoogleMapsNavigation}
+              onActivateSmartWait={(mins) => {
+                setSmartWaitMinutes(mins);
+                setIsSmartWaitActive(true);
+              }}
+              onOpenWhyRoute={handleAnalyzeRouteWithAI}
+              onOpenTimeline={() => setShowTimelineModal(true)}
+              onOpenNearby={() => { void loadNearbyPlaces(); }}
+              isExpanded
+              onToggleExpand={() => setShowRouteAnalysis(false)}
+              onOpenChat={() => setIsChatOpen(true)}
+              isLive={isLive}
+              dataSource={dataSource}
+              recommendedWaitPlaceName={recommendedWaitPlace?.name}
+              routeSteps={routeSteps}
+            />
+          </div>
+        </div>
       )}
 
       {/* Nearby Safe Places Drawer */}

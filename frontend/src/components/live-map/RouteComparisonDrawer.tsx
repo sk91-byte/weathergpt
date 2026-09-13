@@ -92,7 +92,7 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
   // Keep the map screen focused on route selection. Detailed weather,
   // safety factors, departure advice, and AI explanation are intentionally
   // opened from the map's Analyze Weather & Safety action.
-  return (
+  if (!isExpanded) return (
     <div className="relative z-30 w-full bg-slate-900/98 backdrop-blur-md text-white rounded-t-3xl shadow-2xl border-t border-slate-700/80 pointer-events-auto p-3">
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
