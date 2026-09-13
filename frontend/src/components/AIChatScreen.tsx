@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Mic, MicOff, Sparkles, Volume2, VolumeX, ArrowRight, Umbrella, CloudRain, RotateCcw, ChevronLeft, Bot, Loader2, AlertTriangle } from './Icons';
-import { APP_LANGUAGES, ChatMessage, Language, WeatherData, RouteTrip, UserRole } from '../types';
+import { APP_LANGUAGES, ChatMessage, Language, WeatherData, RouteTrip, UserRole, RouteChatContext } from '../types';
 import { apiGetRecommendedQuestions, apiSendChat } from '../services/api';
 
 interface AIChatScreenProps {
@@ -13,6 +13,7 @@ interface AIChatScreenProps {
   userRole: UserRole;
   userName?: string;
   currentCoordinates?: { latitude: number; longitude: number } | null;
+  routeContext?: RouteChatContext;
 }
 
 export const AIChatScreen: React.FC<AIChatScreenProps> = ({
@@ -24,7 +25,8 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
   initialQuery,
   userRole,
   userName = 'Shubham',
-  currentCoordinates
+  currentCoordinates,
+  routeContext
 }) => {
   const displayName = userName.trim() || 'Shubham';
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -328,7 +330,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
         latitude: coordinates?.latitude,
         longitude: coordinates?.longitude,
         location: weather.city,
-        route_context: { from: trip.from, to: trip.to, leave_by: trip.leaveBy }
+        route_context: routeContext || { from: trip.from, to: trip.to, leave_by: trip.leaveBy }
       });
       if (data.conversation_id) setConversationId(data.conversation_id);
       if (Array.isArray(data.suggestions)) setServerSuggestions(data.suggestions);
@@ -466,6 +468,30 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
 
       {/* Messages Container */}
       <div className="flex-1 p-4 overflow-y-auto space-y-3.5">
+        {routeContext && (
+          <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-sky-50 p-3 shadow-xs">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-blue-700">
+                <Sparkles className="w-3.5 h-3.5" /> Selected route intelligence
+              </div>
+              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 rounded-full px-1.5 py-0.5">LIVE ROUTE DATA</span>
+            </div>
+            <div className="text-xs font-bold text-slate-800 truncate">{routeContext.origin || 'Start'} → {routeContext.destination || 'Destination'}</div>
+            <div className="grid grid-cols-3 gap-1.5 mt-2 text-[10px]">
+              <div className="rounded-lg bg-white/80 border border-blue-100 p-1.5"><span className="block text-slate-500">Safety</span><strong className="text-blue-700">{routeContext.safetyScore == null ? '—' : `${routeContext.safetyScore}/100`}</strong></div>
+              <div className="rounded-lg bg-white/80 border border-blue-100 p-1.5"><span className="block text-slate-500">Rain risk</span><strong className="text-slate-800">{routeContext.rainRisk || '—'}</strong></div>
+              <div className="rounded-lg bg-white/80 border border-blue-100 p-1.5"><span className="block text-slate-500">Trip</span><strong className="text-slate-800">{routeContext.distanceKm == null ? '—' : `${routeContext.distanceKm.toFixed(1)} km`}</strong></div>
+            </div>
+            <div className="mt-2 text-[10px] text-slate-600">{routeContext.durationMinutes != null ? `${Math.round(routeContext.durationMinutes)} min` : 'Travel time unavailable'} · {routeContext.summaryCondition || 'Live weather details loading'}</div>
+            <div className="mt-2 flex flex-wrap gap-1 text-[9px] font-semibold text-slate-600">
+              <span className="rounded-full bg-white/80 border border-blue-100 px-1.5 py-0.5">Waterlogging: {routeContext.waterloggingRisk || '—'}</span>
+              <span className="rounded-full bg-white/80 border border-blue-100 px-1.5 py-0.5">Storm: {routeContext.thunderstormRisk || '—'}</span>
+              {routeContext.bestDepartureTime && <span className="rounded-full bg-white/80 border border-blue-100 px-1.5 py-0.5">Best departure: {routeContext.bestDepartureTime}</span>}
+              {routeContext.currentTemperature != null && <span className="rounded-full bg-white/80 border border-blue-100 px-1.5 py-0.5">{routeContext.currentTemperature}°C</span>}
+              {routeContext.nearbyPlaces?.length ? <span className="rounded-full bg-white/80 border border-blue-100 px-1.5 py-0.5">{routeContext.nearbyPlaces.length} nearby places</span> : null}
+            </div>
+          </div>
+        )}
         {messages.map((m) => (
           <div
             key={m.id}

@@ -7,7 +7,8 @@ import {
   DepartureTimeOption,
   RouteSamplingPoint,
   RouteTrip,
-  SavedPlace
+  SavedPlace,
+  RouteChatContext
 } from '../types';
 import { DESTINATION_PRESETS, DestinationPreset } from '../data/liveMapData';
 import { AppLanguage } from '../utils/routeWeatherSummary';
@@ -63,6 +64,7 @@ interface WeatherMapScreenProps {
   initialLayer?: string;
   initialLanguage?: AppLanguage;
   userRole?: string;
+  onAnalyzeRouteInChat?: (context: RouteChatContext, query: string) => void;
 }
 
 export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
@@ -78,7 +80,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   onSelectCity,
   initialLayer,
   initialLanguage = 'en',
-  userRole = 'citizen'
+  userRole = 'citizen',
+  onAnalyzeRouteInChat
 }) => {
   // 0. Multilingual State
   const [language, setLanguage] = useState<AppLanguage>(initialLanguage || 'en');
@@ -787,6 +790,36 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
   const handleAnalyzeRouteWithAI = useCallback(async () => {
     if (!activeRoute) return;
+    const routeContext: RouteChatContext = {
+      origin: originName,
+      destination: destinationName,
+      originCoords,
+      destinationCoords: destinationCoords || undefined,
+      safetyScore: activeRoute.safetyScore,
+      rainRisk: activeRoute.rainRisk,
+      waterloggingRisk: activeRoute.waterloggingRisk,
+      thunderstormRisk: activeRoute.thunderstormRisk,
+      summaryCondition: activeRoute.summaryCondition,
+      bestDepartureTime: departureOptions.find((d) => d.isRecommended)?.time,
+      departureAdvice: activeRoute.departureAdvice,
+      distanceKm: activeRoute.distanceKm,
+      durationMinutes: activeRoute.durationMinutes,
+      currentTemperature: activeRoute.waypoints?.[0]?.temp,
+      currentWindSpeed: activeRoute.waypoints?.[0]?.windSpeed,
+      routeName: activeRoute.name,
+      routeType: activeRoute.routeOptionType,
+      nearbyPlaces: nearbyPlaces.slice(0, 8).map((place) => ({
+        name: place.name,
+        category: place.category,
+        address: place.address,
+        distanceFromRouteMeters: place.distanceFromRouteMeters,
+        distanceFromStartKm: place.distanceFromStartKm
+      }))
+    };
+    if (onAnalyzeRouteInChat) {
+      onAnalyzeRouteInChat(routeContext, 'Analyze this selected route for live weather, safety risks, best departure time, and practical travel advice.');
+      return;
+    }
     setExplainModalMode('why-route');
     setAiRouteAnalysis('');
     setIsAiRouteAnalysisLoading(true);
@@ -825,7 +858,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     } finally {
       setIsAiRouteAnalysisLoading(false);
     }
-  }, [activeRoute, destinationCoords, destinationName, language, nearbyPlaces, originCoords, originName, userRole]);
+  }, [activeRoute, departureOptions, destinationCoords, destinationName, language, nearbyPlaces, onAnalyzeRouteInChat, originCoords, originName, userRole]);
 
   const handleStartGoogleMapsNavigation = useCallback(() => {
     if (!destinationCoords || !originCoords) return;

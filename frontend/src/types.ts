@@ -131,6 +131,28 @@ export interface RouteTrip {
   alternativeAdvice: string;
 }
 
+/** Live route facts shared between the map and the AI chat/Copilot. */
+export interface RouteChatContext {
+  origin?: string;
+  destination?: string;
+  originCoords?: [number, number];
+  destinationCoords?: [number, number];
+  safetyScore?: number | null;
+  rainRisk?: string;
+  waterloggingRisk?: string;
+  thunderstormRisk?: string;
+  summaryCondition?: string;
+  bestDepartureTime?: string;
+  departureAdvice?: string;
+  distanceKm?: number;
+  durationMinutes?: number;
+  currentTemperature?: number;
+  currentWindSpeed?: number;
+  routeName?: string;
+  routeType?: string;
+  nearbyPlaces?: Array<{ name: string; category?: string; address?: string; distanceFromRouteMeters?: number; distanceFromStartKm?: number }>;
+}
+
 export interface SavedPlace {
   id: string;
   label: string;
