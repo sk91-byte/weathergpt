@@ -454,8 +454,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           const analysis = alternativeWeather[index] || weatherAnalysis;
           const score = analysis.safety_score;
           const color = score === null ? 'orange' : score >= 70 ? 'green' : score >= 40 ? 'orange' : 'red';
-          const routeType = index === 0 ? 'safest' : index === 1 ? 'fastest' : 'avoid';
-          const label = index === 0 ? 'Safest route' : index === 1 ? 'Alternative route' : 'Higher-risk route';
+          const routeType = color === 'green' ? 'safest' : color === 'orange' ? 'alternative' : 'avoid';
+          const label = color === 'green' ? 'Highly preferred route' : color === 'orange' ? 'Usable route' : color === 'red' ? 'Highly avoidable route' : 'Route weather unavailable';
           return {
             ...primaryRoute,
             id: candidate.route_id,
@@ -891,7 +891,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   }, []);
 
   return (
-    <div className="relative w-full min-h-[calc(100vh-68px)] max-w-5xl mx-auto overflow-y-auto flex flex-col bg-slate-900 select-none">
+    <div className="relative w-full min-h-[calc(100vh-68px)] max-w-5xl mx-auto overflow-y-auto pb-24 flex flex-col bg-slate-900 select-none">
       {/* Top Header Tagline & Live Connection Indicator */}
       <div className="relative z-20 bg-slate-900/95 backdrop-blur-md px-3 sm:px-4 py-2 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center space-x-2">
@@ -1111,7 +1111,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
       {/* Main Interactive Leaflet Map Canvas or Placeholder */}
       {/* The map is a distinct first section. Details flow below it so the
           user can scroll naturally instead of having the drawer cover the map. */}
-      <div className="relative w-full h-[52vh] min-h-[360px] flex-none overflow-hidden flex flex-col">
+      <div className="relative w-full h-[68vh] min-h-[480px] max-h-[720px] flex-none overflow-hidden flex flex-col">
         {destinationName.trim().length > 0 || isNavigating ? (
           <>
             <InteractiveMapCanvas

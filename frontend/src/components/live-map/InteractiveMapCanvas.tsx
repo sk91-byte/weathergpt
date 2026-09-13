@@ -55,6 +55,13 @@ interface InteractiveMapCanvasProps {
   onClearDestination?: () => void;
 }
 
+function routeWeatherTier(score: number | null | undefined) {
+  if (score == null || !Number.isFinite(score)) return { label: 'Weather score unavailable', badge: 'bg-slate-100 text-slate-600 border-slate-200', icon: '⚪' };
+  if (score >= 70) return { label: 'Highly preferred', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: '🟢' };
+  if (score >= 40) return { label: 'Can be used', badge: 'bg-orange-100 text-orange-700 border-orange-200', icon: '🟠' };
+  return { label: 'Highly avoidable', badge: 'bg-red-100 text-red-700 border-red-200', icon: '🔴' };
+}
+
 export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
   routes,
   activeRouteId,
@@ -98,6 +105,8 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
 
   const safeRoutes = Array.isArray(routes) ? routes : [];
   const activeRoute = safeRoutes.find((r) => r.id === activeRouteId) || safeRoutes[0];
+  const activeTier = routeWeatherTier(activeRoute?.safetyScore);
+  const activeWeatherRisk = activeRoute?.safetyScore == null ? null : Math.max(0, Math.min(100, 100 - activeRoute.safetyScore));
 
   const currentPos = toValidLatLng(gpsCoords || originCoords, [28.472, 77.125]);
   const currentLat = currentPos[0];
@@ -182,9 +191,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
         <div className="absolute top-14 left-3 right-16 z-30 pointer-events-auto flex items-center space-x-2 overflow-x-auto no-scrollbar py-0.5">
           {safeRoutes.map((route) => {
             const isSelected = route.id === activeRouteId;
-            const isSafest = route.id === 'route-safest' || route.routeOptionType === 'safest';
-            const isFastest = route.id === 'route-fastest' || route.routeOptionType === 'fastest';
-            const isScenic = route.id === 'route-scenic' || route.routeOptionType === 'scenic';
+            const tier = routeWeatherTier(route.safetyScore);
 
             return (
               <button
@@ -201,25 +208,21 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
                 }}
               >
                 <span className="text-sm">
-                  {isSafest ? '🟢' : isFastest ? '⚡' : isScenic ? '🌿' : '🚗'}
+                  {tier.icon}
                 </span>
 
                 <div className="text-left leading-tight">
                   <div className="flex items-center space-x-1.5">
                     <span className="text-xs font-black">
-                      {isSafest ? 'Safest' : isFastest ? 'Fastest' : isScenic ? 'Scenic' : (route?.name || 'Route').split(' ')[0]}
+                      {tier.label}
                     </span>
                     <span className="text-[11px] font-bold text-slate-200">
                       {route.durationMinutes}m
                     </span>
                     <span
-                      className={`text-[9px] font-black px-1.5 py-0.2 rounded-xs ${
-                        route.safetyScore >= 80
-                          ? 'bg-emerald-500/20 text-emerald-400'
-                          : 'bg-amber-500/20 text-amber-400'
-                      }`}
+                      className={`text-[9px] font-black px-1.5 py-0.2 rounded-xs border ${tier.badge}`}
                     >
-                      {route.safetyScore}
+                      {route.safetyScore == null ? '—' : `Safety ${route.safetyScore}`}
                     </span>
                   </div>
 
@@ -541,10 +544,10 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
         <div className="absolute bottom-3 left-3 right-3 z-30 pointer-events-none">
           <div className="pointer-events-auto max-w-xl mx-auto rounded-2xl bg-white/95 shadow-2xl border border-slate-200 p-3 text-slate-900">
             <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-black uppercase">
-                ● WeatherGPT safest route
+              <span className={`px-2 py-1 rounded-md border text-[10px] font-black uppercase ${activeTier.badge}`}>
+                {activeTier.icon} {activeTier.label}
               </span>
-              <span className="text-xs font-black text-emerald-600">Safety: {activeRoute.safetyScore}/100</span>
+              <span className="text-xs font-black text-slate-700">Safety: {activeRoute.safetyScore == null ? '—' : `${activeRoute.safetyScore}/100`}</span>
             </div>
             <div className="text-xs font-black truncate">{originName} → {destinationName}</div>
             <div className="mt-1 text-[11px] text-slate-500 flex items-center gap-2">
@@ -553,6 +556,8 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
               <span>{activeRoute.durationMinutes} min</span>
               <span>•</span>
               <span>🌧️ Rain risk: {activeRoute.rainRisk || 'Low'}</span>
+              <span>•</span>
+              <span>Weather risk: {activeWeatherRisk == null ? '—' : `${activeWeatherRisk}/100`}</span>
             </div>
             <button
               type="button"
