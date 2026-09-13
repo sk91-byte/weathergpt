@@ -14,17 +14,16 @@ import { DESTINATION_PRESETS, DestinationPreset } from '../data/liveMapData';
 import { AppLanguage } from '../utils/routeWeatherSummary';
 import { InteractiveMapCanvas } from './live-map/InteractiveMapCanvas';
 import { SearchAndDestinations } from './live-map/SearchAndDestinations';
-import { RouteComparisonDrawer } from './live-map/RouteComparisonDrawer';
 import { RouteAnalysisLoading } from './live-map/RouteAnalysisLoading';
 import { NearbyPlacesDrawer } from './live-map/NearbyPlacesDrawer';
 import { RouteAmenitiesPanel } from './live-map/RouteAmenitiesPanel';
 import { SmartWaitModeOverlay } from './live-map/SmartWaitModeOverlay';
 import { LiveNavigationHUD } from './live-map/LiveNavigationHUD';
 import { RouteWeatherTimelineModal } from './live-map/RouteWeatherTimelineModal';
-import { ExplainableAIModal } from './live-map/ExplainableAIModal';
 import { MapWeatherPopup } from './live-map/MapWeatherPopup';
 import { RouteChatDrawer } from './live-map/RouteChatDrawer';
 import { LiveMapPlanTripModal } from './live-map/LiveMapPlanTripModal';
+import { LiveRouteAnalysisPage } from './live-map/LiveRouteAnalysisPage';
 import {
   apiCalculateRoute,
   apiGetRouteWeather,
@@ -158,10 +157,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
   // 7. Modals & Drawers
   const [showTimelineModal, setShowTimelineModal] = useState<boolean>(false);
-  const [explainModalMode, setExplainModalMode] = useState<'why-route' | 'why-wait' | null>(null);
   const [aiRouteAnalysis, setAiRouteAnalysis] = useState('');
   const [isAiRouteAnalysisLoading, setIsAiRouteAnalysisLoading] = useState(false);
-  const [isDrawerExpanded, setIsDrawerExpanded] = useState<boolean>(false);
   const [showRouteAnalysis, setShowRouteAnalysis] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
 
@@ -805,7 +802,6 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const handleAnalyzeRouteWithAI = useCallback(async () => {
     if (!activeRoute) return;
     setShowRouteAnalysis(true);
-    setExplainModalMode('why-route');
     setAiRouteAnalysis('');
     setIsAiRouteAnalysisLoading(true);
     try {
@@ -1246,33 +1242,23 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               </button>
               <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Live AI analysis</span>
             </div>
-            <RouteComparisonDrawer
-              routes={safeRoutes}
-              activeRouteId={activeRouteId}
-              onSelectRoute={setActiveRouteId}
-              departureOptions={departureOptions}
+            <LiveRouteAnalysisPage
               originName={originName}
               destinationName={destinationName}
-              language={language}
-              onChangeLanguage={setLanguage}
-              userRole={userRole}
+              routes={safeRoutes}
+              activeRouteId={activeRouteId}
+              departureOptions={departureOptions}
               currentWeather={currentWeather}
-              isWeatherLoading={isAnalyzing}
-              onStartNavigation={handleStartGoogleMapsNavigation}
-              onActivateSmartWait={(mins) => {
-                setSmartWaitMinutes(mins);
-                setIsSmartWaitActive(true);
-              }}
-              onOpenWhyRoute={handleAnalyzeRouteWithAI}
-              onOpenTimeline={() => setShowTimelineModal(true)}
-              onOpenNearby={() => { void loadNearbyPlaces(); }}
-              isExpanded
-              onToggleExpand={() => setShowRouteAnalysis(false)}
-              onOpenChat={() => setIsChatOpen(true)}
+              nearbyPlaces={nearbyPlaces}
+              aiAnalysis={aiRouteAnalysis}
+              aiLoading={isAiRouteAnalysisLoading}
               isLive={isLive}
-              dataSource={dataSource}
-              recommendedWaitPlaceName={recommendedWaitPlace?.name}
-              routeSteps={routeSteps}
+              onSelectRoute={setActiveRouteId}
+              onBack={() => setShowRouteAnalysis(false)}
+              onStartNavigation={handleStartGoogleMapsNavigation}
+              onAnalyzeAI={handleAnalyzeRouteWithAI}
+              onOpenChat={() => setIsChatOpen(true)}
+              onNearbyCategory={handleNearbyCategory}
             />
           </div>
         </div>
@@ -1337,16 +1323,6 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         isOpen={showTimelineModal}
         language={language}
         onClose={() => setShowTimelineModal(false)}
-      />
-
-      {/* Explainable AI Modal */}
-      <ExplainableAIModal
-        route={activeRoute}
-        isOpen={explainModalMode !== null}
-        onClose={() => setExplainModalMode(null)}
-        mode={explainModalMode || 'why-route'}
-        aiExplanation={aiRouteAnalysis}
-        isAiLoading={isAiRouteAnalysisLoading}
       />
 
       {/* Set Destination & Plan Trip Modal */}
