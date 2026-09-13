@@ -1256,6 +1256,18 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               onStartNavigation={handleStartGoogleMapsNavigation}
               onAnalyzeAI={handleAnalyzeRouteWithAI}
               onOpenChat={() => setIsChatOpen(true)}
+              onOpenWhyRoute={(route) => {
+                setActiveRouteId(route.id);
+                void handleAnalyzeRouteWithAI();
+              }}
+              onOpenTimeline={(route) => {
+                setActiveRouteId(route.id);
+                setShowTimelineModal(true);
+              }}
+              onSmartWait={(minutes) => {
+                setSmartWaitMinutes(minutes);
+                setIsSmartWaitActive(true);
+              }}
               onNearbyCategory={handleNearbyCategory}
             />
           </div>
