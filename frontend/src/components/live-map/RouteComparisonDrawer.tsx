@@ -89,6 +89,56 @@ export const RouteComparisonDrawer: React.FC<RouteComparisonDrawerProps> = ({
 
   if (!activeRoute) return null;
 
+  // Keep the map screen focused on route selection. Detailed weather,
+  // safety factors, departure advice, and AI explanation are intentionally
+  // opened from the map's Analyze Weather & Safety action.
+  return (
+    <div className="relative z-30 w-full bg-slate-900/98 backdrop-blur-md text-white rounded-t-3xl shadow-2xl border-t border-slate-700/80 pointer-events-auto p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs font-black text-white truncate">Select a route before travelling</span>
+          <span className={`shrink-0 text-[9px] font-black px-1.5 py-0.5 rounded border ${isLive ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/15 text-amber-300 border-amber-500/30'}`}>
+            {isLive ? 'LIVE DATA' : 'DATA UNAVAILABLE'}
+          </span>
+        </div>
+        <span className="text-[10px] text-slate-400">Tap a route on the map or card</span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {safeRoutes.map((route, index) => {
+          const selected = route.id === activeRouteId;
+  const label = route.routeOptionType === 'safest' || index === 0 ? 'Safest route' : route.routeOptionType === 'fastest' || index === 1 ? 'Alternative route' : 'Higher-risk route';
+          return (
+            <button
+              key={route.id}
+              type="button"
+              onClick={() => onSelectRoute(route.id)}
+              className={`rounded-xl border p-2 text-left transition ${selected
+                ? route.color === 'green'
+                  ? 'bg-emerald-500/15 border-emerald-400 ring-1 ring-emerald-400/60'
+                  : route.color === 'red'
+                    ? 'bg-red-500/15 border-red-400 ring-1 ring-red-400/60'
+                    : 'bg-yellow-500/15 border-yellow-400 ring-1 ring-yellow-400/60'
+                : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'}`}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[11px] font-black text-white truncate">{label}</span>
+                <span className={`text-[10px] font-black ${route.color === 'green' ? 'text-emerald-400' : route.color === 'red' ? 'text-red-400' : 'text-yellow-400'}`}>
+                  {route.safetyScore == null ? '—' : `${route.safetyScore}/100`}
+                </span>
+              </div>
+              <div className="mt-1 text-[10px] text-slate-400">{route.durationMinutes} min • {route.distanceKm} km</div>
+              <div className={`mt-1 text-[9px] font-bold ${route.color === 'green' ? 'text-emerald-300' : route.color === 'red' ? 'text-red-300' : 'text-yellow-300'}`}>
+                {route.badge || 'LIVE WEATHER SCORE'}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 text-center text-[10px] text-slate-400">Use “Analyze Weather & Safety” for complete live weather and AI guidance.</div>
+    </div>
+  );
+
   const riskScore = activeRoute?.safetyScore == null ? null : Math.max(0, Math.min(100, 100 - activeRoute.safetyScore));
   const isHighRisk = riskScore !== null && riskScore >= 60;
   const weatherLoading = isWeatherLoading || activeRoute.summaryCondition === 'Loading live weather…';

@@ -143,6 +143,9 @@ export async function apiAutocompleteLocations(query: string, _latitude?: number
 }
 
 export async function apiCalculateRoute(origin: ApiPoint, destination: ApiPoint, travelMode = 'driving', onSlow?: () => void): Promise<ApiRouteResponse> {
+  if (![origin.latitude, origin.longitude, destination.latitude, destination.longitude].every((value) => Number.isFinite(Number(value)))) {
+    throw new Error('Please select valid start and destination locations before showing the route.');
+  }
   const requestBody = {
     origin: { latitude: Number(origin.latitude), longitude: Number(origin.longitude), name: String(origin.name || 'Current location').trim() || 'Current location' },
     destination: { latitude: Number(destination.latitude), longitude: Number(destination.longitude), name: String(destination.name || 'Destination').trim() || 'Destination' },
@@ -153,7 +156,12 @@ export async function apiCalculateRoute(origin: ApiPoint, destination: ApiPoint,
   const payload = await response.json();
   const rawGeometry = payload.geometry ?? payload.coordinates ?? payload.route?.geometry ?? payload.routes?.[0]?.geometry;
   const geometry = parseRouteGeometry(rawGeometry);
-  if (!payload.route_id || geometry.length < 3) throw new Error('Road route unavailable. No straight-line route is shown.');
+  if (!payload.route_id) {
+    throw new Error(typeof payload.detail === 'string' ? payload.detail : 'The routing service did not return a route ID.');
+  }
+  if (geometry.length < 3) {
+    throw new Error('The routing provider returned no usable road geometry for these locations.');
+  }
   latestRouteId = payload.route_id;
   const alternatives = Array.isArray(payload.alternatives)
     ? payload.alternatives.map((item: any) => ({

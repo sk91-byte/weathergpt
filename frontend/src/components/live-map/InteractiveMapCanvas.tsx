@@ -146,55 +146,31 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
       {/* Reference-style map controls. These sit above the real Leaflet map;
           every action delegates to the existing route/search handlers. */}
       {!isNavigating && (
-        <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none">
-          <div className="pointer-events-auto rounded-2xl bg-white/95 shadow-xl border border-slate-200 overflow-hidden max-w-xl mx-auto">
-            <button
-              type="button"
-              onClick={onOpenSearch}
-              className="w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-slate-50 transition"
-              aria-label="Search destination"
-            >
-              <span className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-sm">⌕</span>
-              <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 truncate">{destinationName || 'Search destination'}</span>
-              <button type="button" onClick={onClearDestination} className="text-slate-400 text-lg leading-none hover:text-slate-700" aria-label="Clear destination">×</button>
-              <button type="button" onClick={onOpenSearch} className="text-slate-500 text-base hover:text-blue-600" aria-label="Open voice/search controls">♩</button>
-              <button type="button" onClick={onUseCurrentLocation} className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100" aria-label="Use current location">⌖</button>
-            </button>
-            <div className="px-3 py-1.5 border-t border-slate-100 flex items-center gap-1.5 text-[10px] font-bold text-slate-600 truncate">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-              <span className="truncate">{originName || 'Current location'}</span>
-              <span className="text-slate-300">↓</span>
-              <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
-              <span className="truncate">{destinationName || 'Choose destination'}</span>
-            </div>
+        <div className="absolute top-3 left-3 right-3 z-30 pointer-events-auto">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+            {[
+              { label: 'Home', icon: '⌂', preset: destinationPresets.find((item) => item.category === 'home') },
+              { label: 'College', icon: '◆', preset: destinationPresets.find((item) => item.category === 'university') },
+              { label: 'Work', icon: '▣', preset: destinationPresets.find((item) => item.category === 'office') },
+              { label: 'Airport', icon: '✦', preset: destinationPresets.find((item) => item.category === 'transport') },
+              { label: 'Restaurant', icon: '♨', preset: undefined }
+            ].map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => item.preset ? onSelectDestinationPreset?.(item.preset) : onToggleNearbyPlaces?.()}
+                className="shrink-0 px-3 py-1.5 rounded-full border border-slate-200 bg-white/95 text-slate-700 text-[11px] font-black shadow-lg hover:border-blue-400 hover:text-blue-700 transition"
+              >
+                {item.icon} {item.label}
+              </button>
+            ))}
           </div>
-
-          {destinationPresets.length > 0 && (
-            <div className="pointer-events-auto mt-2 flex gap-2 overflow-x-auto no-scrollbar pb-1">
-              {destinationPresets.slice(0, 5).map((preset) => {
-                const selected = destinationName === preset.name;
-                const icon = preset.category === 'home' ? '⌂' : preset.category === 'university' ? '◆' : preset.category === 'transport' ? '✦' : '▣';
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => onSelectDestinationPreset?.(preset)}
-                    className={`shrink-0 px-3 py-1.5 rounded-full border text-[11px] font-black shadow-sm transition ${
-                      selected ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white/95 border-slate-200 text-slate-700 hover:border-blue-400'
-                    }`}
-                  >
-                    {icon} {preset.name.replace(' (Vasant Kunj)', '').replace(' Terminal 3', '')}
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
       )}
 
       {/* Floating Route Options Quick Switcher Bar on Map */}
       {!isNavigating && safeRoutes.length > 1 && (
-        <div className="absolute top-3 left-3 right-16 z-30 pointer-events-auto flex items-center space-x-2 overflow-x-auto no-scrollbar py-0.5">
+        <div className="absolute top-14 left-3 right-16 z-30 pointer-events-auto flex items-center space-x-2 overflow-x-auto no-scrollbar py-0.5">
           {safeRoutes.map((route) => {
             const isSelected = route.id === activeRouteId;
             const isSafest = route.id === 'route-safest' || route.routeOptionType === 'safest';

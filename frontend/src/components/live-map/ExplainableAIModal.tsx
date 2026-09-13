@@ -66,6 +66,21 @@ export const ExplainableAIModal: React.FC<ExplainableAIModalProps> = ({
           </p>
         </div>
 
+        {/* These values are shown only inside Analyze Weather & Safety and are
+            taken from the selected route's live weather response. */}
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-sky-700">Live route weather details</span>
+            <span className="text-[9px] font-black text-emerald-700 bg-emerald-100 border border-emerald-200 rounded px-1.5 py-0.5">LIVE PROVIDER DATA</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[11px]">
+            <div><span className="text-slate-500 block">Travel time / distance</span><strong className="text-slate-900">{route.durationMinutes} min / {route.distanceKm} km</strong></div>
+            <div><span className="text-slate-500 block">Route condition</span><strong className="text-slate-900">{route.summaryCondition || 'Unavailable'}</strong></div>
+            <div><span className="text-slate-500 block">Rain risk</span><strong className="text-slate-900">{route.rainRisk || 'Unavailable'}</strong></div>
+            <div><span className="text-slate-500 block">Departure advice</span><strong className="text-slate-900">{route.departureAdvice || 'No additional warning'}</strong></div>
+          </div>
+        </div>
+
         {/* Telemetry Breakdown Factors */}
         <div className="space-y-2 mb-4">
           <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">

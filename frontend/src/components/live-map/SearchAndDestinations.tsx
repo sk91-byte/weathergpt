@@ -335,14 +335,15 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
 
         {/* 1. Origin Section */}
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2 pb-2 border-b border-slate-800/80">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-bold text-emerald-400 flex items-center space-x-1.5">
+          <div className="min-w-0 space-y-1">
+          <div className="flex items-center justify-between gap-1 min-w-0">
+            <label className="min-w-0 text-[11px] font-bold text-emerald-400 flex items-center space-x-1.5 truncate">
               <span>ðŸ“</span>
               <span>{labels.originTitle}</span>
             </label>
             {originCoordsBadge && (
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] font-mono text-emerald-300/80 bg-emerald-950/60 border border-emerald-800/50 px-1.5 py-0.2 rounded-md">
+              <div className="flex items-center gap-1 min-w-0 max-w-[58%]">
+                <span className="truncate text-[9px] font-mono text-emerald-300/80 bg-emerald-950/60 border border-emerald-800/50 px-1.5 py-0.2 rounded-md">
                   {originCoordsBadge}
                 </span>
                 {onSavePlace && originCoords && originQuery.trim() && (
@@ -358,7 +359,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
             )}
           </div>
 
-          <div className="flex items-center space-x-2 bg-slate-800/80 rounded-xl px-2.5 py-1.5 border border-slate-700/60 focus-within:border-emerald-500/80 transition">
+          <div className="flex items-center space-x-2 min-w-0 bg-slate-800/80 rounded-xl px-2.5 py-1.5 border border-slate-700/60 focus-within:border-emerald-500/80 transition">
             <div className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0 text-[11px] font-black shadow-xs">
               A
             </div>
@@ -403,20 +404,20 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
               </button>
             )}
           </div>
-        </div>
+          </div>
 
         <div className="text-slate-500 text-sm font-black pb-3">→</div>
 
         {/* 2. Destination Section */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-bold text-sky-400 flex items-center space-x-1.5">
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-center justify-between gap-1 min-w-0">
+            <label className="min-w-0 text-[11px] font-bold text-sky-400 flex items-center space-x-1.5 truncate">
               <span>ðŸŽ¯</span>
               <span>{labels.destTitle}</span>
             </label>
             {destCoordsBadge && (
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] font-mono text-sky-300/80 bg-sky-950/60 border border-sky-800/50 px-1.5 py-0.2 rounded-md">
+              <div className="flex items-center gap-1 min-w-0 max-w-[58%]">
+                <span className="truncate text-[9px] font-mono text-sky-300/80 bg-sky-950/60 border border-sky-800/50 px-1.5 py-0.2 rounded-md">
                   {destCoordsBadge}
                 </span>
                 {onSavePlace && destinationCoords && destinationQuery.trim() && (
@@ -432,7 +433,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
             )}
           </div>
 
-          <div className="flex items-center space-x-2 bg-slate-800/80 rounded-xl px-2.5 py-1.5 border border-slate-700/60 focus-within:border-sky-500/80 transition">
+          <div className="flex items-center space-x-2 min-w-0 bg-slate-800/80 rounded-xl px-2.5 py-1.5 border border-slate-700/60 focus-within:border-sky-500/80 transition">
             <div className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center shrink-0 text-[11px] font-black shadow-xs">
               B
             </div>
@@ -495,6 +496,8 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
               </button>
             ) : null}
           </div>
+        </div>
+
         </div>
 
         {/* 3. Travel Mode Selector & Quick Indian Chips */}

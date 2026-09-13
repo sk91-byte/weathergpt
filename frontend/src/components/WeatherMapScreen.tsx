@@ -527,7 +527,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         setIsRenderWakingUp(false);
         setIsLive(false);
         setDataSource('Live data unavailable');
-        setRouteError('Road route unavailable. No straight-line route is shown.');
+        const message = err instanceof Error ? err.message : 'The route service did not return a usable road route.';
+        setRouteError(message);
         setDepartureOptions([]);
         setNearbyPlaces([]);
         setIsLoadingNearbyPlaces(false);
@@ -1213,7 +1214,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
       )}
 
       {/* Route Comparison Bottom Drawer */}
-      {destinationName && !isNavigating && safeRoutes.length > 0 && (
+      {false && destinationName && !isNavigating && safeRoutes.length > 0 && (
         <RouteComparisonDrawer
           routes={safeRoutes}
           activeRouteId={activeRouteId}
