@@ -749,10 +749,10 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
             </label>
             <div className="grid grid-cols-4 gap-1.5">
               {[
-                { id: 'driving', label: 'Drive', icon: Car },
-                { id: 'walking', label: 'Walk', icon: Footprints },
-                { id: 'cycling', label: 'Cycle', icon: Bike },
-                { id: 'transit', label: 'Transit', icon: Bus }
+                { id: 'driving', label: 'Drive', icon: Car, available: true },
+                { id: 'walking', label: 'Walk', icon: Footprints, available: true },
+                { id: 'cycling', label: 'Cycle', icon: Bike, available: true },
+                { id: 'transit', label: 'Transit', icon: Bus, available: false }
               ].map((m) => {
                 const Icon = m.icon;
                 const isSelected = travelMode === m.id;
@@ -760,8 +760,10 @@ export const LiveMapPlanTripModal: React.FC<LiveMapPlanTripModalProps> = ({
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => setTravelMode(m.id)}
-                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border flex flex-col items-center justify-center space-y-1 transition cursor-pointer ${
+                    onClick={() => m.available && setTravelMode(m.id)}
+                    disabled={!m.available}
+                    title={m.available ? `${m.label} routing` : 'Transit routing requires a configured GTFS provider'}
+                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border flex flex-col items-center justify-center space-y-1 transition ${m.available ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'} ${
                       isSelected
                         ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                         : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'

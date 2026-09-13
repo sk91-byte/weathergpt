@@ -504,18 +504,20 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
         <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
           <div className="flex items-center space-x-1">
             {[
-              { id: 'driving', label: 'Drive', icon: Car },
-              { id: 'walking', label: 'Walk', icon: Footprints },
-              { id: 'cycling', label: 'Cycle', icon: Bike },
-              { id: 'transit', label: 'Transit', icon: Bus }
+              { id: 'driving', label: 'Drive', icon: Car, available: true },
+              { id: 'walking', label: 'Walk', icon: Footprints, available: true },
+              { id: 'cycling', label: 'Cycle', icon: Bike, available: true },
+              { id: 'transit', label: 'Transit', icon: Bus, available: false }
             ].map((mode) => {
               const Icon = mode.icon;
               const isActive = travelMode === mode.id;
               return (
                 <button
                   key={mode.id}
-                  onClick={() => onChangeTravelMode(mode.id)}
-                  className={`px-2.5 py-1 rounded-xl font-bold flex items-center space-x-1 transition cursor-pointer ${
+                  onClick={() => mode.available && onChangeTravelMode(mode.id)}
+                  disabled={!mode.available}
+                  title={mode.available ? `${mode.label} routing` : 'Transit preview is unavailable; use Google Maps for live transit directions'}
+                  className={`px-2.5 py-1 rounded-xl font-bold flex items-center space-x-1 transition ${mode.available ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'} ${
                     isActive
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'bg-slate-800/80 text-slate-400 hover:bg-slate-700 hover:text-slate-200'

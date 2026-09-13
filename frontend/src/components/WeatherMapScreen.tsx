@@ -843,7 +843,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
     const origin = `${originCoords[0]},${originCoords[1]}`;
     const destination = `${destinationCoords[0]},${destinationCoords[1]}`;
-    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=${travelMode === 'walking' ? 'walking' : 'driving'}`;
+    const mapsTravelMode = travelMode === 'transit' ? 'transit' : travelMode === 'walking' ? 'walking' : 'driving';
+    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=${mapsTravelMode}`;
 
     // Use the current PWA window so mobile users are taken directly into the
     // Google Maps directions flow instead of seeing a simulated drive screen.
