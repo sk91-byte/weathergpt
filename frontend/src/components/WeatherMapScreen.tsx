@@ -747,16 +747,17 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const safeRoutes = Array.isArray(routes) ? routes : [];
   const activeRoute = safeRoutes.find((r) => r.id === activeRouteId) || safeRoutes[0];
 
-  const loadNearbyPlaces = useCallback(async () => {
+  const loadNearbyPlaces = useCallback(async (searchMode: 'route' | 'point' = 'route') => {
     const points = activeRoute?.geoPoints || [];
-    if ((points.length < 2 && !destinationCoords) || isLoadingNearbyPlaces) return;
+    const pointCoords = destinationCoords || originCoords;
+    if ((searchMode === 'route' ? points.length < 2 && !pointCoords : !pointCoords) || isLoadingNearbyPlaces) return;
     setShowNearbyPlaces(true);
     setIsLoadingNearbyPlaces(true);
     setNearbyPlacesError(null);
     try {
-      const response = points.length >= 2
+      const response = searchMode === 'route' && points.length >= 2
         ? await apiGetPlacesAlongRoute(points)
-        : await apiGetNearbyPlaces(destinationCoords![0], destinationCoords![1], 5);
+        : await apiGetNearbyPlaces(pointCoords![0], pointCoords![1], 5);
       const adaptedPlaces = response.places.map((p) => ({
         id: p.id,
         name: p.name,
@@ -785,12 +786,12 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     } finally {
       setIsLoadingNearbyPlaces(false);
     }
-  }, [activeRoute, destinationCoords, isLoadingNearbyPlaces]);
+  }, [activeRoute, destinationCoords, isLoadingNearbyPlaces, originCoords]);
 
   const handleNearbyCategory = useCallback((category: 'all' | 'cafe' | 'restaurant' | 'hotel' | 'petrol' | 'hospital') => {
     setNearbyCategory(category);
-    if (!showNearbyPlaces) void loadNearbyPlaces();
-  }, [loadNearbyPlaces, showNearbyPlaces]);
+    void loadNearbyPlaces('point');
+  }, [loadNearbyPlaces]);
 
   const handleToggleNearbyPlaces = useCallback(() => {
     if (showNearbyPlaces) {

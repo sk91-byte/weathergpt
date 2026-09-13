@@ -51,11 +51,11 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
             <div className="flex items-center space-x-1.5">
               <span className="text-amber-400 text-base">☕</span>
               <h3 className="text-sm font-black text-white">
-                NEARBY PLACES · GEOAPIFY LIVE
+                NEARBY PLACES · LIVE SEARCH
               </h3>
             </div>
             <p className="text-xs text-slate-400">
-              Safe covered shelters, cafes, fuel, & resting points along your corridor
+              Geoapify places around the selected location
             </p>
           </div>
           <button
