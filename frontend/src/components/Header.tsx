@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, Bell, MapPin, Navigation, Loader2 } from './Icons';
+import { User, Bell, MapPin, Navigation, Loader2 } from './Icons';
 
 interface HeaderProps {
   city?: string;
@@ -28,15 +28,15 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="w-full flex items-center justify-between px-5 pt-3 pb-2 select-none">
-      {/* Left: Hamburger menu or Location quick badge */}
+      {/* Left: Profile shortcut and Location quick badge */}
       <div className="flex items-center space-x-2">
         <button
-          id="btn-hamburger-menu"
+          id="btn-header-profile"
           onClick={onOpenMenu || onOpenCitySelector}
           className="w-9 h-9 flex items-center justify-center rounded-full text-slate-700 hover:bg-slate-200/70 active:scale-95 transition cursor-pointer"
-          aria-label="Open navigation menu"
+          aria-label="Open Profile & Preferences"
         >
-          <Menu className="w-5 h-5 stroke-[2.2]" />
+          <User className="w-5 h-5 stroke-[2.2]" />
         </button>
 
         {city && onOpenCitySelector && (
