@@ -421,6 +421,7 @@ export default function App() {
               <Header
                 city={weather.city}
                 country={weather.country}
+                onOpenMenu={() => setActiveTab('profile')}
                 onOpenCitySelector={() => setShowCitySelector(true)}
                 onOpenNotifications={async () => {
                   if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {

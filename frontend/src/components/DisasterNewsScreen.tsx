@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { RouteTrip, WeatherAlert, WeatherData } from '../types';
-import { apiGetOfficialAlerts } from '../services/api';
+import { apiGetAlertFeedStatus, apiGetOfficialAlerts } from '../services/api';
 
 type DisasterNewsScreenProps = {
   currentWeather: WeatherData;
@@ -19,6 +19,7 @@ export const DisasterNewsScreen: React.FC<DisasterNewsScreenProps> = ({ currentW
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState('Checking official feeds…');
+  const [feedStatus, setFeedStatus] = useState<{ configured: boolean; providers?: string[]; imd_configured?: boolean; sachet_configured?: boolean } | null>(null);
 
   const loadAlerts = async () => {
     setLoading(true);
@@ -26,6 +27,7 @@ export const DisasterNewsScreen: React.FC<DisasterNewsScreenProps> = ({ currentW
     try {
       const next = await apiGetOfficialAlerts();
       setAlerts(next);
+      try { setFeedStatus(await apiGetAlertFeedStatus()); } catch { setFeedStatus(null); }
       setUpdatedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Official disaster feed unavailable');
@@ -61,6 +63,7 @@ export const DisasterNewsScreen: React.FC<DisasterNewsScreenProps> = ({ currentW
           <h2 className="font-black text-slate-950">Official disaster information</h2>
           <p className="mt-1 text-xs leading-relaxed text-slate-600">This page displays alerts returned by the configured government feeds. It does not use sample news cards or demo bulletins.</p>
           <div className="mt-3 flex flex-wrap gap-2"><a href="https://mausam.imd.gov.in/" target="_blank" rel="noreferrer" className="rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 ring-1 ring-blue-200">IMD official site ↗</a><a href="https://sachet.ndma.gov.in/" target="_blank" rel="noreferrer" className="rounded-xl bg-white px-3 py-2 text-xs font-black text-red-700 ring-1 ring-red-200">NDMA SACHET ↗</a><a href="https://seismo.gov.in/" target="_blank" rel="noreferrer" className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200">NCS earthquakes ↗</a></div>
+          {feedStatus && <div className="mt-3 rounded-2xl border border-slate-200 bg-white/80 p-3 text-[11px] text-slate-600"><p className="font-black text-slate-800">Feed status: {feedStatus.configured ? 'configured' : 'not configured'}</p><p className="mt-1">IMD API authentication: {feedStatus.imd_configured ? 'configured' : 'not configured'}</p><p>SACHET official feed: {feedStatus.sachet_configured ? 'enabled' : 'disabled'}</p>{feedStatus.providers?.length ? <p className="mt-1">Active providers: {feedStatus.providers.join(' · ')}</p> : null}</div>}
         </section>
 
         <div className="flex gap-2 overflow-x-auto pb-1">{categories.map((item) => <button type="button" key={item} onClick={() => setCategory(item)} className={`shrink-0 rounded-full px-3 py-2 text-xs font-black capitalize ${category === item ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200'}`}>{item === 'all' ? `All (${alerts.length})` : item}</button>)}</div>

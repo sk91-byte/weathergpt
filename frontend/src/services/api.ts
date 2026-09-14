@@ -108,6 +108,11 @@ export async function apiGetOfficialAlerts(onSlow?: () => void): Promise<Weather
   });
 }
 
+export async function apiGetAlertFeedStatus(): Promise<{ configured: boolean; providers?: string[]; imd_configured?: boolean; sachet_configured?: boolean }> {
+  const response = await fetchWithTimeout('/alerts/status', {}, 12000);
+  return response.json();
+}
+
 export const BACKEND_BASE_URL = ((import.meta as any).env?.VITE_BACKEND_BASE_URL || 'https://weathergpt-bjhy.onrender.com').replace(/\/$/, '');
 let latestRouteId: string | null = null;
 

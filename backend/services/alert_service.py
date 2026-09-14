@@ -285,9 +285,17 @@ def list_alerts(provider: AlertProvider | None = None) -> list[WeatherAlert]:
 
 
 def alert_feed_status() -> dict[str, object]:
+    providers: list[str] = []
+    if imd_access_configured() and settings.imd_district_id:
+        providers.append("India Meteorological Department API")
+    if settings.sachet_alerts_enabled and settings.sachet_alerts_url:
+        providers.append("NDMA SACHET RSS/CAP")
+    if settings.official_alerts_url:
+        providers.append("Configured official provider")
     return {
-        "configured": bool(settings.official_alerts_url),
-        "source": "configured official provider" if settings.official_alerts_url else None,
+        "configured": bool(providers),
+        "source": ", ".join(providers) if providers else None,
+        "providers": providers,
         "imd_configured": bool(imd_access_configured() and settings.imd_district_id),
         "imd_location_configured": settings.imd_alert_latitude is not None and settings.imd_alert_longitude is not None,
         "sachet_configured": settings.sachet_alerts_enabled and bool(settings.sachet_alerts_url),
