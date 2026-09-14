@@ -19,6 +19,7 @@ function normalizeAlertType(value: unknown): WeatherAlert['type'] {
   if (text.includes('earthquake') || text.includes('seismic')) return 'earthquake';
   if (text.includes('flood')) return 'flood';
   if (text.includes('cyclone')) return 'cyclone';
+  if (text.includes('tsunami')) return 'tsunami';
   if (text.includes('heat')) return 'heatwave';
   if (text.includes('fog')) return 'dense-fog';
   if (text.includes('wind')) return 'strong-winds';
@@ -39,6 +40,10 @@ function alertActions(type: WeatherAlert['type'], severity: string): { impacts: 
   if (type === 'cyclone') return {
     impacts: ['Damaging winds, heavy rain, power disruption, and coastal flooding are possible.'],
     actions: ['Stay indoors, secure loose objects, and follow official evacuation instructions.']
+  };
+  if (type === 'tsunami') return {
+    impacts: ['Coastal inundation and dangerous waves may affect low-lying coastal areas.'],
+    actions: ['Move inland or to higher ground immediately when instructed by authorities; do not approach the shoreline.']
   };
   if (type === 'heatwave') return {
     impacts: ['Heat stress, dehydration, and reduced outdoor work capacity.'],

@@ -93,7 +93,7 @@ export interface WeatherAlert {
   sourceUrl?: string;
   distanceKm?: number;
   id: string;
-  type: 'heavy-rain' | 'flood' | 'cyclone' | 'earthquake' | 'thunderstorm' | 'heatwave' | 'dense-fog' | 'strong-winds';
+  type: 'heavy-rain' | 'flood' | 'cyclone' | 'earthquake' | 'tsunami' | 'thunderstorm' | 'heatwave' | 'dense-fog' | 'strong-winds';
   title: string;
   severity: 'Low' | 'Moderate' | 'High' | 'Extreme';
   location: string;

@@ -776,7 +776,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     let cancelled = false;
     // Fetch wider context so state-level warnings can be shown as informational;
     // the UI treats only alerts within 10 km as route-relevant.
-    void Promise.allSettled(uniquePoints.map(([latitude, longitude]) => apiGetNearbyAlerts(latitude, longitude, 100)))
+    void Promise.allSettled(uniquePoints.map(([latitude, longitude]) => apiGetNearbyAlerts(latitude, longitude, 100, undefined, destinationName)))
       .then((results) => {
         if (cancelled) return;
         const seen = new Set<string>();
@@ -790,7 +790,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         setRouteAlerts(merged);
       });
     return () => { cancelled = true; };
-  }, [activeRoute, destinationCoords, originCoords]);
+  }, [activeRoute, destinationCoords, destinationName, originCoords]);
 
   const loadNearbyPlaces = useCallback(async (searchMode: 'route' | 'point' = 'route') => {
     const points = activeRoute?.geoPoints || [];

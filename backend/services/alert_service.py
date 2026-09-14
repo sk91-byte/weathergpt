@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from html import unescape
 from math import asin, cos, radians, sin, sqrt
+import re
 from typing import Protocol
 from uuid import uuid4
 from xml.etree import ElementTree
@@ -176,10 +177,26 @@ class SachetAlertProvider:
                 id=cls._value(item, "guid") or f"sachet-rss-{index}", alert_type="disaster_alert",
                 severity="High", title=title, description=description,
                 source="NDMA SACHET", latitude=0.0, longitude=0.0,
-                affected_area="India", start_time=issued, end_time="", issued_at=issued,
+                affected_area=title, start_time=issued, end_time="", issued_at=issued,
                 source_url=link, is_demo=False,
             ))
         return alerts
+
+    @classmethod
+    def _enrich_rss_alert(cls, alert: WeatherAlert) -> WeatherAlert:
+        """Resolve a matched RSS headline to its official CAP payload."""
+        if not alert.source_url:
+            return alert
+        try:
+            response = requests.get(alert.source_url, headers={"Accept": "application/cap+xml, application/xml", "User-Agent": "WeatherGPT/1.0"}, timeout=10)
+            response.raise_for_status()
+            root = ElementTree.fromstring(response.content)
+            cap_alerts = cls._cap_alerts(root, alert.source_url)
+            if cap_alerts:
+                return cap_alerts[0]
+        except (requests.RequestException, ElementTree.ParseError, ValueError):
+            pass
+        return alert
 
     def list_alerts(self) -> list[WeatherAlert]:
         try:
@@ -271,13 +288,19 @@ def nearby_alerts(latitude: float, longitude: float, radius_km: float, location_
             selected_location = (location_name or "").lower().strip()
             if not selected_location or selected_location in {"india", "current location"}:
                 return float("inf")
-            return 0.0 if selected_location in search_text else float("inf")
+            location_tokens = [token for token in re.split(r"[^a-z0-9]+", selected_location) if len(token) >= 3]
+            return 0.0 if any(token in search_text for token in location_tokens) else float("inf")
         p1, p2 = radians(latitude), radians(alert.latitude)
         dlat, dlon = p2 - p1, radians(alert.longitude - longitude)
         value = sin(dlat / 2) ** 2 + cos(p1) * cos(p2) * sin(dlon / 2) ** 2
         return 6371 * 2 * asin(sqrt(value))
     matched: list[WeatherAlert] = []
     for alert in list_alerts():
+        if alert.source == "NDMA SACHET" and alert.latitude == 0.0 and alert.longitude == 0.0 and location_name:
+            search_text = f"{alert.title} {alert.description} {alert.affected_area}".lower()
+            tokens = [token for token in re.split(r"[^a-z0-9]+", location_name.lower()) if len(token) >= 3]
+            if any(token in search_text for token in tokens):
+                alert = SachetAlertProvider._enrich_rss_alert(alert)
         distance_km = distance(alert)
         if distance_km <= radius_km:
             matched.append(alert.model_copy(update={"distance_km": round(distance_km, 2)}))
