@@ -72,8 +72,9 @@ export async function apiGetNearbyAlerts(latitude: number, longitude: number, ra
       description: String(item.description || 'See the official source for details.'),
       impacts: guidance.impacts, recommendedActions: guidance.actions,
       sourceUrl: typeof item.source_url === 'string' ? item.source_url : undefined,
+      distanceKm: Number.isFinite(Number(item.distance_km)) ? Number(item.distance_km) : undefined,
       isActive: !item.end_time || Number.isNaN(Date.parse(String(item.end_time))) || Date.parse(String(item.end_time)) > Date.now(),
-      isNearby: true,
+      isNearby: Number.isFinite(Number(item.distance_km)) ? Number(item.distance_km) <= 10 : true,
     };
   });
 }

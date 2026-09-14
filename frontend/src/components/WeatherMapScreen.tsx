@@ -774,7 +774,9 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     points.push(destinationCoords);
     const uniquePoints = points.filter((point, index, all) => index === 0 || point[0] !== all[index - 1][0] || point[1] !== all[index - 1][1]);
     let cancelled = false;
-    void Promise.allSettled(uniquePoints.map(([latitude, longitude]) => apiGetNearbyAlerts(latitude, longitude, 10)))
+    // Fetch wider context so state-level warnings can be shown as informational;
+    // the UI treats only alerts within 10 km as route-relevant.
+    void Promise.allSettled(uniquePoints.map(([latitude, longitude]) => apiGetNearbyAlerts(latitude, longitude, 100)))
       .then((results) => {
         if (cancelled) return;
         const seen = new Set<string>();

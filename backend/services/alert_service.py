@@ -29,6 +29,7 @@ class WeatherAlert(BaseModel):
     issued_at: str
     source_url: str | None = None
     is_demo: bool = False
+    distance_km: float | None = None
 
 
 class AlertProvider(Protocol):
@@ -275,7 +276,12 @@ def nearby_alerts(latitude: float, longitude: float, radius_km: float, location_
         dlat, dlon = p2 - p1, radians(alert.longitude - longitude)
         value = sin(dlat / 2) ** 2 + cos(p1) * cos(p2) * sin(dlon / 2) ** 2
         return 6371 * 2 * asin(sqrt(value))
-    return [alert for alert in list_alerts() if distance(alert) <= radius_km]
+    matched: list[WeatherAlert] = []
+    for alert in list_alerts():
+        distance_km = distance(alert)
+        if distance_km <= radius_km:
+            matched.append(alert.model_copy(update={"distance_km": round(distance_km, 2)}))
+    return matched
 
 
 def create_test_alert() -> WeatherAlert:

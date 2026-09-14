@@ -91,6 +91,7 @@ export interface DailyForecast {
 
 export interface WeatherAlert {
   sourceUrl?: string;
+  distanceKm?: number;
   id: string;
   type: 'heavy-rain' | 'flood' | 'cyclone' | 'earthquake' | 'thunderstorm' | 'heatwave' | 'dense-fog' | 'strong-winds';
   title: string;
