@@ -3,6 +3,7 @@ import { X, Mic, MicOff, Volume2, VolumeX, Sparkles, CheckCircle2, RotateCcw, Al
 import { Language, WeatherData, UserRole } from '../types';
 import { apiSendChat, apiSynthesizeVoice } from '../services/api';
 import { VOICE_INPUT_PLACEHOLDERS, VOICE_LANGUAGES, VOICE_SAMPLE_QUERIES, getVoiceLanguage } from '../data/voiceLanguages';
+import { speakWithBrowserVoice } from '../utils/browserVoice';
 
 interface VoiceAssistantModalProps {
   weather: WeatherData;
@@ -29,6 +30,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const [response, setResponse] = useState('');
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [waveHeights, setWaveHeights] = useState<number[]>([12, 18, 24, 16, 28, 20, 14, 22, 10]);
 
   const recognitionRef = useRef<any>(null);
@@ -191,23 +193,18 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   };
 
   const speakWithBrowserFallback = (text: string) => {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = selectedVoiceLanguage.locale;
-    const matchingVoice = window.speechSynthesis.getVoices().find((voice) => voice.lang.toLowerCase().startsWith(selectedVoiceLanguage.locale.toLowerCase().split('-')[0]));
-    if (matchingVoice) utterance.voice = matchingVoice;
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-    (window as any)._activeVoiceUtterance = utterance;
-    window.speechSynthesis.speak(utterance);
+    speakWithBrowserVoice(text, selectedVoiceLanguage.locale,
+      () => { setVoiceError(null); setIsSpeaking(true); },
+      () => setIsSpeaking(false),
+      () => {
+        setIsSpeaking(false);
+        setVoiceError(`No ${selectedVoiceLanguage.englishName} voice is installed on this device. Install the ${selectedVoiceLanguage.englishName} voice pack in your phone/browser, or choose a ⭐ Gemini voice.`);
+      });
   };
 
   const speakText = async (text: string) => {
     handleStopSpeaking();
+    setVoiceError(null);
     setIsSpeaking(true);
     try {
       const data = await apiSynthesizeVoice(text, currentLanguage);
@@ -305,6 +302,11 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                 Retry microphone access
               </button>
             </div>
+          </div>
+        )}
+        {voiceError && (
+          <div className="w-full mt-3 rounded-xl border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-left text-xs text-amber-100">
+            {voiceError}
           </div>
         )}
 

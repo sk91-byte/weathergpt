@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Mic, MicOff, Sparkles, Volume2, VolumeX, ArrowRight, Umbrella, CloudRain, RotateCcw, ChevronLeft, Bot, Loader2, AlertTriangle } from './Icons';
 import { APP_LANGUAGES, ChatMessage, Language, WeatherData, RouteTrip, UserRole, RouteChatContext } from '../types';
 import { apiGetRecommendedQuestions, apiSendChat, apiSynthesizeVoice } from '../services/api';
+import { speakWithBrowserVoice } from '../utils/browserVoice';
 import { getVoiceLanguage } from '../data/voiceLanguages';
 
 interface AIChatScreenProps {
@@ -433,14 +434,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
       await audio.play();
       return;
     } catch {
-      if (!('speechSynthesis' in window)) { setSpeakingId(null); return; }
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = voiceLanguage.locale;
-      const matchingVoice = window.speechSynthesis.getVoices().find((voice) => voice.lang.toLowerCase().startsWith(voiceLanguage.locale.split('-')[0]));
-      if (matchingVoice) utterance.voice = matchingVoice;
-      utterance.onend = () => setSpeakingId(null);
-      utterance.onerror = () => setSpeakingId(null);
-      window.speechSynthesis.speak(utterance);
+      speakWithBrowserVoice(text, voiceLanguage.locale, undefined, () => setSpeakingId(null), () => setSpeakingId(null));
     }
   };
 

@@ -16,6 +16,10 @@ class VoiceServiceError(Exception):
     """A safe, user-facing voice processing error."""
 
 
+class VoiceLanguageNotSupported(VoiceServiceError):
+    """Gemini TTS does not currently generate audio for this language."""
+
+
 class VoiceProvider(Protocol):
     name: str
     def speech_to_text(self, audio: bytes, filename: str, language: str | None = None) -> str: ...
@@ -25,6 +29,10 @@ class VoiceProvider(Protocol):
 class GeminiVoiceProvider:
     """Gemini audio understanding plus Gemini native TTS."""
     name = "Gemini"
+    GEMINI_TTS_LANGUAGES = {
+        "en", "bn", "gu", "hi", "kn", "kok", "mr", "mai", "ml", "ne",
+        "or", "pa", "sd", "ta", "te", "ur",
+    }
 
     def __init__(self) -> None:
         if not settings.gemini_api_key:
@@ -55,6 +63,10 @@ class GeminiVoiceProvider:
             # Gemini TTS expects the base BCP-47 language code (for example
             # `hi`, not the browser recognition locale `hi-IN`).
             speech_locale = language_meta["locale"].split("-")[0]
+            if speech_locale not in self.GEMINI_TTS_LANGUAGES:
+                raise VoiceLanguageNotSupported(
+                    f"Gemini TTS does not support {language_meta['name']}; use a device voice fallback"
+                )
             prompt = f"Speak naturally in {language_meta['name']} ({speech_locale}). Preserve names, numbers, and place names clearly.\n\nText to speak:\n{text}"
             response = self.client.models.generate_content(
                 model=os.getenv("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts"),
@@ -75,6 +87,8 @@ class GeminiVoiceProvider:
             if not data:
                 raise VoiceServiceError("No audio was generated")
             return _pcm_to_wav(data)
+        except VoiceLanguageNotSupported:
+            raise
         except Exception as exc:
             raise VoiceServiceError("Voice playback could not be generated") from exc
 
@@ -97,4 +111,14 @@ def configured_provider() -> GeminiVoiceProvider:
 
 def voice_health() -> dict[str, object]:
     configured = bool(settings.gemini_api_key) and os.getenv("VOICE_PROVIDER", "gemini").lower() == "gemini"
-    return {"provider": "Gemini", "configured": configured, "stt_available": configured, "tts_available": configured, "live_available": configured, "supported_languages": sorted(supported_language_codes()), "status": "configured" if configured else "unavailable"}
+    return {
+        "provider": "Gemini",
+        "configured": configured,
+        "stt_available": configured,
+        "tts_available": configured,
+        "live_available": configured,
+        "supported_languages": sorted(supported_language_codes()),
+        "gemini_tts_languages": sorted(GeminiVoiceProvider.GEMINI_TTS_LANGUAGES),
+        "device_voice_fallback": True,
+        "status": "configured" if configured else "unavailable",
+    }

@@ -5,7 +5,7 @@ import base64
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, field_validator
 
-from backend.services.voice_service import VoiceServiceError, configured_provider, voice_health
+from backend.services.voice_service import VoiceLanguageNotSupported, VoiceServiceError, configured_provider, voice_health
 from backend.services.language_service import is_supported_language
 from backend.services.chat_service import process_chat_message
 
@@ -76,9 +76,9 @@ def synthesize(request: SynthesisRequest) -> dict:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     try:
         audio = configured_provider().text_to_speech(request.text, request.language)
+    except VoiceLanguageNotSupported as exc:
+        return {"success": False, "error_type": "language_not_supported", "message": str(exc)}
     except VoiceServiceError as exc:
-        if "supported" in str(exc).lower():
-            return {"success": False, "error_type": "language_not_supported"}
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"audio_base64": base64.b64encode(audio).decode("ascii"), "content_type": "audio/wav", "provider": "Gemini", "success": True}
 
