@@ -7,7 +7,8 @@ import {
   DepartureTimeOption,
   RouteSamplingPoint,
   RouteTrip,
-  SavedPlace
+  SavedPlace,
+  WeatherAlert
 } from '../types';
 import { DESTINATION_PRESETS, DestinationPreset } from '../data/liveMapData';
 import { AppLanguage } from '../utils/routeWeatherSummary';
@@ -32,6 +33,7 @@ import {
   apiGetPlacesAlongRoute,
   apiGetPointWeather,
   apiGetLocationWeather,
+  apiGetNearbyAlerts,
   apiResolveLocation,
   ApiPointWeatherResponse,
   apiSendChat
@@ -158,6 +160,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const [isAiRouteAnalysisLoading, setIsAiRouteAnalysisLoading] = useState(false);
   const [showRouteAnalysis, setShowRouteAnalysis] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const [routeAlerts, setRouteAlerts] = useState<WeatherAlert[]>([]);
 
 
   // 8. Map Layers & Point Weather Popup
@@ -742,18 +745,68 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const safeRoutes = Array.isArray(routes) ? routes : [];
   const activeRoute = safeRoutes.find((r) => r.id === activeRouteId) || safeRoutes[0];
 
+  // Check the complete A → B corridor. Each sampled route location queries
+  // active official alerts within 10 km, so hazards between the endpoints are
+  // not missed.
+  useEffect(() => {
+    if (!destinationCoords || !originCoords) {
+      setRouteAlerts([]);
+      return;
+    }
+    const routePoints: [number, number][] = activeRoute?.geoPoints?.length > 1
+      ? activeRoute.geoPoints
+      : [originCoords, destinationCoords];
+    const points: [number, number][] = [originCoords];
+    let distanceSinceSample = 0;
+    for (let index = 1; index < routePoints.length; index += 1) {
+      const [previousLat, previousLon] = routePoints[index - 1];
+      const [currentLat, currentLon] = routePoints[index];
+      const segmentKm = Math.sqrt(
+        ((currentLat - previousLat) * 111) ** 2
+        + ((currentLon - previousLon) * 111 * Math.cos((previousLat * Math.PI) / 180)) ** 2
+      );
+      distanceSinceSample += segmentKm;
+      if (distanceSinceSample >= 10) {
+        points.push(routePoints[index]);
+        distanceSinceSample = 0;
+      }
+    }
+    points.push(destinationCoords);
+    const uniquePoints = points.filter((point, index, all) => index === 0 || point[0] !== all[index - 1][0] || point[1] !== all[index - 1][1]);
+    let cancelled = false;
+    void Promise.allSettled(uniquePoints.map(([latitude, longitude]) => apiGetNearbyAlerts(latitude, longitude, 10)))
+      .then((results) => {
+        if (cancelled) return;
+        const seen = new Set<string>();
+        const merged = results.flatMap((result) => result.status === 'fulfilled' ? result.value : [])
+          .filter((alert) => {
+            if (!alert.isActive || seen.has(alert.id)) return false;
+            seen.add(alert.id);
+            return true;
+          })
+          .sort((a, b) => ({ Extreme: 4, High: 3, Moderate: 2, Low: 1 }[b.severity] || 0) - ({ Extreme: 4, High: 3, Moderate: 2, Low: 1 }[a.severity] || 0));
+        setRouteAlerts(merged);
+      });
+    return () => { cancelled = true; };
+  }, [activeRoute, destinationCoords, originCoords]);
+
   const loadNearbyPlaces = useCallback(async (searchMode: 'route' | 'point' = 'route') => {
     const points = activeRoute?.geoPoints || [];
-    const pointCoords = destinationCoords || originCoords;
+    // Category taps mean "near my current/start location". Do not search
+    // around the destination city (for example Gurugram) when the user is in
+    // Delhi; route mode still searches the complete calculated corridor.
+    const pointCoords = originCoords;
     if ((searchMode === 'route' ? points.length < 2 && !pointCoords : !pointCoords) || isLoadingNearbyPlaces) return;
     setShowNearbyPlaces(true);
     setIsLoadingNearbyPlaces(true);
     setNearbyPlacesError(null);
     try {
       const response = searchMode === 'route' && points.length >= 2
-        ? await apiGetPlacesAlongRoute(points)
+        ? await apiGetPlacesAlongRoute(points, 1)
         : await apiGetNearbyPlaces(pointCoords![0], pointCoords![1], 5);
-      const adaptedPlaces = response.places.map((p) => ({
+      const adaptedPlaces = response.places
+        .filter((p) => searchMode !== 'route' || (typeof p.distance_from_route_km === 'number' && p.distance_from_route_km <= 1))
+        .map((p) => ({
         id: p.id,
         name: p.name,
         category: p.category as any,
@@ -772,7 +825,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
         openingHours: p.opening_hours,
         distanceFromRouteMeters: typeof p.distance_from_route_km === 'number' ? Math.round(p.distance_from_route_km * 1000) : p.distance_meters,
         distanceFromStartKm: p.distance_from_start_km
-      }));
+        }));
       setNearbyPlaces(adaptedPlaces);
     } catch (error) {
       console.warn('Route amenities unavailable:', error);
@@ -785,7 +838,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
   const handleNearbyCategory = useCallback((category: 'all' | 'cafe' | 'restaurant' | 'hotel' | 'petrol' | 'hospital') => {
     setNearbyCategory(category);
-    void loadNearbyPlaces('point');
+    void loadNearbyPlaces('route');
   }, [loadNearbyPlaces]);
 
   const handleToggleNearbyPlaces = useCallback(() => {
@@ -853,6 +906,17 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     }
   }, [destinationCoords, originCoords, travelMode]);
 
+  const handleViewNearbyPlaceOnMap = useCallback((place: NearbySafePlace) => {
+    const lat = place.coords?.lat;
+    const lng = place.coords?.lng;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return;
+    const origin = `${originCoords[0]},${originCoords[1]}`;
+    const destination = `${lat},${lng}`;
+    const mapsTravelMode = travelMode === 'transit' ? 'transit' : travelMode === 'walking' ? 'walking' : 'driving';
+    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=${mapsTravelMode}`;
+    window.location.assign(mapsUrl);
+  }, [originCoords, travelMode]);
+
   const handleSelectMapPreset = useCallback((preset: DestinationPreset) => {
     const coords: [number, number] = [preset.coords.lat, preset.coords.lon];
     setDestinationName(preset.name);
@@ -862,14 +926,14 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   }, []);
 
   return (
-    <div className="relative w-full min-h-[calc(100vh-68px)] max-w-5xl mx-auto overflow-y-auto pb-24 flex flex-col bg-slate-900 select-none">
+    <div className="relative w-full min-h-[calc(100vh-68px)] max-w-5xl mx-auto overflow-y-auto pb-24 flex flex-col bg-slate-50 text-slate-900 select-none">
       {/* Top Header Tagline & Live Connection Indicator */}
-      <div className="relative z-20 bg-slate-900/95 backdrop-blur-md px-3 sm:px-4 py-2 border-b border-slate-800 flex items-center justify-between">
+      <div className="relative z-20 bg-white/95 backdrop-blur-md px-3 sm:px-4 py-2 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center space-x-2">
           {onBackToHome && (
             <button
               onClick={onBackToHome}
-              className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition cursor-pointer text-xs font-bold"
+              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition cursor-pointer text-xs font-bold"
               title="Back to Home"
             >
               ←
@@ -880,7 +944,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           </div>
           <div>
             <div className="flex items-center space-x-1.5">
-              <h1 className="text-xs font-black text-white tracking-wide">
+              <h1 className="text-xs font-black text-slate-900 tracking-wide">
                 WeatherGPT Live Map
               </h1>
             <span
@@ -893,8 +957,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
                 {isLive ? 'LIVE DATA' : 'DATA UNAVAILABLE'}
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 font-medium truncate max-w-[140px] sm:max-w-none">
-              Source: <strong className="text-slate-300">{dataSource}</strong>
+            <p className="text-[10px] text-slate-500 font-medium truncate max-w-[140px] sm:max-w-none">
+              Source: <strong className="text-slate-700">{dataSource}</strong>
             </p>
           </div>
         </div>
@@ -920,7 +984,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
           <button
             onClick={() => setRouteRefreshNonce((value) => value + 1)}
-            className="w-7 h-7 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center justify-center transition cursor-pointer shrink-0"
+            className="w-7 h-7 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 flex items-center justify-center transition cursor-pointer shrink-0"
             title="Refresh Route Weather"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin text-sky-400' : ''}`} />
@@ -942,11 +1006,11 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
 
       {/* 3-Step Flow Indicator Banner */}
       {!isNavigating && (
-        <div className="relative z-20 bg-slate-900/95 px-3 sm:px-4 py-1.5 border-b border-slate-800 flex items-center justify-between text-[11px]">
+        <div className="relative z-20 bg-white/95 px-3 sm:px-4 py-1.5 border-b border-slate-200 flex items-center justify-between text-[11px]">
           <div className="flex items-center space-x-1.5 sm:space-x-2 w-full overflow-x-auto">
             {/* Step 1: Start Location */}
             <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-xl border font-bold shrink-0 transition ${
-              originName ? 'bg-emerald-950/70 border-emerald-500/60 text-emerald-300' : 'bg-slate-800/80 border-slate-700 text-slate-400'
+              originName ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-slate-100 border-slate-200 text-slate-500'
             }`}>
               <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${
                 originName ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-slate-300'
@@ -957,15 +1021,15 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               {originName && <span className="text-emerald-400 text-xs">✓</span>}
             </div>
 
-            <span className="text-slate-600 font-bold shrink-0">→</span>
+            <span className="text-slate-300 font-bold shrink-0">→</span>
 
             {/* Step 2: Destination */}
             <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-xl border font-bold shrink-0 transition ${
               destinationName && destinationCoords
-                ? 'bg-emerald-950/70 border-emerald-500/60 text-emerald-300'
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
                 : !destinationName && originName
-                ? 'bg-sky-950/80 border-sky-500/70 text-sky-200 ring-1 ring-sky-500/40'
-                : 'bg-slate-800/80 border-slate-700 text-slate-400'
+                ? 'bg-sky-50 border-sky-300 text-sky-700 ring-1 ring-sky-200'
+                : 'bg-slate-100 border-slate-200 text-slate-500'
             }`}>
               <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${
                 destinationName && destinationCoords
@@ -978,18 +1042,18 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               {destinationName && destinationCoords && <span className="text-emerald-400 text-xs">✓</span>}
             </div>
 
-            <span className="text-slate-600 font-bold shrink-0">→</span>
+            <span className="text-slate-300 font-bold shrink-0">→</span>
 
             {/* Step 3: View Route and Weather */}
             <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-xl border font-bold shrink-0 transition ${
               destinationName && destinationCoords && safeRoutes.length > 0
-                ? 'bg-blue-600/30 border-blue-500/60 text-sky-200'
-                : 'bg-slate-800/80 border-slate-700 text-slate-400'
+                ? 'bg-blue-50 border-blue-300 text-blue-700'
+                  : 'bg-slate-100 border-slate-200 text-slate-500'
             }`}>
               <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${
                 destinationName && destinationCoords && safeRoutes.length > 0
                   ? 'bg-blue-500 text-white shadow-xs'
-                  : 'bg-slate-700 text-slate-300'
+                  : 'bg-slate-200 text-slate-500'
               }`}>
                 3
               </span>
@@ -1072,7 +1136,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               stops: [],
               alternativeAdvice: activeRoute.whyThisRoute
             })}
-            className="w-full py-2 rounded-xl bg-slate-900 text-white text-xs font-bold border border-slate-700 hover:bg-slate-800 transition cursor-pointer"
+            className="w-full py-2 rounded-xl bg-white text-slate-800 text-xs font-bold border border-slate-200 hover:bg-slate-50 transition cursor-pointer"
           >
             ★ Save this route for later
           </button>
@@ -1083,7 +1147,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
       {/* The map is a distinct first section. Details flow below it so the
           user can scroll naturally instead of having the drawer cover the map. */}
       <div className="relative w-full h-[68vh] min-h-[480px] max-h-[720px] flex-none overflow-hidden flex flex-col">
-        {destinationName.trim().length > 0 || isNavigating ? (
+        {originCoords ? (
           <>
             <InteractiveMapCanvas
               routes={safeRoutes}
@@ -1180,21 +1244,21 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           </>
         ) : (
           /* Simple Map Placeholder before selecting destination */
-          <div className="relative flex-1 w-full flex flex-col items-center justify-center p-6 text-center select-none bg-slate-900">
-            <div className="max-w-md w-full p-8 rounded-3xl bg-slate-800/80 border border-slate-700/80 shadow-2xl backdrop-blur-md flex flex-col items-center animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative flex-1 w-full flex flex-col items-center justify-center p-6 text-center select-none bg-slate-50">
+            <div className="max-w-md w-full p-8 rounded-3xl bg-white border border-slate-200 shadow-xl flex flex-col items-center animate-in fade-in zoom-in-95 duration-200">
               <div className="w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-3xl mb-4 shadow-lg text-sky-400">
                 🗺️
               </div>
-              <h2 className="text-lg font-black text-white tracking-wide mb-1.5">
+              <h2 className="text-lg font-black text-slate-900 tracking-wide mb-1.5">
                 Your map will appear here
               </h2>
-              <p className="text-sm font-semibold text-slate-300 mb-5">
+              <p className="text-sm font-semibold text-slate-600 mb-5">
                 Choose a start and destination above.
               </p>
 
-              <div className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-slate-900/80 border border-slate-700 text-xs text-slate-300 font-medium">
+              <div className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 font-medium">
                 <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping inline-block" />
-                <span>Search an Indian location above and click <strong className="text-white">Show route</strong></span>
+                <span>Search an Indian location above and click <strong className="text-slate-900">Show route</strong></span>
               </div>
             </div>
           </div>
@@ -1207,6 +1271,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           loading={isLoadingNearbyPlaces}
           error={nearbyPlacesError}
           onSelectPlace={setSelectedNearbyPlace}
+          onViewOnMap={handleViewNearbyPlaceOnMap}
           onUseAsStop={(place) => {
             setSelectedNearbyPlace(place);
             setDestinationName(place.name);
@@ -1248,6 +1313,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               departureOptions={departureOptions}
               currentWeather={currentWeather}
               nearbyPlaces={nearbyPlaces}
+              routeAlerts={routeAlerts}
               aiAnalysis={aiRouteAnalysis}
               aiLoading={isAiRouteAnalysisLoading}
               isLive={isLive}
@@ -1292,6 +1358,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
             setDestinationCoords([place.coords.lat, place.coords.lng]);
           }
         }}
+        onViewOnMap={handleViewNearbyPlaceOnMap}
         selectedPlaceId={selectedNearbyPlace?.id}
         initialFilter={nearbyCategory}
         loading={isLoadingNearbyPlaces}

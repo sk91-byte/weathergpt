@@ -450,7 +450,14 @@ def places_along_route(route_coordinates: list[list[float]], radius_km: float = 
         raise PlaceSearchError("Route geometry is invalid")
     # Keep the Overpass request small enough for a free Render instance while
     # still covering the whole road corridor.
-    sample_count = min(8, max(4, len(route_points) // 80))
+    # Cover the complete A-to-B route instead of querying only a handful of
+    # points. A 1 km corridor needs samples at roughly 0.8 km spacing so no
+    # section of the route is skipped between provider queries.
+    route_length_km = sum(
+        sqrt(((second[0] - first[0]) * 111) ** 2 + ((second[1] - first[1]) * 111 * cos(radians(first[0]))) ** 2)
+        for first, second in zip(route_points, route_points[1:])
+    )
+    sample_count = min(60, max(8, int(route_length_km / 0.8) + 2))
     sample_points = [route_points[round(index * (len(route_points) - 1) / (sample_count - 1))] for index in range(sample_count)]
     cache_key = f"route-places:{hash(tuple((round(lat, 5), round(lon, 5)) for lat, lon in sample_points))}:{radius_km}:{limit_per_category}"
     saved = cache.get(cache_key)

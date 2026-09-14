@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Mic, MicOff, Sparkles, Volume2, VolumeX, ArrowRight, Umbrella, CloudRain, RotateCcw, ChevronLeft, Bot, Loader2, AlertTriangle } from './Icons';
 import { APP_LANGUAGES, ChatMessage, Language, WeatherData, RouteTrip, UserRole, RouteChatContext } from '../types';
-import { apiGetRecommendedQuestions, apiSendChat } from '../services/api';
+import { apiGetRecommendedQuestions, apiSendChat, apiSynthesizeVoice } from '../services/api';
+import { getVoiceLanguage } from '../data/voiceLanguages';
 
 interface AIChatScreenProps {
   weather: WeatherData;
@@ -260,7 +261,7 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
       transcriptBufferRef.current = '';
       const recognition = new SpeechRecognition();
       recognitionRef.current = recognition;
-      recognition.lang = currentLanguage === 'hi' ? 'hi-IN' : currentLanguage === 'gu' ? 'gu-IN' : 'en-IN';
+      recognition.lang = getVoiceLanguage(currentLanguage).locale;
       recognition.interimResults = true;
       recognition.continuous = false;
 
@@ -411,30 +412,36 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({
     }
   };
 
-  const handleSpeak = (msgId: string, text: string) => {
-    if (!('speechSynthesis' in window)) return;
-
+  const handleSpeak = async (msgId: string, text: string) => {
     if (speakingId === msgId) {
-      window.speechSynthesis.cancel();
+      window.speechSynthesis?.cancel();
       setSpeakingId(null);
       return;
     }
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    if (currentLanguage === 'hi') {
-      utterance.lang = 'hi-IN';
-    } else if (currentLanguage === 'gu') {
-      utterance.lang = 'gu-IN';
-    } else {
-      utterance.lang = 'en-IN';
-    }
-
-    utterance.onend = () => setSpeakingId(null);
-    utterance.onerror = () => setSpeakingId(null);
-
+    window.speechSynthesis?.cancel();
     setSpeakingId(msgId);
-    window.speechSynthesis.speak(utterance);
+    const voiceLanguage = getVoiceLanguage(currentLanguage);
+    try {
+      const data = await apiSynthesizeVoice(text, currentLanguage);
+      if (!data?.success || !data.audio_base64) throw new Error('TTS unavailable');
+      const binary = atob(data.audio_base64);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      const audio = new Audio(URL.createObjectURL(new Blob([bytes], { type: data.content_type || 'audio/wav' })));
+      audio.onended = () => setSpeakingId(null);
+      audio.onerror = () => setSpeakingId(null);
+      await audio.play();
+      return;
+    } catch {
+      if (!('speechSynthesis' in window)) { setSpeakingId(null); return; }
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = voiceLanguage.locale;
+      const matchingVoice = window.speechSynthesis.getVoices().find((voice) => voice.lang.toLowerCase().startsWith(voiceLanguage.locale.split('-')[0]));
+      if (matchingVoice) utterance.voice = matchingVoice;
+      utterance.onend = () => setSpeakingId(null);
+      utterance.onerror = () => setSpeakingId(null);
+      window.speechSynthesis.speak(utterance);
+    }
   };
 
   return (

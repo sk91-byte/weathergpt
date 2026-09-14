@@ -30,6 +30,7 @@ decision_router = None
 reports_router = None
 route_router = None
 places_router = None
+imd_video_router = None
 
 try:
     from backend.api.location import router as location_router  # type: ignore[assignment]
@@ -91,6 +92,11 @@ try:
 except Exception as exc:
     logger.warning("places router unavailable: %s", exc)
 
+try:
+    from backend.api.imd_video import router as imd_video_router  # type: ignore[assignment]
+except Exception as exc:
+    logger.warning("IMD video router unavailable: %s", exc)
+
 
 app = FastAPI(
     title=settings.app_name + " API",
@@ -132,6 +138,7 @@ _optional_routers = [
     location_router, alerts_router, voice_router, climate_router,
     maps_router, nwp_router, conversations_router, profile_router,
     decision_router, reports_router, route_router, places_router,
+    imd_video_router,
 ]
 for _router in _optional_routers:
     if _router is not None:

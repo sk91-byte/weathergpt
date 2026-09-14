@@ -47,6 +47,10 @@ class Settings:
     groq_api_key: str | None = _clean_str(os.getenv("GROQ_API_KEY"))
     groq_models: tuple[str, ...] = tuple(item.strip() for item in os.getenv("GROQ_MODELS", "openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.6-27b,llama-3.1-8b-instant,llama-3.3-70b-versatile").split(",") if item.strip())
     groq_base_url: str = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+    youtube_api_key: str | None = _clean_str(os.getenv("YOUTUBE_API_KEY"))
+    imd_youtube_channel_id: str | None = _clean_str(os.getenv("IMD_YOUTUBE_CHANNEL_ID"))
+    imd_youtube_playlist_id: str | None = _clean_str(os.getenv("IMD_YOUTUBE_PLAYLIST_ID"))
+    imd_youtube_handle: str = os.getenv("IMD_YOUTUBE_HANDLE", "Indiametdept")
     weatherapi_key: str | None = os.getenv("WEATHERAPI_KEY") or None
     routing_provider_url: str = os.getenv("ROUTING_PROVIDER_URL", "https://router.project-osrm.org")
     routing_provider: str = os.getenv("ROUTING_PROVIDER", "osrm")
@@ -66,7 +70,7 @@ class Settings:
     imd_alert_longitude: float | None = _optional_float(os.getenv("IMD_ALERT_LONGITUDE"))
     official_alerts_url: str | None = _clean_str(os.getenv("OFFICIAL_ALERTS_URL"))
     official_alerts_api_key: str | None = _clean_str(os.getenv("OFFICIAL_ALERTS_API_KEY"))
-    sachet_alerts_enabled: bool = _as_bool(os.getenv("SACHET_ALERTS_ENABLED", "false"))
+    sachet_alerts_enabled: bool = _as_bool(os.getenv("SACHET_ALERTS_ENABLED", "true"))
     sachet_alerts_url: str = os.getenv("SACHET_ALERTS_URL", "https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml")
     database_url: str | None = os.getenv("DATABASE_URL") or None
     storage_mode: str = os.getenv("STORAGE_MODE", "postgres" if os.getenv("DATABASE_URL") else "json")

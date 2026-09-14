@@ -37,8 +37,6 @@ class VoiceChatRequest(BaseModel):
         value = value.lower().strip()
         if not is_supported_language(value):
             raise ValueError("unsupported language code; use GET /languages")
-        if value not in {"en", "hi"}:
-            raise ValueError("voice is currently supported in English and Hindi")
         return value
 
 
@@ -59,14 +57,17 @@ def _read_audio_metadata(file: UploadFile, audio: bytes) -> None:
 
 
 @router.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)) -> dict:
+async def transcribe(file: UploadFile = File(...), language: str = Form("en")) -> dict:
+    language = language.lower().strip()
+    if not is_supported_language(language):
+        raise HTTPException(status_code=422, detail="unsupported language code; use GET /languages")
     audio = await file.read()
     _read_audio_metadata(file, audio)
     try:
-        text = configured_provider().speech_to_text(audio, file.filename or "audio")
+        text = configured_provider().speech_to_text(audio, file.filename or "audio", language)
     except VoiceServiceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"text": text, "language": "undetermined", "provider": "Gemini", "success": True}
+    return {"text": text, "language": language, "provider": "Gemini", "success": True}
 
 
 @router.post("/synthesize")
@@ -88,8 +89,8 @@ async def voice_chat(
     conversation_id: str | None = Form(None), language: str = Form("en"), profile_type: str = Form("general_public")
 ) -> dict:
     language = language.lower().strip()
-    if language not in {"en", "hi"} or not is_supported_language(language):
-        raise HTTPException(status_code=422, detail="voice is currently supported in English and Hindi")
+    if not is_supported_language(language):
+        raise HTTPException(status_code=422, detail="unsupported language code; use GET /languages")
     audio = await file.read()
     _read_audio_metadata(file, audio)
     try:

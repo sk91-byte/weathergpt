@@ -16,6 +16,7 @@ export interface ApiClimateSummary {
 
 function normalizeAlertType(value: unknown): WeatherAlert['type'] {
   const text = String(value || '').toLowerCase();
+  if (text.includes('earthquake') || text.includes('seismic')) return 'earthquake';
   if (text.includes('flood')) return 'flood';
   if (text.includes('cyclone')) return 'cyclone';
   if (text.includes('heat')) return 'heatwave';
@@ -261,6 +262,14 @@ export async function apiGetClimateSummary(latitude: number, longitude: number, 
 }
 
 export async function apiSendChat(query:string,options:any={},onSlow?:()=>void){const response=await fetchWithTimeout('/chat',{method:'POST',body:JSON.stringify({message:query,conversation_id:options.conversation_id,language:options.language||'en',profile:options.role||'citizen',latitude:options.latitude,longitude:options.longitude,location:options.location||options.location_name||null,route_context:options.route_context||null})},60000,onSlow);return response.json();}
+
+export async function apiSynthesizeVoice(text: string, language: string, onSlow?: () => void) {
+  const response = await fetchWithTimeout('/voice/synthesize', {
+    method: 'POST',
+    body: JSON.stringify({ text, language })
+  }, 45000, onSlow);
+  return response.json();
+}
 
 export async function apiGetRecommendedQuestions(persona:string, language:string, hasRoute=false):Promise<string[]> {
   const params = new URLSearchParams({persona, language, has_route: String(hasRoute)});

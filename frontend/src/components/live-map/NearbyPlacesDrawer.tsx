@@ -8,6 +8,7 @@ interface NearbyPlacesDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectPlace: (place: NearbySafePlace) => void;
+  onViewOnMap?: (place: NearbySafePlace) => void;
   onUseAsStop?: (place: NearbySafePlace) => void;
   selectedPlaceId?: string;
   initialFilter?: PlaceCategoryFilter;
@@ -22,6 +23,7 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
   isOpen,
   onClose,
   onSelectPlace,
+  onViewOnMap,
   onUseAsStop,
   selectedPlaceId,
   initialFilter = 'all',
@@ -215,7 +217,8 @@ export const NearbyPlacesDrawer: React.FC<NearbyPlacesDrawerProps> = ({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSelectPlace(place);
+                      if (onViewOnMap) onViewOnMap(place);
+                      else onSelectPlace(place);
                     }}
                     className="text-sky-400 font-bold hover:text-sky-300 flex items-center space-x-1 cursor-pointer"
                   >

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Mic, MicOff, Volume2, VolumeX, Sparkles, CheckCircle2, RotateCcw, AlertTriangle, Loader2 } from './Icons';
 import { Language, WeatherData, UserRole } from '../types';
-import { apiSendChat } from '../services/api';
+import { apiSendChat, apiSynthesizeVoice } from '../services/api';
+import { VOICE_INPUT_PLACEHOLDERS, VOICE_LANGUAGES, VOICE_SAMPLE_QUERIES, getVoiceLanguage } from '../data/voiceLanguages';
 
 interface VoiceAssistantModalProps {
   weather: WeatherData;
@@ -11,10 +12,6 @@ interface VoiceAssistantModalProps {
   onLanguageChange: (lang: Language) => void;
   userRole: UserRole;
 }
-
-// The backend voice endpoint currently supports speech recognition/TTS for these two languages.
-// Text chat remains available in every language in the app language registry.
-const VOICE_LANGUAGES: Language[] = ['en', 'hi'];
 
 export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   weather,
@@ -37,24 +34,10 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const recognitionRef = useRef<any>(null);
   const transcriptRef = useRef<string>('');
   const waveIntervalRef = useRef<any>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
 
-  const sampleQueries = {
-    en: [
-      `Will it rain today in ${weather.city}?`,
-      "Should I carry an umbrella for travel?",
-      "Can I irrigate wheat crops today?"
-    ],
-    hi: [
-      `क्या आज ${weather.city} में बारिश होगी?`,
-      "क्या आज यात्रा करते समय छाता ले जाना चाहिए?",
-      "क्या आज फसलों में पानी लगाना सुरक्षित है?"
-    ],
-    gu: [
-      `શું આજે ${weather.city}માં વરસાદ પડશે?`,
-      "શું આજે મુસાફરીમાં છત્રી સાથે રાખવી જરૂરી છે?",
-      "શું આજે પાકમાં ખાતર આપવું યોગ્ય છે?"
-    ]
-  };
+  const selectedVoiceLanguage = getVoiceLanguage(currentLanguage);
 
   // Cleanup on unmount or close
   useEffect(() => {
@@ -107,7 +90,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     try {
       const recognition = new SpeechRecognition();
       recognitionRef.current = recognition;
-      recognition.lang = currentLanguage === 'hi' ? 'hi-IN' : currentLanguage === 'gu' ? 'gu-IN' : 'en-IN';
+      recognition.lang = selectedVoiceLanguage.locale;
       recognition.interimResults = true;
       recognition.continuous = false;
       recognition.maxAlternatives = 1;
@@ -207,28 +190,55 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     }
   };
 
-  const speakText = (text: string) => {
+  const speakWithBrowserFallback = (text: string) => {
     if (!('speechSynthesis' in window)) return;
-
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = currentLanguage === 'hi' ? 'hi-IN' : currentLanguage === 'gu' ? 'gu-IN' : 'en-IN';
+    utterance.lang = selectedVoiceLanguage.locale;
+    const matchingVoice = window.speechSynthesis.getVoices().find((voice) => voice.lang.toLowerCase().startsWith(selectedVoiceLanguage.locale.toLowerCase().split('-')[0]));
+    if (matchingVoice) utterance.voice = matchingVoice;
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
-
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
-
-    // Prevent GC in Chromium
     (window as any)._activeVoiceUtterance = utterance;
-
     window.speechSynthesis.speak(utterance);
+  };
+
+  const speakText = async (text: string) => {
+    handleStopSpeaking();
+    setIsSpeaking(true);
+    try {
+      const data = await apiSynthesizeVoice(text, currentLanguage);
+      if (!data?.success || !data.audio_base64) throw new Error('TTS unavailable');
+      const binary = atob(data.audio_base64);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: data.content_type || 'audio/wav' }));
+      audioUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => { setIsSpeaking(false); URL.revokeObjectURL(url); audioUrlRef.current = null; };
+      audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); audioUrlRef.current = null; };
+      await audio.play();
+    } catch {
+      setIsSpeaking(false);
+      speakWithBrowserFallback(text);
+    }
   };
 
   const handleStopSpeaking = () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
     }
     setIsSpeaking(false);
   };
@@ -257,23 +267,23 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           <X className="w-4 h-4 text-white" />
         </button>
 
-        {/* Header language pills */}
-        <div className="flex items-center space-x-1.5 bg-white/10 p-1 rounded-full text-xs font-bold mb-3">
-          {VOICE_LANGUAGES.map((lang) => (
-            <button
-              key={lang}
-              onClick={() => onLanguageChange(lang)}
-              className={`px-3 py-1 rounded-full transition cursor-pointer ${
-                currentLanguage === lang ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              {lang === 'en' ? 'English' : 'हिन्दी'}
-            </button>
-          ))}
+        {/* All supported Indian language voices */}
+        <div className="w-full mb-3 text-left">
+          <label htmlFor="voice-language" className="text-[10px] font-bold text-blue-200 uppercase tracking-wider">Voice language</label>
+          <select
+            id="voice-language"
+            value={currentLanguage}
+            onChange={(event) => onLanguageChange(event.target.value as Language)}
+            className="mt-1 w-full rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-sky-400"
+          >
+            {VOICE_LANGUAGES.map((language) => (
+              <option key={language.code} value={language.code} className="bg-slate-900 text-white">
+                {language.geminiTts ? '⭐' : '◯'} {language.nativeName} · {language.englishName}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[10px] text-blue-200">⭐ Gemini voice works directly · ◯ device/browser fallback</p>
         </div>
-        {!VOICE_LANGUAGES.includes(currentLanguage) && (
-          <p className="text-[11px] text-amber-200 mb-2">Voice is currently available in English and Hindi. Use Text Chat for all Indian languages.</p>
-        )}
 
         <h3 className="text-xl font-extrabold text-white font-heading">
           Talk to WeatherGPT
@@ -412,9 +422,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             value={typedInput}
             onChange={(e) => setTypedInput(e.target.value)}
             placeholder={
-              currentLanguage === 'hi'
-                ? 'या यहाँ प्रश्न लिखकर पूछें...'
-                : 'Or type your question here...'
+              VOICE_INPUT_PLACEHOLDERS[currentLanguage]
             }
             className="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-hidden focus:border-blue-400 font-medium"
           />
@@ -433,7 +441,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             Or tap to ask instant question:
           </span>
           <div className="space-y-1.5">
-            {sampleQueries[currentLanguage].map((q, idx) => (
+            {VOICE_SAMPLE_QUERIES[currentLanguage].map((q, idx) => (
               <button
                 key={idx}
                 onClick={() => {

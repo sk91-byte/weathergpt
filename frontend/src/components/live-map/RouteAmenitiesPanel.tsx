@@ -9,6 +9,7 @@ interface RouteAmenitiesPanelProps {
   loading?: boolean;
   error?: string | null;
   onSelectPlace?: (place: NearbySafePlace) => void;
+  onViewOnMap?: (place: NearbySafePlace) => void;
   onUseAsStop?: (place: NearbySafePlace) => void;
 }
 
@@ -29,7 +30,7 @@ function categoryIcon(category: NearbySafePlace['category']) {
   return <Utensils className="w-4 h-4" />;
 }
 
-export const RouteAmenitiesPanel: React.FC<RouteAmenitiesPanelProps> = ({ places, loading = false, error, onSelectPlace, onUseAsStop }) => {
+export const RouteAmenitiesPanel: React.FC<RouteAmenitiesPanelProps> = ({ places, loading = false, error, onSelectPlace, onViewOnMap, onUseAsStop }) => {
   const [filter, setFilter] = useState<AmenityFilter>('all');
   const filteredPlaces = useMemo(() => filter === 'all' ? places : places.filter((place) => place.category === filter), [filter, places]);
 
@@ -41,7 +42,7 @@ export const RouteAmenitiesPanel: React.FC<RouteAmenitiesPanelProps> = ({ places
             <MapPin className="w-4 h-4 text-emerald-400" />
             <h3 className="text-sm font-black">Places along your route</h3>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Real mapped places within 800 m of the calculated road route.</p>
+          <p className="text-[11px] text-slate-400 mt-1">Real mapped places within 1 km of every section of the calculated A → B route.</p>
         </div>
         {!loading && <span className="text-[10px] font-bold text-slate-400 shrink-0">{places.length} found</span>}
       </div>
@@ -75,6 +76,7 @@ export const RouteAmenitiesPanel: React.FC<RouteAmenitiesPanelProps> = ({ places
                   <div className="flex items-center gap-3 mt-2 text-[10px] font-bold">
                     {place.phone && <a href={`tel:${place.phone}`} onClick={(event) => event.stopPropagation()} className="text-sky-300 flex items-center gap-1"><Phone className="w-3 h-3" />Call</a>}
                     {place.website && <a href={place.website} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="text-sky-300 flex items-center gap-1">Website <ChevronRight className="w-3 h-3" /></a>}
+                    {onViewOnMap && <button type="button" onClick={(event) => { event.stopPropagation(); onViewOnMap(place); }} className="text-blue-600 hover:text-blue-800 font-black">View on map</button>}
                     {onUseAsStop && <button type="button" onClick={(event) => { event.stopPropagation(); onUseAsStop(place); }} className="ml-auto text-emerald-300 hover:text-emerald-200">Use as stop</button>}
                   </div>
                 </div>

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { LiveMapRoute, NearbySafePlace, DepartureTimeOption, WeatherData } from '../../types';
+import { LiveMapRoute, NearbySafePlace, DepartureTimeOption, WeatherData, WeatherAlert } from '../../types';
 import { ChevronLeft, Navigation, Sparkles, Clock, MapPin, MessageSquare } from '../Icons';
 
 interface LiveRouteAnalysisPageProps {
@@ -10,6 +10,7 @@ interface LiveRouteAnalysisPageProps {
   departureOptions: DepartureTimeOption[];
   currentWeather: WeatherData;
   nearbyPlaces: NearbySafePlace[];
+  routeAlerts: WeatherAlert[];
   aiAnalysis: string;
   aiLoading: boolean;
   isLive: boolean;
@@ -32,7 +33,7 @@ const riskTone = (route: LiveMapRoute) => route.color === 'green'
 
 export const LiveRouteAnalysisPage: React.FC<LiveRouteAnalysisPageProps> = ({
   originName, destinationName, routes, activeRouteId, departureOptions, currentWeather,
-  nearbyPlaces, aiAnalysis, aiLoading, isLive, onSelectRoute, onBack, onStartNavigation,
+  nearbyPlaces, routeAlerts, aiAnalysis, aiLoading, isLive, onSelectRoute, onBack, onStartNavigation,
   onAnalyzeAI, onOpenChat, onOpenWhyRoute, onOpenTimeline, onSmartWait, onNearbyCategory
 }) => {
   const [nearbyCategory, setNearbyCategory] = useState<'all' | 'cafe' | 'restaurant' | 'hotel' | 'petrol' | 'hospital'>('restaurant');
@@ -44,6 +45,11 @@ export const LiveRouteAnalysisPage: React.FC<LiveRouteAnalysisPageProps> = ({
 
   const risk = activeRoute.safetyScore == null ? null : Math.max(0, Math.min(100, 100 - activeRoute.safetyScore));
   const tone = riskTone(activeRoute);
+  const activeAlerts = routeAlerts.filter((alert) => alert.isActive);
+  const primaryAlert = activeAlerts[0];
+  const alertLabel = primaryAlert
+    ? `${primaryAlert.type === 'cyclone' ? 'Cyclone' : primaryAlert.type === 'flood' ? 'Flood' : primaryAlert.type === 'earthquake' ? 'Earthquake' : primaryAlert.type === 'heatwave' ? 'Heatwave' : primaryAlert.type === 'thunderstorm' ? 'Thunderstorm' : primaryAlert.type === 'strong-winds' ? 'Strong winds' : 'Disaster alert'}: ${primaryAlert.title}`
+    : 'No disaster alert noticed';
 
   const selectNearby = (category: typeof nearbyCategory) => {
     setNearbyCategory(category);
@@ -79,7 +85,7 @@ export const LiveRouteAnalysisPage: React.FC<LiveRouteAnalysisPageProps> = ({
                 <div key={route.id} onClick={() => onSelectRoute(route.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelectRoute(route.id); }} role="button" tabIndex={0} className={`w-full rounded-3xl border-2 p-4 text-left shadow-sm transition ${selected ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
                   <div className="flex items-start justify-between gap-2"><span className={`rounded-xl border px-3 py-1.5 text-xs font-black ${routeTone.badge}`}>{route.color === 'green' ? '🟢' : route.color === 'red' ? '🔴' : '🟠'} {routeLabel}</span><span className={`rounded-xl border px-3 py-1.5 text-xs font-black ${routeTone.badge}`}>WEATHER SAFETY <strong className={routeTone.value}>{route.safetyScore == null ? '—' : route.safetyScore}</strong>/100</span></div>
                   <div className="mt-3 flex items-center justify-between gap-2"><div><h3 className="text-base font-black">{route.name || 'WeatherGPT route'}</h3><p className="text-sm font-bold text-slate-500">{route.distanceKm} km · {route.durationMinutes} min</p></div><span className="text-sm font-semibold text-slate-700">☁️ {route.summaryCondition || 'Live weather loading'}</span></div>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-xl bg-white/80 p-2"><span className="block text-slate-400">🌧 Rain Risk</span><strong>{route.rainRisk || 'Unavailable'}</strong></div><div className="rounded-xl bg-white/80 p-2"><span className="block text-slate-400">〰 Waterlogging</span><strong>{route.waterloggingRisk || 'Unavailable'}</strong></div><div className="rounded-xl bg-white/80 p-2"><span className="block text-slate-400">⚡ Storm Alerts</span><strong>{route.thunderstormRisk || 'Unavailable'}</strong></div></div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-xl bg-white/80 p-2"><span className="block text-slate-400">🌧 Rain Risk</span><strong>{route.rainRisk || 'Unavailable'}</strong></div><div className="rounded-xl bg-white/80 p-2"><span className="block text-slate-400">〰 Waterlogging</span><strong>{route.waterloggingRisk || 'Unavailable'}</strong></div><div className={`rounded-xl p-2 ${primaryAlert ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}><span className="block text-slate-500">⚡ {primaryAlert ? 'Active Alert' : 'Disaster Alerts'}</span><strong className="block truncate" title={alertLabel}>{alertLabel}</strong></div></div>
                   <div className={`mt-3 rounded-2xl border p-3 text-xs leading-relaxed ${routeRisk != null && routeRisk >= 60 ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'}`}><strong>{routeRisk != null && routeRisk >= 60 ? 'Hazard Warning: ' : 'Recommendation: '}</strong>{route.whyThisRoute || route.departureAdvice || 'Live route guidance is being calculated from current weather data.'}</div>
                   {selected && <><div className="mt-3 flex gap-2"><span className="rounded-lg bg-blue-600 px-3 py-2 text-[11px] font-black text-white">SELECTED ROUTE</span><span className="rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-600">Live provider data</span></div><div className="mt-3 flex gap-2"><button type="button" onClick={(event) => { event.stopPropagation(); onOpenWhyRoute(route); }} className="flex-1 rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-black text-blue-700">✨ Why this route?</button><button type="button" onClick={(event) => { event.stopPropagation(); onOpenTimeline(route); }} className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-700">Timeline</button></div></>}
                 </div>

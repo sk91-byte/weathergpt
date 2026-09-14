@@ -126,7 +126,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="relative w-full h-full overflow-hidden select-none bg-slate-900">
+    <div ref={containerRef} className="relative w-full h-full overflow-hidden select-none bg-slate-100">
       {/* Real Leaflet Map Provider (Primary Map Interface) */}
       <LeafletMapView
         ref={mapHandleRef}
@@ -177,7 +177,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
                   : onNearbyCategory
                     ? onNearbyCategory(item.category || 'all')
                     : onToggleNearbyPlaces?.()}
-                className="shrink-0 px-3 py-1.5 rounded-full border border-slate-200 bg-white/95 text-slate-700 text-[11px] font-black shadow-lg hover:border-blue-400 hover:text-blue-700 transition"
+                className={`shrink-0 px-3 py-1.5 rounded-full border text-[11px] font-black shadow-md transition ${item.label === 'Home' ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100' : item.label === 'College' ? 'border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100' : item.label === 'Work' ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : item.label === 'Airport' ? 'border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100' : 'border-slate-200 bg-white/95 text-slate-700 hover:border-blue-400 hover:text-blue-700'}`}
               >
                 {item.icon} {item.label}
               </button>
@@ -199,8 +199,8 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
                 onClick={() => onSelectRoute(route.id)}
                 className={`shrink-0 flex items-center space-x-2 px-3 py-1.5 rounded-2xl backdrop-blur-md transition cursor-pointer border shadow-lg ${
                   isSelected
-                    ? 'bg-slate-900/95 text-white ring-2 shadow-xl scale-[1.02]'
-                    : 'bg-slate-900/80 hover:bg-slate-850 text-slate-300 border-slate-700/80 hover:border-slate-600'
+                    ? 'bg-blue-600 text-white ring-2 shadow-xl scale-[1.02]'
+                    : 'bg-white/95 hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300'
                 }`}
                 style={{
                   borderColor: isSelected ? route.strokeColor || '#38bdf8' : undefined,
@@ -216,7 +216,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
                     <span className="text-xs font-black">
                       {tier.label}
                     </span>
-                    <span className="text-[11px] font-bold text-slate-200">
+                    <span className={`text-[11px] font-bold ${isSelected ? 'text-white' : 'text-slate-600'}`}>
                       {route.durationMinutes}m
                     </span>
                     <span
@@ -226,7 +226,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
                     </span>
                   </div>
 
-                  <div className="text-[9.5px] font-medium text-slate-400 truncate max-w-[150px]">
+                  <div className={`text-[9.5px] font-medium truncate max-w-[150px] ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>
                     {route.weatherImpactBadge || route.weatherImpactLabel || route.summaryCondition}
                   </div>
                 </div>
@@ -242,14 +242,14 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
         <div className="relative">
           <button
             onClick={() => setShowLayerMenu(!showLayerMenu)}
-            className="w-10 h-10 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white backdrop-blur-md shadow-lg border border-slate-700 flex items-center justify-center transition cursor-pointer"
+            className="w-10 h-10 rounded-xl bg-white/95 hover:bg-blue-50 text-slate-700 backdrop-blur-md shadow-lg border border-slate-200 flex items-center justify-center transition cursor-pointer"
             title="Switch Map Tiles & Weather Overlays"
           >
             <Layers className="w-4 h-4 text-sky-400" />
           </button>
 
           {showLayerMenu && (
-            <div className="absolute right-12 top-0 w-52 bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-2.5 shadow-2xl border border-slate-700 text-xs z-50 animate-in zoom-in-95">
+            <div className="absolute right-12 top-0 w-52 bg-white/98 backdrop-blur-md text-slate-900 rounded-2xl p-2.5 shadow-2xl border border-slate-200 text-xs z-50 animate-in zoom-in-95">
               <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider px-2 block mb-1">
                 Base Map Style
               </span>
@@ -259,7 +259,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
                   setShowLayerMenu(false);
                 }}
                 className={`w-full text-left p-1.5 rounded-xl transition cursor-pointer flex items-center justify-between ${
-                  tileMode === 'streets' ? 'bg-blue-600 font-bold text-white' : 'hover:bg-slate-800 text-slate-300'
+                    tileMode === 'streets' ? 'bg-blue-600 font-bold text-white' : 'hover:bg-slate-100 text-slate-700'
                 }`}
               >
                 <span>🗺️ Street Map</span>
@@ -271,7 +271,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
                   setShowLayerMenu(false);
                 }}
                 className={`w-full text-left p-1.5 rounded-xl transition cursor-pointer flex items-center justify-between ${
-                  tileMode === 'satellite' ? 'bg-blue-600 font-bold text-white' : 'hover:bg-slate-800 text-slate-300'
+                    tileMode === 'satellite' ? 'bg-blue-600 font-bold text-white' : 'hover:bg-slate-100 text-slate-700'
                 }`}
               >
                 <span>🛰️ Satellite Layer</span>
@@ -283,7 +283,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
                   setShowLayerMenu(false);
                 }}
                 className={`w-full text-left p-1.5 rounded-xl transition cursor-pointer flex items-center justify-between ${
-                  tileMode === 'dark' ? 'bg-blue-600 font-bold text-white' : 'hover:bg-slate-800 text-slate-300'
+                    tileMode === 'dark' ? 'bg-blue-600 font-bold text-white' : 'hover:bg-slate-100 text-slate-700'
                 }`}
               >
                 <span>🌙 Dark Map Layer</span>
@@ -366,7 +366,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
         {/* Recenter Route Button */}
         <button
           onClick={() => mapHandleRef.current?.recenterRoute()}
-          className="w-10 h-10 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white backdrop-blur-md shadow-lg border border-slate-700 flex items-center justify-center transition cursor-pointer active:scale-95"
+            className="w-10 h-10 rounded-xl bg-white/95 hover:bg-blue-50 text-slate-700 backdrop-blur-md shadow-lg border border-slate-200 flex items-center justify-center transition cursor-pointer active:scale-95"
           title="Fit Entire Route to Screen"
         >
           <Compass className="w-4 h-4 text-sky-400" />
@@ -375,7 +375,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
         {/* Current Location Button */}
         <button
           onClick={handleRecenter}
-          className="w-10 h-10 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white backdrop-blur-md shadow-lg border border-slate-700 flex items-center justify-center transition cursor-pointer active:scale-95"
+          className="w-10 h-10 rounded-xl bg-white/95 hover:bg-blue-50 text-slate-700 backdrop-blur-md shadow-lg border border-slate-200 flex items-center justify-center transition cursor-pointer active:scale-95"
           title="Center on Current Location"
         >
           <Navigation2 className="w-4 h-4 text-emerald-400 transform -rotate-45" />
@@ -384,19 +384,19 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
         {/* Zoom In Button */}
         <button
           onClick={handleZoomIn}
-          className="w-10 h-10 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white backdrop-blur-md shadow-lg border border-slate-700 flex items-center justify-center transition cursor-pointer active:scale-95"
+          className="w-10 h-10 rounded-xl bg-white/95 hover:bg-blue-50 text-slate-700 backdrop-blur-md shadow-lg border border-slate-200 flex items-center justify-center transition cursor-pointer active:scale-95"
           title="Zoom In"
         >
-          <Plus className="w-4 h-4 text-slate-200" />
+          <Plus className="w-4 h-4 text-slate-700" />
         </button>
 
         {/* Zoom Out Button */}
         <button
           onClick={handleZoomOut}
-          className="w-10 h-10 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white backdrop-blur-md shadow-lg border border-slate-700 flex items-center justify-center transition cursor-pointer active:scale-95"
+          className="w-10 h-10 rounded-xl bg-white/95 hover:bg-blue-50 text-slate-700 backdrop-blur-md shadow-lg border border-slate-200 flex items-center justify-center transition cursor-pointer active:scale-95"
           title="Zoom Out"
         >
-          <Minus className="w-4 h-4 text-slate-200" />
+          <Minus className="w-4 h-4 text-slate-700" />
         </button>
 
         {/* Rain Radar Quick Button */}
@@ -405,7 +405,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
           className={`w-10 h-10 rounded-xl backdrop-blur-md shadow-lg border flex items-center justify-center transition cursor-pointer ${
             showRadarOverlay
               ? 'bg-blue-600 text-white border-blue-400 shadow-blue-500/30'
-              : 'bg-slate-900/90 text-slate-400 border-slate-700 hover:text-white'
+              : 'bg-white/95 text-slate-500 border-slate-200 hover:text-blue-700'
           }`}
           title={showRadarOverlay ? 'Rain Radar Active' : 'Enable Rain Radar'}
         >
@@ -419,7 +419,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
             className={`w-10 h-10 rounded-xl backdrop-blur-md shadow-lg border flex items-center justify-center transition cursor-pointer ${
               showNearbyPlaces
                 ? 'bg-amber-600 text-white border-amber-400 shadow-amber-500/30'
-                : 'bg-slate-900/90 text-slate-400 border-slate-700 hover:text-amber-400'
+              : 'bg-white/95 text-slate-500 border-slate-200 hover:text-amber-600'
             }`}
             title="Toggle Nearby Safe Places (Cafes, Shelters, Fuel, Hospitals)"
           >
@@ -432,7 +432,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
           href={streetViewUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="w-10 h-10 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white backdrop-blur-md shadow-lg border border-slate-700 flex items-center justify-center transition cursor-pointer"
+          className="w-10 h-10 rounded-xl bg-white/95 hover:bg-blue-50 text-slate-700 backdrop-blur-md shadow-lg border border-slate-200 flex items-center justify-center transition cursor-pointer"
           title="Open Google Street View Panorama"
         >
           <Compass className="w-4 h-4 text-amber-400" />
@@ -514,7 +514,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
 
       {/* Bottom Map Legend: only explains the live route line; no weather
           values are shown until a map point or route segment is tapped. */}
-      <div className={`absolute ${activeRoute && !isNavigating ? 'bottom-[190px]' : 'bottom-3'} left-3 z-20 pointer-events-auto bg-slate-900/90 backdrop-blur-md rounded-xl px-2.5 py-1.5 border border-slate-700 text-[10px] text-slate-300 flex items-center space-x-3`}>
+      <div className={`absolute ${activeRoute && !isNavigating ? 'bottom-[190px]' : 'bottom-3'} left-3 z-20 pointer-events-auto bg-white/95 backdrop-blur-md rounded-xl px-2.5 py-1.5 border border-slate-200 text-[10px] text-slate-700 flex items-center space-x-3 shadow-md`}>
         <div className="flex items-center space-x-1">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
           <span>Lower live risk</span>
@@ -577,7 +577,7 @@ export const InteractiveMapCanvas: React.FC<InteractiveMapCanvasProps> = ({
               <button
                 type="button"
                 onClick={onStartNavigation}
-                className="py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-black transition"
+              className="py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-black transition shadow-md"
               >
                 ➤ Start Navigation
               </button>

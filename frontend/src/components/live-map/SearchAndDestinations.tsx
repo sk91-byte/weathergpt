@@ -13,7 +13,8 @@ import {
   RotateCcw,
   Sparkles,
   Compass,
-  AlertTriangle
+  AlertTriangle,
+  Mic
 } from '../Icons';
 import { DestinationPreset } from '../../data/liveMapData';
 import { apiAutocompleteLocations, ApiAutocompleteSuggestion } from '../../services/api';
@@ -22,19 +23,19 @@ export type MapLanguage = 'en' | 'hi' | 'hinglish';
 
 function getPlaceTypeBadge(type?: string) {
   const t = (type || '').toLowerCase();
-  if (t === 'university' || t === 'college') return { label: 'University / College', icon: 'ðŸŽ“', color: 'bg-purple-950/80 text-purple-300 border-purple-800/60' };
-  if (t === 'school') return { label: 'School', icon: 'ðŸ«', color: 'bg-blue-950/80 text-blue-300 border-blue-800/60' };
-  if (t === 'hospital') return { label: 'Hospital', icon: 'ðŸ¥', color: 'bg-red-950/80 text-red-300 border-red-800/60' };
-  if (t === 'airport') return { label: 'Airport', icon: 'âœˆï¸', color: 'bg-sky-950/80 text-sky-300 border-sky-800/60' };
-  if (t === 'station') return { label: 'Station', icon: 'ðŸš†', color: 'bg-amber-950/80 text-amber-300 border-amber-800/60' };
-  if (t === 'bus_station') return { label: 'Bus Station', icon: 'ðŸšŒ', color: 'bg-orange-950/80 text-orange-300 border-orange-800/60' };
-  if (t === 'road') return { label: 'Road / Marg', icon: 'ðŸ›£ï¸', color: 'bg-slate-800 text-slate-300 border-slate-700' };
-  if (t === 'locality') return { label: 'Locality / Sector', icon: 'ðŸ“', color: 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60' };
-  if (t === 'city' || t === 'town' || t === 'village') return { label: 'City / Town', icon: 'ðŸ™ï¸', color: 'bg-indigo-950/80 text-indigo-300 border-indigo-800/60' };
-  if (t === 'landmark') return { label: 'Landmark', icon: 'ðŸ›ï¸', color: 'bg-cyan-950/80 text-cyan-300 border-cyan-800/60' };
-  if (t === 'commercial') return { label: 'Market / Mall', icon: 'ðŸ›ï¸', color: 'bg-pink-950/80 text-pink-300 border-pink-800/60' };
-  if (t === 'religious') return { label: 'Place of Worship', icon: 'ðŸ›•', color: 'bg-yellow-950/80 text-yellow-300 border-yellow-800/60' };
-  return { label: 'Location', icon: 'ðŸ“', color: 'bg-slate-800 text-slate-300 border-slate-700' };
+  if (t === 'university' || t === 'college') return { label: 'University / College', icon: '\u{1F393}', color: 'bg-violet-50 text-violet-700 border-violet-200' };
+  if (t === 'school') return { label: 'School', icon: '\u{1F3EB}', color: 'bg-blue-50 text-blue-700 border-blue-200' };
+  if (t === 'hospital') return { label: 'Hospital', icon: '\u{1F3E5}', color: 'bg-rose-50 text-rose-700 border-rose-200' };
+  if (t === 'airport') return { label: 'Airport', icon: '\u2708\uFE0F', color: 'bg-sky-50 text-sky-700 border-sky-200' };
+  if (t === 'station') return { label: 'Station', icon: '\u{1F686}', color: 'bg-amber-50 text-amber-700 border-amber-200' };
+  if (t === 'bus_station') return { label: 'Bus Station', icon: '\u{1F68C}', color: 'bg-orange-50 text-orange-700 border-orange-200' };
+  if (t === 'road') return { label: 'Road / Marg', icon: '\u{1F6E3}\uFE0F', color: 'bg-slate-100 text-slate-700 border-slate-200' };
+  if (t === 'locality') return { label: 'Locality / Sector', icon: '\u{1F4CD}', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  if (t === 'city' || t === 'town' || t === 'village') return { label: 'City / Town', icon: '\u{1F3D9}\uFE0F', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+  if (t === 'landmark') return { label: 'Landmark', icon: '\u{1F5FF}', color: 'bg-cyan-50 text-cyan-700 border-cyan-200' };
+  if (t === 'commercial') return { label: 'Market / Mall', icon: '\u{1F6CD}\uFE0F', color: 'bg-pink-50 text-pink-700 border-pink-200' };
+  if (t === 'religious') return { label: 'Place of Worship', icon: '\u{1F6D5}', color: 'bg-yellow-50 text-yellow-700 border-yellow-200' };
+  return { label: 'Location', icon: '\u{1F4CD}', color: 'bg-slate-100 text-slate-700 border-slate-200' };
 }
 
 function highlightMatch(text: string, query: string): React.ReactNode {
@@ -97,7 +98,7 @@ function formatCoordsBadge(coords: any): string | null {
     lon = coords.lng ?? coords.lon ?? coords.longitude;
   }
   if (typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon)) {
-    return `${lat.toFixed(3)}Â°N, ${lon.toFixed(3)}Â°E`;
+    return `${lat.toFixed(3)}\u00B0N, ${lon.toFixed(3)}\u00B0E`;
   }
   return null;
 }
@@ -158,13 +159,13 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
       curated: 'Popular Locations & Hubs'
     },
     hi: {
-      originTitle: 'à¤¶à¥à¤°à¥à¤†à¤¤à¥€ à¤¸à¥à¤¥à¤¾à¤¨ (Start location)',
-      destTitle: 'à¤—à¤‚à¤¤à¤µà¥à¤¯ (Destination)',
-      originPlaceholder: currentLocationName || 'à¤¶à¥à¤°à¥à¤†à¤¤à¥€ à¤¸à¥à¤¥à¤¾à¤¨ à¤¯à¤¾ GPS à¤šà¥à¤¨à¥‡à¤‚...',
-      destPlaceholder: 'à¤—à¤‚à¤¤à¤µà¥à¤¯ à¤¸à¥à¤¥à¤¾à¤¨ (à¤•à¥‰à¤²à¥‡à¤œ, à¤¶à¤¹à¤°, à¤ªà¤¤à¤¾) à¤–à¥‹à¤œà¥‡à¤‚...',
-      setBtn: 'à¤°à¥‚à¤Ÿ à¤¦à¥‡à¤–à¥‡à¤‚ (Show route)',
-      gpsTitle: 'à¤®à¥‡à¤°à¤¾ GPS à¤¸à¥à¤¥à¤¾à¤¨',
-      change: 'à¤¬à¤¦à¤²à¥‡à¤‚',
+      originTitle: '\u0936\u0941\u0930\u0941\u0906\u0924\u0940 \u0938\u094d\u0925\u093e\u0928 (Start location)',
+      destTitle: '\u0917\u0902\u0924\u0935\u094d\u092f (Destination)',
+      originPlaceholder: currentLocationName || '\u0936\u0941\u0930\u0941\u0906\u0924\u0940 \u0938\u094d\u0925\u093e\u0928 या GPS चुनें...',
+      destPlaceholder: '\u0917\u0902\u0924\u0935\u094d\u092f (कॉलेज, शहर, पता) खोजें...',
+      setBtn: '\u0930\u0942\u091f \u0926\u0947\u0916\u0947\u0902 (Show route)',
+      gpsTitle: '\u092e\u0947\u0930\u093e GPS \u0938\u094d\u0925\u093e\u0928',
+      change: '\u092c\u0926\u0932\u0947\u0902',
       searching: 'à¤¸à¥à¤¥à¤¾à¤¨ à¤–à¥‹à¤œà¥‡ à¤œà¤¾ à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚...',
       curated: 'à¤ªà¥à¤°à¤®à¥à¤– à¤­à¤¾à¤°à¤¤à¥€à¤¯ à¤¶à¤¹à¤° à¤µ à¤•à¥‰à¤²à¥‡à¤œ'
     },
@@ -295,10 +296,46 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
 
   return (
     <div className="relative z-30 w-full px-3 pt-2.5 pointer-events-auto">
+      {/* Compact floating search bar used after a destination is selected. */}
+      {selectedDestinationName && (
+        <div className="mb-2 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-md backdrop-blur-md">
+          <div className="flex items-center gap-2 rounded-xl px-2 py-1">
+            <Search className="h-4 w-4 shrink-0 text-slate-500" />
+            <input
+              type="text"
+              value={destinationQuery}
+              onChange={(event) => {
+                onDestinationChange(event.target.value);
+                setActiveField('destination');
+                onOpen();
+              }}
+              onFocus={() => {
+                setActiveField('destination');
+                onOpen();
+              }}
+              onKeyDown={handleKeyDown}
+              className="min-w-0 flex-1 bg-transparent text-sm font-extrabold text-slate-900 outline-none placeholder:text-slate-400"
+              placeholder="Search destination"
+              aria-label="Search destination"
+            />
+            <button type="button" onClick={() => { onClearDestination(); onDestinationChange(''); }} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Clear destination"><X className="h-4 w-4" /></button>
+            <button type="button" onClick={onOpen} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Voice search"><Mic className="h-4 w-4" /></button>
+            <button type="button" onClick={onUseGps} className="rounded-lg p-1.5 text-blue-600 hover:bg-blue-50" aria-label={labels.gpsTitle}><Compass className="h-4 w-4" /></button>
+          </div>
+          <div className="mt-1 flex items-center gap-2 border-t border-slate-100 px-2 pt-2 text-[11px] font-bold text-slate-700">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
+            <span className="truncate">{originQuery || currentLocationName || 'Current location'}</span>
+            <span className="text-slate-300">↓</span>
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-rose-500" />
+            <span className="truncate">{selectedDestinationName}</span>
+          </div>
+        </div>
+      )}
+
       {/* Main Dual Search Card */}
-      <div className="bg-slate-900/96 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700/90 p-3 text-white transition-all">
+      <div className={`${selectedDestinationName ? 'hidden' : ''} bg-white/96 backdrop-blur-md rounded-2xl shadow-md border border-slate-200 p-3 text-slate-900 transition-all`}>
         {/* Top Bar: Language Switcher & Quick Planner Link */}
-        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-xs">
+        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 text-xs">
           <div className="flex items-center space-x-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">
               Language:
@@ -310,10 +347,10 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                 className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
                   lang === l
                     ? 'bg-blue-600 text-white shadow-xs'
-                    : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    : 'bg-slate-100 text-slate-500 hover:text-slate-900'
                 }`}
               >
-                {l === 'en' ? 'EN' : l === 'hi' ? 'à¤¹à¤¿à¤¨à¥à¤¦à¥€' : 'Hinglish'}
+                {l === 'en' ? 'EN' : l === 'hi' ? '\u0939\u093f\u0928\u094d\u0926\u0940' : 'Hinglish'}
               </button>
             ))}
           </div>
@@ -323,10 +360,10 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
               <button
                 type="button"
                 onClick={onOpenPlanTripModal}
-                className="text-[10.5px] font-extrabold text-sky-400 hover:text-sky-300 flex items-center space-x-1 bg-sky-950/60 border border-sky-800/60 px-2 py-0.5 rounded-lg transition active:scale-95 cursor-pointer"
+                className="text-[10.5px] font-extrabold text-sky-700 hover:text-sky-900 flex items-center space-x-1 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-lg transition active:scale-95 cursor-pointer"
                 title="Open full Plan Trip modal with all departure options"
               >
-                <Sparkles className="w-3 h-3 text-sky-400" />
+                <Sparkles className="w-3 h-3 text-sky-600" />
                 <span>+ Plan Trip</span>
               </button>
             )}
@@ -334,23 +371,23 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
         </div>
 
         {/* 1. Origin Section */}
-        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2 pb-2 border-b border-slate-800/80">
+        <div className="space-y-2 pb-2 border-b border-slate-200">
           <div className="min-w-0 space-y-1">
           <div className="flex items-center justify-between gap-1 min-w-0">
-            <label className="min-w-0 text-[11px] font-bold text-emerald-400 flex items-center space-x-1.5 truncate">
-              <span>ðŸ“</span>
+            <label className="min-w-0 text-[11px] font-black text-emerald-700 flex items-center space-x-1.5 truncate tracking-wide">
+              <span>&#x1F4CD;</span>
               <span>{labels.originTitle}</span>
             </label>
             {originCoordsBadge && (
               <div className="flex items-center gap-1 min-w-0 max-w-[58%]">
-                <span className="truncate text-[9px] font-mono text-emerald-300/80 bg-emerald-950/60 border border-emerald-800/50 px-1.5 py-0.2 rounded-md">
+                <span className="truncate text-[9px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-md">
                   {originCoordsBadge}
                 </span>
                 {onSavePlace && originCoords && originQuery.trim() && (
                   <button
                     type="button"
                     onClick={() => onSavePlace({ label: 'Saved place', name: originQuery.trim(), address: originAddress, coords: originCoords })}
-                    className="text-[9px] font-bold text-emerald-200 bg-emerald-900/70 border border-emerald-700/70 px-1.5 py-0.5 rounded-md cursor-pointer"
+                    className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md cursor-pointer"
                   >
                     {isSaved(originQuery) ? 'Saved' : 'Save'}
                   </button>
@@ -359,7 +396,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
             )}
           </div>
 
-          <div className="flex items-center space-x-2 min-w-0 bg-slate-800/80 rounded-xl px-2.5 py-1.5 border border-slate-700/60 focus-within:border-emerald-500/80 transition">
+          <div className="flex items-center space-x-2 min-w-0 bg-slate-50 rounded-xl px-2.5 py-1.5 border border-slate-200 focus-within:border-emerald-500/80 transition">
             <div className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0 text-[11px] font-black shadow-xs">
               A
             </div>
@@ -378,14 +415,14 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder={labels.originPlaceholder}
-                className="w-full bg-transparent text-xs font-bold text-white placeholder-slate-400 focus:outline-hidden truncate"
+                className="w-full bg-transparent text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-hidden truncate"
               />
             </div>
 
             {/* GPS Location Button */}
             <button
               onClick={onUseGps}
-              className={`px-2 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 flex items-center space-x-1 text-[10px] font-bold transition cursor-pointer shrink-0 ${
+              className={`px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center space-x-1 text-[10px] font-bold transition cursor-pointer shrink-0 ${
                 isLocating ? 'animate-pulse text-emerald-200' : ''
               }`}
               title={labels.gpsTitle}
@@ -397,7 +434,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
             {originQuery && (
               <button
                 onClick={() => onOriginChange('')}
-                className="w-6 h-6 rounded-lg bg-slate-700/60 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
+                className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition cursor-pointer shrink-0"
                 title="Clear origin"
               >
                 <X className="w-3 h-3" />
@@ -406,25 +443,31 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
           </div>
           </div>
 
-        <div className="text-slate-500 text-sm font-black pb-3">→</div>
+        <div className="flex justify-center -my-1 relative z-10">
+          {onSwapLocations && (
+            <button type="button" onClick={onSwapLocations} className="w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-600 shadow-sm hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50 transition" title="Reverse trip: swap start and destination">
+              <RotateCcw className="w-3.5 h-3.5 mx-auto" />
+            </button>
+          )}
+        </div>
 
         {/* 2. Destination Section */}
         <div className="min-w-0 space-y-1">
           <div className="flex items-center justify-between gap-1 min-w-0">
-            <label className="min-w-0 text-[11px] font-bold text-sky-400 flex items-center space-x-1.5 truncate">
-              <span>ðŸŽ¯</span>
+            <label className="min-w-0 text-[11px] font-black text-sky-700 flex items-center space-x-1.5 truncate tracking-wide">
+              <span>&#x1F3AF;</span>
               <span>{labels.destTitle}</span>
             </label>
             {destCoordsBadge && (
               <div className="flex items-center gap-1 min-w-0 max-w-[58%]">
-                <span className="truncate text-[9px] font-mono text-sky-300/80 bg-sky-950/60 border border-sky-800/50 px-1.5 py-0.2 rounded-md">
+                <span className="truncate text-[9px] font-mono text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.2 rounded-md">
                   {destCoordsBadge}
                 </span>
                 {onSavePlace && destinationCoords && destinationQuery.trim() && (
                   <button
                     type="button"
                     onClick={() => onSavePlace({ label: 'Saved place', name: destinationQuery.trim(), address: destinationAddress, coords: destinationCoords })}
-                    className="text-[9px] font-bold text-sky-200 bg-sky-900/70 border border-sky-700/70 px-1.5 py-0.5 rounded-md cursor-pointer"
+                    className="text-[9px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-md cursor-pointer"
                   >
                     {isSaved(destinationQuery) ? 'Saved' : 'Save'}
                   </button>
@@ -433,7 +476,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
             )}
           </div>
 
-          <div className="flex items-center space-x-2 min-w-0 bg-slate-800/80 rounded-xl px-2.5 py-1.5 border border-slate-700/60 focus-within:border-sky-500/80 transition">
+          <div className="flex items-center space-x-2 min-w-0 bg-slate-50 rounded-xl px-2.5 py-1.5 border border-slate-200 focus-within:border-sky-500/80 transition">
             <div className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center shrink-0 text-[11px] font-black shadow-xs">
               B
             </div>
@@ -452,7 +495,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder={labels.destPlaceholder}
-                className="w-full bg-transparent text-xs font-bold text-white placeholder-slate-400 focus:outline-hidden truncate"
+                className="w-full bg-transparent text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-hidden truncate"
               />
             </div>
 
@@ -472,24 +515,13 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
               </button>
             )}
 
-            {/* Swap Button */}
-            {onSwapLocations && (
-              <button
-                onClick={onSwapLocations}
-                className="w-6 h-6 rounded-lg bg-slate-700/60 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
-                title="Swap Start & Destination"
-              >
-                <RotateCcw className="w-3 h-3" />
-              </button>
-            )}
-
             {destinationQuery ? (
               <button
                 onClick={() => {
                   onClearDestination();
                   onDestinationChange('');
                 }}
-                className="w-6 h-6 rounded-lg bg-slate-700/60 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
+                className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition cursor-pointer shrink-0"
                 title="Clear destination"
               >
                 <X className="w-3 h-3" />
@@ -501,8 +533,8 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
         </div>
 
         {/* 3. Travel Mode Selector & Quick Indian Chips */}
-        <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
-          <div className="flex items-center space-x-1">
+        <div className="mt-2.5 pt-2 border-t border-slate-200 flex items-center justify-between text-[11px]">
+          <div className="flex items-center space-x-1.5">
             {[
               { id: 'driving', label: 'Drive', icon: Car, available: true },
               { id: 'walking', label: 'Walk', icon: Footprints, available: true },
@@ -520,7 +552,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                   className={`px-2.5 py-1 rounded-xl font-bold flex items-center space-x-1 transition ${mode.available ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'} ${
                     isActive
                       ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-slate-800/80 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900'
                   }`}
                 >
                   <Icon className="w-3 h-3" />
@@ -530,8 +562,8 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
             })}
           </div>
 
-          <div className="text-[10px] text-slate-400 font-medium flex items-center space-x-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+          <div className="text-[10px] text-slate-600 font-bold flex items-center space-x-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
             <span>WeatherGPT Live Safe Corridor</span>
           </div>
         </div>
@@ -539,9 +571,9 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
 
       {/* GPS Fallback Notice if Permission Denied */}
       {gpsPermissionNotice && (
-        <div className="mt-2 p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs flex items-center justify-between shadow-lg">
+        <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center justify-between shadow-md">
           <div className="flex items-center space-x-2 min-w-0">
-            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
             <span className="truncate">{gpsPermissionNotice}</span>
           </div>
           {onDismissGpsNotice && (
@@ -557,8 +589,8 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
 
       {/* Auto-suggest overlay drawer */}
       {isOpen && (
-        <div className="absolute top-full mt-2 left-3 right-3 bg-slate-900/98 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700/90 overflow-hidden max-h-[55vh] flex flex-col animate-in fade-in zoom-in-95 duration-150 text-white">
-          <div className="p-3 border-b border-slate-800 flex items-center justify-between bg-slate-800/60">
+        <div className="absolute top-full mt-2 left-3 right-3 bg-white/98 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[55vh] flex flex-col animate-in fade-in zoom-in-95 duration-150 text-slate-900">
+          <div className="p-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
               {activeField === 'origin' ? labels.originTitle : labels.destTitle}
             </span>
@@ -615,16 +647,16 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                       onClick={() => handleSelectSuggestion(item)}
                       className={`w-full text-left p-2.5 rounded-xl border transition cursor-pointer flex items-start space-x-3 group ${
                         isSelected
-                          ? 'bg-sky-950/90 border-sky-500 shadow-md ring-1 ring-sky-500/50'
-                          : 'bg-slate-800/70 hover:bg-slate-750 border-slate-700/60'
+                        ? 'bg-sky-50 border-sky-400 shadow-md ring-1 ring-sky-300'
+                          : 'bg-white hover:bg-slate-50 border-slate-200'
                       }`}
                     >
-                      <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0 bg-slate-900/90 border border-slate-700/80 shadow-xs mt-0.5">
+                      <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0 bg-slate-100 border border-slate-200 shadow-xs mt-0.5">
                         {badge.icon}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-1 flex-wrap">
-                          <span className="text-xs font-bold text-white group-hover:text-sky-300 transition truncate">
+                          <span className="text-xs font-bold text-slate-900 group-hover:text-sky-700 transition truncate">
                             {highlightMatch(item.name, currentQuery)}
                           </span>
                           <div className="flex items-center space-x-1 shrink-0">
@@ -632,18 +664,18 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                               {badge.label}
                             </span>
                             {typeof item.latitude === 'number' && typeof item.longitude === 'number' && (
-                              <span className="text-[9px] font-mono text-slate-400 bg-slate-900/80 px-1.5 py-0.5 rounded-md border border-slate-700/50">
-                                {item.latitude.toFixed(3)}Â°, {item.longitude.toFixed(3)}Â°
+                              <span className="text-[9px] font-mono text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded-md border border-slate-200">
+                                {item.latitude.toFixed(3)}\u00B0, {item.longitude.toFixed(3)}\u00B0
                               </span>
                             )}
                           </div>
                         </div>
-                        <div className="text-[11px] text-slate-300 line-clamp-1 mt-0.5">
+                        <div className="text-[11px] text-slate-600 line-clamp-1 mt-0.5">
                           {highlightMatch(item.formatted_address, currentQuery)}
                         </div>
                         {(item.city || item.state) && (
                           <div className="flex items-center space-x-1.5 mt-1 text-[9.5px] text-sky-400 font-semibold">
-                            <span>ðŸ“ {[item.city, item.district !== item.city ? item.district : null, item.state].filter(Boolean).join(', ')}</span>
+                            <span>&#x1F4CD; {[item.city, item.district !== item.city ? item.district : null, item.state].filter(Boolean).join(', ')}</span>
                           </div>
                         )}
                       </div>
@@ -656,7 +688,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
             {/* Empty State */}
             {!isSearchingApi && !searchError && currentQuery.trim().length >= 2 && autocompleteSuggestions.length === 0 && (
               <div className="py-6 text-center text-xs text-slate-400 flex flex-col items-center justify-center space-y-1.5">
-                <span className="text-2xl">ðŸ”</span>
+                <span className="text-2xl">&#x1F50D;</span>
                 <span className="font-bold text-slate-200">No matching locations found.</span>
                 <span className="text-[11px] text-slate-400 max-w-xs">
                   Try searching a landmark, college, metro station, road, or city name across India.
@@ -694,14 +726,14 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                     }
                     onClose();
                   }}
-                  className="w-full text-left p-2 rounded-xl hover:bg-slate-800 border border-slate-800 transition cursor-pointer flex items-center justify-between"
+                  className="w-full text-left p-2 rounded-xl hover:bg-slate-50 border border-slate-200 transition cursor-pointer flex items-center justify-between"
                 >
                   <div className="flex items-center space-x-2.5 min-w-0">
                     <div className="w-7 h-7 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0">
                       <Building2 className="w-3.5 h-3.5" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-white truncate">{preset.name}</div>
+                      <div className="text-xs font-bold text-slate-900 truncate">{preset.name}</div>
                       <div className="text-[10px] text-slate-400 truncate">
                         {preset.subtitle} â€¢ {preset.city}
                       </div>
@@ -713,7 +745,7 @@ export const SearchAndDestinations: React.FC<SearchAndDestinationsProps> = ({
                     </span>
                     {preset.coords && typeof preset.coords.lat === 'number' && typeof preset.coords.lng === 'number' && (
                       <span className="text-[9px] text-sky-400 font-mono">
-                        {preset.coords.lat.toFixed(2)}Â°, {preset.coords.lng.toFixed(2)}Â°
+                        {preset.coords.lat.toFixed(2)}\u00B0, {preset.coords.lng.toFixed(2)}\u00B0
                       </span>
                     )}
                   </div>

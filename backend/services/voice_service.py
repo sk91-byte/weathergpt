@@ -9,6 +9,7 @@ from google.genai import types
 
 from backend.config import settings
 from backend.services.llm_service import _client
+from backend.services.language_service import get_language, supported_language_codes
 
 
 class VoiceServiceError(Exception):
@@ -33,7 +34,8 @@ class GeminiVoiceProvider:
     def speech_to_text(self, audio: bytes, filename: str, language: str | None = None) -> str:
         try:
             mime_type = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/m4a", ".webm": "audio/webm", ".ogg": "audio/ogg"}.get(os.path.splitext(filename.lower())[1], "audio/wav")
-            language_hint = "Hindi" if language == "hi" else "English" if language == "en" else "the spoken language"
+            language_meta = get_language(language) if language else None
+            language_hint = f"{language_meta['name']} ({language_meta['locale']})" if language_meta else "the spoken language"
             response = self.client.models.generate_content(
                 model=os.getenv("GEMINI_VOICE_MODEL", settings.gemini_model),
                 contents=[types.Part.from_text(text=f"Transcribe this audio exactly. The likely language is {language_hint}. Return only the spoken words, without commentary."), types.Part.from_bytes(data=audio, mime_type=mime_type)],
@@ -48,16 +50,19 @@ class GeminiVoiceProvider:
             raise VoiceServiceError("Speech recognition failed") from exc
 
     def text_to_speech(self, text: str, language: str) -> bytes:
-        if language not in {"en", "hi"}:
-            raise VoiceServiceError("Voice output is currently supported in English and Hindi")
         try:
+            language_meta = get_language(language)
+            # Gemini TTS expects the base BCP-47 language code (for example
+            # `hi`, not the browser recognition locale `hi-IN`).
+            speech_locale = language_meta["locale"].split("-")[0]
+            prompt = f"Speak naturally in {language_meta['name']} ({speech_locale}). Preserve names, numbers, and place names clearly.\n\nText to speak:\n{text}"
             response = self.client.models.generate_content(
                 model=os.getenv("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts"),
-                contents=text,
+                contents=prompt,
                 config=types.GenerateContentConfig(
                     response_modalities=["AUDIO"],
                     speech_config=types.SpeechConfig(
-                        language_code=language,
+                        language_code=speech_locale,
                         voice_config=types.VoiceConfig(
                             prebuilt_voice_config=types.PrebuiltVoiceConfig(
                                 voice_name=os.getenv("GEMINI_TTS_VOICE", "Kore")
@@ -92,4 +97,4 @@ def configured_provider() -> GeminiVoiceProvider:
 
 def voice_health() -> dict[str, object]:
     configured = bool(settings.gemini_api_key) and os.getenv("VOICE_PROVIDER", "gemini").lower() == "gemini"
-    return {"provider": "Gemini", "configured": configured, "stt_available": configured, "tts_available": configured, "live_available": configured, "supported_languages": ["en", "hi"], "status": "configured" if configured else "unavailable"}
+    return {"provider": "Gemini", "configured": configured, "stt_available": configured, "tts_available": configured, "live_available": configured, "supported_languages": sorted(supported_language_codes()), "status": "configured" if configured else "unavailable"}

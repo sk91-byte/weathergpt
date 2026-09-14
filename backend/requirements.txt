@@ -3,6 +3,7 @@ uvicorn
 python-dotenv
 requests
 google-genai
+youtube-transcript-api>=1.2,<2.0
 python-multipart
 pytest
 httpx
