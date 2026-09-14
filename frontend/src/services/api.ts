@@ -78,8 +78,32 @@ export async function apiGetNearbyAlerts(latitude: number, longitude: number, ra
       impacts: guidance.impacts, recommendedActions: guidance.actions,
       sourceUrl: typeof item.source_url === 'string' ? item.source_url : undefined,
       distanceKm: Number.isFinite(Number(item.distance_km)) ? Number(item.distance_km) : undefined,
+      latitude: Number.isFinite(Number(item.latitude)) ? Number(item.latitude) : undefined,
+      longitude: Number.isFinite(Number(item.longitude)) ? Number(item.longitude) : undefined,
       isActive: !item.end_time || Number.isNaN(Date.parse(String(item.end_time))) || Date.parse(String(item.end_time)) > Date.now(),
       isNearby: Number.isFinite(Number(item.distance_km)) ? Number(item.distance_km) <= 10 : true,
+    };
+  });
+}
+
+export async function apiGetOfficialAlerts(onSlow?: () => void): Promise<WeatherAlert[]> {
+  const response = await fetchWithTimeout('/alerts', {}, 30000, onSlow);
+  const payload = await response.json();
+  if (!Array.isArray(payload)) return [];
+  return payload.filter((item: any) => item && item.is_demo !== true).map((item: any): WeatherAlert => {
+    const type = normalizeAlertType(item.alert_type);
+    const severity = ['Low', 'Moderate', 'High', 'Extreme'].includes(item.severity) ? item.severity : 'Moderate';
+    const guidance = alertActions(type, severity);
+    return {
+      id: String(item.id), type, title: String(item.title || 'Official weather alert'), severity,
+      location: String(item.affected_area || 'Specified official area'), issuedAt: String(item.issued_at || 'Unavailable'),
+      description: String(item.description || 'See the official source for details.'), impacts: guidance.impacts,
+      recommendedActions: guidance.actions, sourceUrl: typeof item.source_url === 'string' ? item.source_url : undefined,
+      distanceKm: Number.isFinite(Number(item.distance_km)) ? Number(item.distance_km) : undefined,
+      latitude: Number.isFinite(Number(item.latitude)) ? Number(item.latitude) : undefined,
+      longitude: Number.isFinite(Number(item.longitude)) ? Number(item.longitude) : undefined,
+      isActive: !item.end_time || Number.isNaN(Date.parse(String(item.end_time))) || Date.parse(String(item.end_time)) > Date.now(),
+      isNearby: false,
     };
   });
 }

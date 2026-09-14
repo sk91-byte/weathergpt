@@ -1,7 +1,7 @@
 import React from 'react';
-import { Navigation, MapPin, Mic, MessageSquare, User, Cloud } from './Icons';
+import { Navigation, MapPin, Mic, MessageSquare, AlertTriangle } from './Icons';
 
-export type TabType = 'home' | 'map' | 'voice' | 'chat' | 'profile';
+export type TabType = 'home' | 'map' | 'voice' | 'chat' | 'news' | 'profile';
 
 interface BottomNavigationProps {
   activeTab: TabType;
@@ -84,16 +84,16 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
         <span className="text-[10px] mt-0.5">Chat</span>
       </button>
 
-      {/* 5. Profile Tab */}
+      {/* 5. Disaster News Tab. Profile remains available from the header/menu. */}
       <button
-        id="nav-tab-profile"
-        onClick={() => onChangeTab('profile')}
+        id="nav-tab-disaster-news"
+        onClick={() => onChangeTab('news')}
         className={`flex-1 flex flex-col items-center justify-center py-1 transition cursor-pointer ${
-          activeTab === 'profile' ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+          activeTab === 'news' ? 'text-red-600 font-bold' : 'text-slate-400 hover:text-slate-600'
         }`}
       >
-        <User className="w-5 h-5 stroke-[2.2]" />
-        <span className="text-[10px] mt-0.5">Profile</span>
+        <AlertTriangle className="w-5 h-5 stroke-[2.2]" />
+        <span className="text-[10px] mt-0.5 whitespace-nowrap">Disaster News</span>
       </button>
     </nav>
   );

@@ -17,6 +17,7 @@ import { BottomNavigation, TabType } from './components/BottomNavigation';
 import { AIChatScreen } from './components/AIChatScreen';
 import { WeatherMapScreen } from './components/WeatherMapScreen';
 import { ProfileScreen } from './components/ProfileScreen';
+import { DisasterNewsScreen } from './components/DisasterNewsScreen';
 import { OnboardingScreen } from './components/OnboardingScreen';
 import { DailyBriefingModal } from './components/DailyBriefingModal';
 import { ExplainableAIModal } from './components/ExplainableAIModal';
@@ -546,6 +547,18 @@ export default function App() {
               userRole={userRole}
               userName={userName}
               currentCoordinates={weather.locationCoordinates || null}
+            />
+          )}
+
+          {activeTab === 'news' && (
+            <DisasterNewsScreen
+              currentWeather={weather}
+              activeTrip={trip}
+              onBackToHome={() => setActiveTab('home')}
+              onViewOnMap={(latitude, longitude, locationName) => {
+                handleSelectCity(locationName);
+                setActiveTab('map');
+              }}
             />
           )}
 
