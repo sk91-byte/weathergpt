@@ -57,7 +57,12 @@ export const LiveRouteAnalysisPage: React.FC<LiveRouteAnalysisPageProps> = ({
     : 'No disaster alert noticed';
 
   useEffect(() => {
-    if (!activeRoute || !originName || !destinationName) return;
+    if (!activeRoute || !originName || !destinationName || activeAlerts.length === 0) {
+      setImdBriefing(null);
+      setImdError(null);
+      setImdLoading(false);
+      return;
+    }
     let cancelled = false;
     setImdLoading(true);
     setImdError(null);
@@ -71,7 +76,7 @@ export const LiveRouteAnalysisPage: React.FC<LiveRouteAnalysisPageProps> = ({
       .catch((error) => { if (!cancelled) setImdError(error instanceof Error ? error.message : 'IMD briefing unavailable'); })
       .finally(() => { if (!cancelled) setImdLoading(false); });
     return () => { cancelled = true; };
-  }, [activeRoute?.id, originName, destinationName, language]);
+  }, [activeRoute?.id, originName, destinationName, language, activeAlerts.length]);
 
   const selectNearby = (category: typeof nearbyCategory) => {
     setNearbyCategory(category);
@@ -95,16 +100,19 @@ export const LiveRouteAnalysisPage: React.FC<LiveRouteAnalysisPageProps> = ({
       </div>
 
       <main className="mx-auto max-w-md space-y-4 p-4">
+        {activeAlerts.length > 0 && (
         <section className="rounded-3xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-3"><div><h2 className="font-black text-indigo-950">📺 IMD VIDEO INTELLIGENCE</h2><p className="mt-1 text-xs text-slate-500">Transcript evidence for this route</p></div><span className="rounded-lg bg-indigo-100 px-2 py-1 text-[10px] font-black text-indigo-700">VIDEO SOURCE</span></div>
+          <div className="flex items-start justify-between gap-3"><div><h2 className="font-black text-indigo-950">📺 OFFICIAL ALERT INTELLIGENCE</h2><p className="mt-1 text-xs text-slate-500">IMD briefing evidence for this route</p></div><span className="rounded-lg bg-red-100 px-2 py-1 text-[10px] font-black text-red-700">{alertLabel}</span></div>
           {imdLoading && <div className="mt-3 animate-pulse rounded-2xl bg-white p-4 text-sm font-semibold text-slate-500">Finding the latest IMD briefing and checking route locations…</div>}
           {!imdLoading && imdError && <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">IMD transcript summary is unavailable right now. Live weather and disaster alerts are still shown above.</div>}
           {!imdLoading && !imdError && imdBriefing && <>
             <div className={`mt-3 rounded-2xl border p-3 ${imdBriefing.matches?.length ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'}`}><p className="text-sm font-black text-slate-900">{imdBriefing.matches?.length ? `⚠️ ${imdBriefing.matches.length} route-relevant mention${imdBriefing.matches.length === 1 ? '' : 's'} found` : '✅ No explicit high-alert mention found for this route'}</p><p className="mt-1 text-xs leading-relaxed text-slate-700">This is transcript evidence, not a replacement for current live weather alerts.</p></div>
-            {imdBriefing.matches?.slice(0, 3).map((match: any, index: number) => <a key={`${match.start}-${index}`} href={`${imdBriefing.video?.url || '#'}&t=${Math.floor(Number(match.start) || 0)}`} target="_blank" rel="noreferrer" className="mt-2 block rounded-xl border border-indigo-100 bg-white p-3 hover:border-indigo-300"><div className="flex items-center justify-between gap-2"><span className="text-xs font-black text-indigo-700">▶ Watch at {Math.floor(Number(match.start) / 60)}:{String(Math.floor(Number(match.start) % 60)).padStart(2, '0')}</span><span className="text-[10px] font-bold text-slate-400">Open video</span></div><p className="mt-1 text-xs leading-relaxed text-slate-700">{match.matched_text}</p></a>)}
+            {imdBriefing.matches?.slice(0, 3).map((match: any, index: number) => <a key={`${match.start}-${index}`} href={imdBriefing.video?.url ? `${imdBriefing.video.url}${imdBriefing.video.url.includes('?') ? '&' : '?'}t=${Math.floor(Number(match.start) || 0)}` : '#'} target="_blank" rel="noreferrer" className="mt-2 block rounded-xl border border-indigo-100 bg-white p-3 hover:border-indigo-300"><div className="flex items-center justify-between gap-2"><span className="text-xs font-black text-indigo-700">▶ Watch at {Math.floor(Number(match.start) / 60)}:{String(Math.floor(Number(match.start) % 60)).padStart(2, '0')}</span><span className="text-[10px] font-bold text-slate-400">Open video</span></div><p className="mt-1 text-xs leading-relaxed text-slate-700">{match.matched_text}</p></a>)}
             <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3"><h3 className="text-xs font-black uppercase tracking-wide text-slate-600">Detailed transcript summary & suggestion</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{imdBriefing.clean_text || imdBriefing.ai_response}</p></div>
+            <div className="mt-3 flex flex-wrap gap-2">{imdBriefing.video?.url && <a href={imdBriefing.video.url} target="_blank" rel="noreferrer" className="rounded-xl bg-red-600 px-3 py-2 text-xs font-black text-white">▶ Official IMD video</a>}{imdBriefing.official_sources?.map((source: any) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-black text-indigo-700">↗ {source.name}</a>)}</div>
           </>}
         </section>
+        )}
         <section>
           <div className="mb-2 flex items-center justify-between"><h2 className="text-sm font-black text-slate-600">ROUTE OPTIONS COMPARISON ({routes.length})</h2><span className="text-xs font-bold text-blue-600">Select a route to view details</span></div>
           <div className="space-y-3">
