@@ -161,6 +161,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   const [showRouteAnalysis, setShowRouteAnalysis] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
   const [routeAlerts, setRouteAlerts] = useState<WeatherAlert[]>([]);
+  const [routeAlertsLoading, setRouteAlertsLoading] = useState(false);
+  const [routeAlertsError, setRouteAlertsError] = useState<string | null>(null);
 
 
   // 8. Map Layers & Point Weather Popup
@@ -751,6 +753,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
   useEffect(() => {
     if (!destinationCoords || !originCoords) {
       setRouteAlerts([]);
+      setRouteAlertsLoading(false);
+      setRouteAlertsError(null);
       return;
     }
     const routePoints: [number, number][] = activeRoute?.geoPoints?.length > 1
@@ -774,12 +778,15 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
     points.push(destinationCoords);
     const uniquePoints = points.filter((point, index, all) => index === 0 || point[0] !== all[index - 1][0] || point[1] !== all[index - 1][1]);
     let cancelled = false;
+    setRouteAlertsLoading(true);
+    setRouteAlertsError(null);
     // Fetch wider context so state-level warnings can be shown as informational;
     // the UI treats only alerts within 10 km as route-relevant.
     void Promise.allSettled(uniquePoints.map(([latitude, longitude]) => apiGetNearbyAlerts(latitude, longitude, 100, undefined, destinationName)))
       .then((results) => {
         if (cancelled) return;
         const seen = new Set<string>();
+        const failedRequests = results.filter((result) => result.status === 'rejected').length;
         const merged = results.flatMap((result) => result.status === 'fulfilled' ? result.value : [])
           .filter((alert) => {
             if (!alert.isActive || seen.has(alert.id)) return false;
@@ -788,6 +795,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
           })
           .sort((a, b) => ({ Extreme: 4, High: 3, Moderate: 2, Low: 1 }[b.severity] || 0) - ({ Extreme: 4, High: 3, Moderate: 2, Low: 1 }[a.severity] || 0));
         setRouteAlerts(merged);
+        setRouteAlertsError(failedRequests === results.length ? 'Official alert feeds unavailable' : null);
+        setRouteAlertsLoading(false);
       });
     return () => { cancelled = true; };
   }, [activeRoute, destinationCoords, destinationName, originCoords]);
@@ -1317,6 +1326,8 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               language={language}
               nearbyPlaces={nearbyPlaces}
               routeAlerts={routeAlerts}
+              routeAlertsLoading={routeAlertsLoading}
+              routeAlertsError={routeAlertsError}
               aiAnalysis={aiRouteAnalysis}
               aiLoading={isAiRouteAnalysisLoading}
               isLive={isLive}

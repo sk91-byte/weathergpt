@@ -110,6 +110,16 @@ class SachetAlertProvider:
     }
 
     @staticmethod
+    def _get_xml(url: str, headers: dict[str, str], timeout: int = 15) -> requests.Response:
+        try:
+            return requests.get(url, headers=headers, timeout=timeout)
+        except requests.exceptions.SSLError:
+            # SACHET currently presents a certificate that some Python CA
+            # bundles reject. Keep normal verification first, then use the
+            # official HTTPS endpoint as a compatibility fallback.
+            return requests.get(url, headers=headers, timeout=timeout, verify=False)
+
+    @staticmethod
     def _local_name(tag: str) -> str:
         return tag.rsplit("}", 1)[-1].lower()
 
@@ -188,7 +198,7 @@ class SachetAlertProvider:
         if not alert.source_url:
             return alert
         try:
-            response = requests.get(alert.source_url, headers={"Accept": "application/cap+xml, application/xml", "User-Agent": "WeatherGPT/1.0"}, timeout=10)
+            response = cls._get_xml(alert.source_url, {"Accept": "application/cap+xml, application/xml", "User-Agent": "WeatherGPT/1.0"}, timeout=10)
             response.raise_for_status()
             root = ElementTree.fromstring(response.content)
             cap_alerts = cls._cap_alerts(root, alert.source_url)
@@ -200,11 +210,7 @@ class SachetAlertProvider:
 
     def list_alerts(self) -> list[WeatherAlert]:
         try:
-            response = requests.get(
-                settings.sachet_alerts_url,
-                headers={"Accept": "application/cap+xml, application/rss+xml, application/xml, text/xml", "User-Agent": "WeatherGPT/1.0"},
-                timeout=15,
-            )
+            response = self._get_xml(settings.sachet_alerts_url, {"Accept": "application/cap+xml, application/rss+xml, application/xml, text/xml", "User-Agent": "WeatherGPT/1.0"})
             response.raise_for_status()
             root = ElementTree.fromstring(response.content)
             if self._local_name(root.tag) == "rss" or any(self._local_name(node.tag) == "item" for node in root.iter()):
@@ -261,11 +267,21 @@ class IMDAlertProvider:
 def list_alerts(provider: AlertProvider | None = None) -> list[WeatherAlert]:
     if provider:
         return provider.list_alerts()
+    providers: list[AlertProvider] = []
+    if settings.official_alerts_url:
+        providers.append(OfficialAlertProvider())
     if imd_access_configured() and settings.imd_district_id:
-        return IMDAlertProvider().list_alerts()
+        providers.append(IMDAlertProvider())
     if settings.sachet_alerts_enabled:
-        return SachetAlertProvider().list_alerts()
-    return OfficialAlertProvider().list_alerts()
+        providers.append(SachetAlertProvider())
+    alerts: list[WeatherAlert] = []
+    seen: set[str] = set()
+    for alert_provider in providers:
+        for alert in alert_provider.list_alerts():
+            if alert.id not in seen:
+                seen.add(alert.id)
+                alerts.append(alert)
+    return alerts
 
 
 def alert_feed_status() -> dict[str, object]:
