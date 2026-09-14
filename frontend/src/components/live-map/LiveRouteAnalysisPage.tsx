@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { LiveMapRoute, NearbySafePlace, DepartureTimeOption, WeatherData, WeatherAlert } from '../../types';
 import { ChevronLeft, Navigation, Sparkles, Clock, MapPin, MessageSquare } from '../Icons';
+import { apiGetWeatherBriefing } from '../../services/api';
 
 interface LiveRouteAnalysisPageProps {
   originName: string;
@@ -9,6 +10,7 @@ interface LiveRouteAnalysisPageProps {
   activeRouteId: string;
   departureOptions: DepartureTimeOption[];
   currentWeather: WeatherData;
+  language: string;
   nearbyPlaces: NearbySafePlace[];
   routeAlerts: WeatherAlert[];
   aiAnalysis: string;
@@ -32,12 +34,15 @@ const riskTone = (route: LiveMapRoute) => route.color === 'green'
     : { card: 'border-amber-300 bg-amber-50', badge: 'bg-amber-100 text-amber-800 border-amber-300', value: 'text-amber-700' };
 
 export const LiveRouteAnalysisPage: React.FC<LiveRouteAnalysisPageProps> = ({
-  originName, destinationName, routes, activeRouteId, departureOptions, currentWeather,
+  originName, destinationName, routes, activeRouteId, departureOptions, currentWeather, language,
   nearbyPlaces, routeAlerts, aiAnalysis, aiLoading, isLive, onSelectRoute, onBack, onStartNavigation,
   onAnalyzeAI, onOpenChat, onOpenWhyRoute, onOpenTimeline, onSmartWait, onNearbyCategory
 }) => {
   const [nearbyCategory, setNearbyCategory] = useState<'all' | 'cafe' | 'restaurant' | 'hotel' | 'petrol' | 'hospital'>('restaurant');
   const [selectedDepartureId, setSelectedDepartureId] = useState<string | null>(null);
+  const [imdBriefing, setImdBriefing] = useState<any>(null);
+  const [imdLoading, setImdLoading] = useState(false);
+  const [imdError, setImdError] = useState<string | null>(null);
   const activeRoute = routes.find((route) => route.id === activeRouteId) || routes[0];
   const waitOption = departureOptions.find((option) => option.isRecommended) || departureOptions[0];
   const visiblePlaces = useMemo(() => nearbyPlaces.filter((place) => nearbyCategory === 'all' || place.category === nearbyCategory), [nearbyCategory, nearbyPlaces]);
@@ -50,6 +55,23 @@ export const LiveRouteAnalysisPage: React.FC<LiveRouteAnalysisPageProps> = ({
   const alertLabel = primaryAlert
     ? `${primaryAlert.type === 'cyclone' ? 'Cyclone' : primaryAlert.type === 'flood' ? 'Flood' : primaryAlert.type === 'earthquake' ? 'Earthquake' : primaryAlert.type === 'heatwave' ? 'Heatwave' : primaryAlert.type === 'thunderstorm' ? 'Thunderstorm' : primaryAlert.type === 'strong-winds' ? 'Strong winds' : 'Disaster alert'}: ${primaryAlert.title}`
     : 'No disaster alert noticed';
+
+  useEffect(() => {
+    if (!activeRoute || !originName || !destinationName) return;
+    let cancelled = false;
+    setImdLoading(true);
+    setImdError(null);
+    setImdBriefing(null);
+    apiGetWeatherBriefing(`${originName} to ${destinationName}`, language === 'hinglish' ? 'en' : language, 'A cautious local travel guide')
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.detail) throw new Error(data.detail);
+        setImdBriefing(data);
+      })
+      .catch((error) => { if (!cancelled) setImdError(error instanceof Error ? error.message : 'IMD briefing unavailable'); })
+      .finally(() => { if (!cancelled) setImdLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeRoute?.id, originName, destinationName, language]);
 
   const selectNearby = (category: typeof nearbyCategory) => {
     setNearbyCategory(category);
@@ -73,6 +95,16 @@ export const LiveRouteAnalysisPage: React.FC<LiveRouteAnalysisPageProps> = ({
       </div>
 
       <main className="mx-auto max-w-md space-y-4 p-4">
+        <section className="rounded-3xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3"><div><h2 className="font-black text-indigo-950">📺 IMD VIDEO INTELLIGENCE</h2><p className="mt-1 text-xs text-slate-500">Transcript evidence for this route</p></div><span className="rounded-lg bg-indigo-100 px-2 py-1 text-[10px] font-black text-indigo-700">VIDEO SOURCE</span></div>
+          {imdLoading && <div className="mt-3 animate-pulse rounded-2xl bg-white p-4 text-sm font-semibold text-slate-500">Finding the latest IMD briefing and checking route locations…</div>}
+          {!imdLoading && imdError && <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">IMD transcript summary is unavailable right now. Live weather and disaster alerts are still shown above.</div>}
+          {!imdLoading && !imdError && imdBriefing && <>
+            <div className={`mt-3 rounded-2xl border p-3 ${imdBriefing.matches?.length ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'}`}><p className="text-sm font-black text-slate-900">{imdBriefing.matches?.length ? `⚠️ ${imdBriefing.matches.length} route-relevant mention${imdBriefing.matches.length === 1 ? '' : 's'} found` : '✅ No explicit high-alert mention found for this route'}</p><p className="mt-1 text-xs leading-relaxed text-slate-700">This is transcript evidence, not a replacement for current live weather alerts.</p></div>
+            {imdBriefing.matches?.slice(0, 3).map((match: any, index: number) => <a key={`${match.start}-${index}`} href={`${imdBriefing.video?.url || '#'}&t=${Math.floor(Number(match.start) || 0)}`} target="_blank" rel="noreferrer" className="mt-2 block rounded-xl border border-indigo-100 bg-white p-3 hover:border-indigo-300"><div className="flex items-center justify-between gap-2"><span className="text-xs font-black text-indigo-700">▶ Watch at {Math.floor(Number(match.start) / 60)}:{String(Math.floor(Number(match.start) % 60)).padStart(2, '0')}</span><span className="text-[10px] font-bold text-slate-400">Open video</span></div><p className="mt-1 text-xs leading-relaxed text-slate-700">{match.matched_text}</p></a>)}
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3"><h3 className="text-xs font-black uppercase tracking-wide text-slate-600">Detailed transcript summary & suggestion</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{imdBriefing.clean_text || imdBriefing.ai_response}</p></div>
+          </>}
+        </section>
         <section>
           <div className="mb-2 flex items-center justify-between"><h2 className="text-sm font-black text-slate-600">ROUTE OPTIONS COMPARISON ({routes.length})</h2><span className="text-xs font-bold text-blue-600">Select a route to view details</span></div>
           <div className="space-y-3">

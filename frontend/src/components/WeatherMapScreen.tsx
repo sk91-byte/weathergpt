@@ -1312,6 +1312,7 @@ export const WeatherMapScreen: React.FC<WeatherMapScreenProps> = ({
               activeRouteId={activeRouteId}
               departureOptions={departureOptions}
               currentWeather={currentWeather}
+              language={language}
               nearbyPlaces={nearbyPlaces}
               routeAlerts={routeAlerts}
               aiAnalysis={aiRouteAnalysis}
