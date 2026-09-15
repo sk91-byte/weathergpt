@@ -144,25 +144,7 @@ Development test alert → mark explicitly as demo
 
 This prevents a failed feed request from being misrepresented as a clean safety result.
 
-### 6. IMD video briefing pipeline
-
-The optional POST /get-weather-briefing endpoint can:
-
-1. discover an official IMD YouTube briefing when configured;
-2. retrieve caption segments with timestamps;
-3. match the requested location or route against the transcript;
-4. pass relevant segments to Gemini for a concise advisory;
-5. return matching timestamps, clean text, video metadata, and official links.
-
-Official sources:
-
-- [India Meteorological Department](https://mausam.imd.gov.in/)
-- [IMD official YouTube channel](https://www.youtube.com/@Indiametdept)
-- [NDMA SACHET](https://sachet.ndma.gov.in/)
-
-This pipeline is optional and reports unavailable data instead of presenting an invented briefing.
-
-### 7. Multilingual text and voice
+### 6. Multilingual text and voice
 
 The application includes a 23-language response catalogue. Text answers are sent with the selected language code. Voice uses two layers:
 
@@ -171,11 +153,11 @@ The application includes a 23-language response catalogue. Text answers are sent
 
 The voice selector marks Gemini-capable languages with ⭐ and device/browser fallback languages with ◯. A missing device voice is reported clearly so it is not mistaken for a working voice.
 
-### 8. Nearby places around the route
+### 7. Nearby places around the route
 
 Nearby search can return restaurants, cafes, stores, petrol pumps, hospitals, and sheltered waiting locations. Results are provider-backed and the UI keeps the source status visible. When Geoapify is not configured, the application explains that the live search is unavailable instead of showing fabricated places.
 
-### 9. Profiles and preferences
+### 8. Profiles and preferences
 
 The profile area stores user preferences such as:
 
@@ -329,7 +311,7 @@ Copy backend/.env.example to backend/.env. Keep all secrets on the backend.
 
 | Variable | Required | Purpose |
 |---|---:|---|
-| GEMINI_API_KEY | Optional | Gemini chat, briefing, transcription, and TTS |
+| GEMINI_API_KEY | Optional | Gemini chat, transcription, and TTS |
 | GEMINI_MODEL | Optional | Gemini text model selection |
 | GROQ_API_KEY | Optional | Groq LLM fallback/alternative |
 | GROQ_MODELS | Optional | Ordered Groq model fallback list |
@@ -337,9 +319,6 @@ Copy backend/.env.example to backend/.env. Keep all secrets on the backend.
 | IMD_API_KEY | Optional | IMD access where credentials are approved |
 | SACHET_ALERTS_ENABLED | Optional | Enable NDMA SACHET RSS/CAP ingestion |
 | SACHET_ALERTS_URL | Optional | SACHET feed URL |
-| YOUTUBE_API_KEY | Optional | IMD YouTube video discovery |
-| IMD_YOUTUBE_CHANNEL_ID | Optional | Explicit IMD channel ID |
-| IMD_YOUTUBE_HANDLE | No | Defaults to Indiametdept |
 | GEOAPIFY_API_KEY | Optional | Live nearby-place search |
 | ROUTING_PROVIDER | No | Defaults to osrm |
 | ROUTING_PROVIDER_URL | No | Routing service base URL |
@@ -388,14 +367,13 @@ GET  /alerts/{alert_id}
 POST /alerts/test                  development-only, explicitly demo
 ~~~
 
-### Voice and IMD briefing
+### Voice
 
 ~~~text
 GET  /voice/health
 POST /voice/transcribe
 POST /voice/synthesize
 POST /voice/chat
-POST /get-weather-briefing
 ~~~
 
 ### Profile, climate, maps, and reports
@@ -424,7 +402,6 @@ Full request and response notes are available in [API.md](API.md), and interacti
 | Official alerts | [NDMA SACHET](https://sachet.ndma.gov.in/) | RSS/CAP feed integration |
 | Indian meteorology | [IMD](https://mausam.imd.gov.in/) | Optional adapters; credentials/IP approval may be required |
 | AI explanation | Google Gemini / Groq | Optional API credentials |
-| IMD video | [Official IMD YouTube](https://www.youtube.com/@Indiametdept) | Optional discovery/transcript pipeline |
 | Nearby places | Geoapify | Optional API credential |
 
 The backend preserves provider status. A timeout, missing key, or blocked provider is shown as unavailable. It is not converted into a false “all clear” result. Test alerts are marked with is_demo: true and are filtered from normal user-facing official-alert lists.
@@ -488,7 +465,7 @@ npm run build:web
 Important failure cases to verify before a release:
 
 - provider timeout or rate limit;
-- missing Gemini, Groq, IMD, YouTube, or Geoapify key;
+- missing Gemini, Groq, IMD, or Geoapify key;
 - location permission denial;
 - invalid coordinates and route endpoints;
 - no official alert versus unavailable alert feed;
@@ -500,7 +477,7 @@ Important failure cases to verify before a release:
 ## 🔐 Security and privacy
 
 - API keys are read from backend environment variables.
-- Frontend builds must not contain Gemini, Groq, IMD, YouTube, or Geoapify secrets.
+- Frontend builds must not contain Gemini, Groq, IMD, or Geoapify secrets.
 - Voice audio is processed in memory by the voice endpoints and is not intentionally persisted.
 - Precise GPS data is used for the requested weather/route operation and should not be treated as a public identifier.
 - The current public deployment does not yet provide full authentication and account isolation.
@@ -515,7 +492,6 @@ Read [SECURITY.md](SECURITY.md) before reporting a vulnerability.
 - Gemini TTS does not guarantee native audio for every language in the catalogue; device/browser voice packs are used as fallback.
 - OSRM and Nominatim public endpoints are not intended for unrestricted high-volume traffic.
 - Citizen reports are user-generated and unverified; they are not official warnings.
-- The IMD transcript briefing endpoint depends on captions being available for the selected official video.
 - AI explanations should not replace official emergency advisories or professional agricultural advice.
 
 ## 🗺️ Roadmap

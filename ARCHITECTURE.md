@@ -14,7 +14,6 @@ FastAPI API layer
   ├── /route ─> OSRM/configured routing + sampled route weather/risk
   ├── /places ─> Nominatim/Geoapify provider adapters
   ├── /voice ─> Gemini STT/TTS + browser/device fallback
-  ├── /get-weather-briefing ─> official IMD video/transcript adapter
   └── /nwp ─> GFS/WRF adapters (unavailable until configured)
 ```
 

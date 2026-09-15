@@ -47,10 +47,6 @@ class Settings:
     groq_api_key: str | None = _clean_str(os.getenv("GROQ_API_KEY"))
     groq_models: tuple[str, ...] = tuple(item.strip() for item in os.getenv("GROQ_MODELS", "openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.6-27b,llama-3.1-8b-instant,llama-3.3-70b-versatile").split(",") if item.strip())
     groq_base_url: str = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
-    youtube_api_key: str | None = _clean_str(os.getenv("YOUTUBE_API_KEY"))
-    imd_youtube_channel_id: str | None = _clean_str(os.getenv("IMD_YOUTUBE_CHANNEL_ID"))
-    imd_youtube_playlist_id: str | None = _clean_str(os.getenv("IMD_YOUTUBE_PLAYLIST_ID"))
-    imd_youtube_handle: str = os.getenv("IMD_YOUTUBE_HANDLE", "Indiametdept")
     weatherapi_key: str | None = os.getenv("WEATHERAPI_KEY") or None
     routing_provider_url: str = os.getenv("ROUTING_PROVIDER_URL", "https://router.project-osrm.org")
     routing_provider: str = os.getenv("ROUTING_PROVIDER", "osrm")
