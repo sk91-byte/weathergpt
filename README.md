@@ -1,202 +1,552 @@
-# WeatherGPT
+# 🌦️ WeatherGPT
 
-WeatherGPT is a conversational weather and route-safety assistant for India. It combines live forecast data, route geometry, deterministic risk scoring, official disaster feeds, nearby-place search, multilingual chat, and voice interaction in one mobile-first interface.
+### Conversational Weather Intelligence, Route Safety & Official Disaster Awareness for India
 
-> WeatherGPT is decision support, not an emergency service. Always follow instructions from local authorities and emergency services.
+[![Live Web App](https://img.shields.io/badge/Live%20Web%20App-Open-2563eb?style=for-the-badge)](https://weathergpt.sakshamgautam10230.workers.dev/)
+[![API Docs](https://img.shields.io/badge/FastAPI-Docs-059669?style=for-the-badge&logo=fastapi)](https://weathergpt-bjhy.onrender.com/docs)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![React](https://img.shields.io/badge/React-Vite-61dafb?style=flat-square&logo=react&logoColor=111827)](https://react.dev/)
+[![License](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](LICENSE)
 
-## Live project
+WeatherGPT is a mobile-first weather intelligence platform that converts live meteorological data into understandable, location-specific decisions. Users can ask questions by text or voice, inspect weather on an interactive map, plan a route, view risk along the complete route, discover nearby places, and check official disaster-alert sources.
 
-- **Web app:** [weathergpt.sakshamgautam10230.workers.dev](https://weathergpt.sakshamgautam10230.workers.dev/)
-- **API:** [weathergpt-bjhy.onrender.com](https://weathergpt-bjhy.onrender.com)
-- **Interactive API docs:** [Swagger UI](https://weathergpt-bjhy.onrender.com/docs)
-- **Repository:** [github.com/sk91-byte/weathergpt](https://github.com/sk91-byte/weathergpt)
+> **Safety notice:** WeatherGPT is decision support, not an emergency service. In a dangerous situation, follow official government and emergency-service instructions first.
 
-## What it does
+## 📌 Table of contents
 
-- **Live weather:** Current conditions, hourly forecasts, seven-day forecasts, rain probability, wind, humidity, visibility, and air-quality data.
-- **AI weather chat:** Gemini/Groq can interpret questions and explain results, while the backend keeps provider data as the source of truth.
-- **Route intelligence:** Origin-to-destination routing through OSRM, route geometry, weather sampling along the route, risk scoring, route alternatives, and departure-time suggestions.
-- **Live map:** Route display, weather/risk overlays, saved places, reverse-trip support, and nearby places around the complete route.
-- **Disaster News:** Official alert feed integration through NDMA SACHET RSS/CAP and optional IMD API adapters, with source links and location-aware filtering.
-- **IMD briefing pipeline:** Optional official IMD YouTube discovery, transcript extraction, timestamp matching, and Gemini-generated location summaries through `POST /get-weather-briefing`.
-- **Multilingual interaction:** Text responses support the app’s Indian-language catalogue. Gemini TTS is used where supported; installed device/browser voices provide the fallback for other languages.
-- **Profiles and preferences:** Saved location, response language, role, travel preferences, saved routes, and alert context.
-- **Nearby places:** Provider-backed restaurants, cafes, shops, petrol pumps, hospitals, and shelters when `GEOAPIFY_API_KEY` is configured.
+- [Why WeatherGPT](#-why-weathergpt)
+- [What is implemented](#-what-is-implemented)
+- [Core features](#-core-features)
+- [Data credibility and source policy](#-data-credibility-and-source-policy)
+- [System architecture](#-system-architecture)
+- [Project structure](#-project-structure)
+- [Quick start](#-quick-start)
+- [Environment configuration](#-environment-configuration)
+- [API overview](#-api-overview)
+- [Production deployment](#-production-deployment)
+- [Testing](#-testing)
+- [Security and privacy](#-security-and-privacy)
+- [Known limitations](#-known-limitations)
+- [Roadmap](#-roadmap)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-## Architecture
+## 🎯 Why WeatherGPT
 
-```text
-React + Vite + Tailwind + Leaflet
-          │
-          │ HTTPS JSON
-          ▼
-FastAPI backend
-  ├── chat / decision intelligence ── Gemini or Groq (optional)
-  ├── weather ────────────────────── Open-Meteo, optional IMD/WeatherAPI
-  ├── routes ──────────────────────── OSRM or configured routing provider
-  ├── alerts ──────────────────────── NDMA SACHET RSS/CAP + optional IMD API
-  ├── locations ───────────────────── Nominatim geocoding
-  ├── nearby places ───────────────── Geoapify (optional)
-  ├── voice ───────────────────────── Gemini STT/TTS + browser fallback
-  └── persistence ─────────────────── JSON for development or PostgreSQL/PostGIS
-```
+Weather information is available through many separate services, but users still have to interpret technical forecasts, route conditions, local disaster warnings, regional-language information, and whether an AI answer is based on real data or a guess.
 
-The production web frontend is hosted on Cloudflare Workers. The FastAPI API is hosted on Render. The frontend defaults to the deployed Render API and can be pointed at another API with `VITE_BACKEND_BASE_URL`.
+WeatherGPT brings these pieces into one workflow:
 
-## Data sources and credibility
+~~~text
+User question or route
+          ↓
+Location and route context
+          ↓
+Live provider data
+          ↓
+Deterministic risk and alert checks
+          ↓
+AI explanation in the selected language
+          ↓
+Clear recommendation with source context
+~~~
 
-| Capability | Source | Authentication | Behaviour when unavailable |
-|---|---|---|---|
-| Weather and forecast | [Open-Meteo](https://open-meteo.com/) | Public API | Returns a provider error; no fake values are generated |
-| Route geometry | [OSRM](https://project-osrm.org/) | Public demo endpoint by default | Route is reported unavailable |
-| Official disaster alerts | [NDMA SACHET](https://sachet.ndma.gov.in/) RSS/CAP | Public feed by default | The UI says the official feed is unavailable or no alert was found |
-| IMD alerts/weather | [IMD](https://mausam.imd.gov.in/) adapters | IMD credentials/IP approval may be required | SACHET/Open-Meteo sources remain separate and labelled |
-| AI explanation | Gemini and optional Groq | API key | Deterministic/local fallback is used where implemented |
-| IMD video briefing | Official [IMD YouTube](https://www.youtube.com/@Indiametdept) channel | YouTube key is optional depending on discovery mode | Briefing is reported unavailable rather than presented as current |
-| Nearby places | Geoapify | `GEOAPIFY_API_KEY` | Search remains unavailable and is labelled |
+The central design rule is:
 
-The application marks provider-backed responses with source and live metadata. A test alert endpoint exists for development and is explicitly marked as demo data; it must not be treated as an official warning.
+> **AI explains retrieved data; it does not invent weather values, coordinates, or official warnings.**
 
-## Repository layout
+## ✅ What is implemented
 
-```text
-backend/                  FastAPI application, providers, services, tests
-frontend/                 React/Vite web application and Capacitor Android shell
-alembic/                  PostgreSQL/PostGIS migrations
-API.md                    Endpoint and data-contract notes
-ARCHITECTURE.md           System design summary
-render.yaml               Optional Render Blueprint for the API
-Dockerfile                Container image for the FastAPI service
-docker-compose.yml        Local API + PostGIS stack
-```
+This repository is a working full-stack application, not only a UI mockup.
 
-## Run locally
+| Area | Current implementation |
+|---|---|
+| Web interface | React, Vite, Tailwind CSS, Leaflet, PWA support |
+| Backend | FastAPI with modular API routers and provider services |
+| Live weather | Open-Meteo current, hourly, forecast, and historical data |
+| AI | Gemini integration with optional Groq fallback/configuration |
+| Routes | OSRM route geometry, alternatives, route weather sampling, risk scoring |
+| Official alerts | NDMA SACHET RSS/CAP integration plus optional IMD adapters |
+| Voice | Gemini audio services where supported, browser/device voice fallback |
+| Persistence | JSON development storage or PostgreSQL/PostGIS configuration |
+| Deployments | Cloudflare Workers frontend and Render backend |
+| Testing | Pytest backend suite and TypeScript production build checks |
 
-### Backend
+## 🚀 Core features
 
-Python 3.10+ is required.
+### 1. Live weather dashboard
 
-```powershell
+The home dashboard provides:
+
+- current temperature and feels-like temperature;
+- humidity, wind, visibility, pressure, UV, rain probability, and AQI;
+- hourly and seven-day forecast context;
+- readable weather conditions;
+- deterministic risk score and risk category;
+- explainable recommendations with supporting factors.
+
+Open-Meteo is used as the default live weather provider. The UI displays provider/source metadata and does not silently convert unavailable data into fake values.
+
+### 2. WeatherGPT conversational assistant
+
+Users can ask natural-language questions such as:
+
+~~~text
+Will it rain in Delhi today?
+Should I travel from Rohini to Sushant University now?
+What precautions should I take during a thunderstorm?
+क्या आज बारिश होगी?
+~~~
+
+The backend parses the request, resolves location context, retrieves weather data, applies deterministic logic, and then asks the configured AI provider to explain the result. If an AI provider is unavailable, the application reports that limitation or uses available loaded data rather than pretending the answer is live.
+
+### 3. Live route intelligence
+
+The Live Map supports:
+
+- current location and destination as separate fields;
+- origin/destination reversal for a return trip;
+- driving, walking, and cycling modes;
+- route geometry and route alternatives;
+- weather sampling at points along the complete route;
+- rain, wind, thunderstorm, fog, and waterlogging risk;
+- route safety score and route explanation;
+- best-departure-time comparisons;
+- route timeline and weather context;
+- nearby places within the configured corridor around route points.
+
+Transit requires a configured transit provider and is not represented as available when the provider is missing.
+
+### 4. Official Disaster News
+
+The Disaster News section is separate from ordinary rain-risk scoring. It is designed to show official alerts and their source links, including:
+
+- earthquake;
+- cyclone;
+- flood;
+- tsunami;
+- heavy rain and thunderstorm;
+- heatwave;
+- dense fog and strong winds.
+
+The backend normalizes official feeds and keeps source, source_url, issued_at, affected_area, and is_demo metadata. Location-aware filtering is applied when the source provides usable geographic information.
+
+### 5. NDMA SACHET and IMD source handling
+
+WeatherGPT can read the public NDMA SACHET RSS/CAP feed and can use optional IMD adapters when IMD credentials or approved access are available.
+
+~~~text
+Official provider configured + matching alert → show alert and source link
+Official provider configured + no matching alert → show no alert found
+Provider unavailable → show source unavailable, not “no disaster exists”
+Development test alert → mark explicitly as demo
+~~~
+
+This prevents a failed feed request from being misrepresented as a clean safety result.
+
+### 6. IMD video briefing pipeline
+
+The optional POST /get-weather-briefing endpoint can:
+
+1. discover an official IMD YouTube briefing when configured;
+2. retrieve caption segments with timestamps;
+3. match the requested location or route against the transcript;
+4. pass relevant segments to Gemini for a concise advisory;
+5. return matching timestamps, clean text, video metadata, and official links.
+
+Official sources:
+
+- [India Meteorological Department](https://mausam.imd.gov.in/)
+- [IMD official YouTube channel](https://www.youtube.com/@Indiametdept)
+- [NDMA SACHET](https://sachet.ndma.gov.in/)
+
+This pipeline is optional and reports unavailable data instead of presenting an invented briefing.
+
+### 7. Multilingual text and voice
+
+The application includes a 23-language response catalogue. Text answers are sent with the selected language code. Voice uses two layers:
+
+1. Gemini audio/TTS for language codes supported by the configured Gemini TTS model.
+2. Browser/device speech synthesis for languages whose voice pack is installed locally.
+
+The voice selector marks Gemini-capable languages with ⭐ and device/browser fallback languages with ◯. A missing device voice is reported clearly so it is not mistaken for a working voice.
+
+### 8. Nearby places around the route
+
+Nearby search can return restaurants, cafes, stores, petrol pumps, hospitals, and sheltered waiting locations. Results are provider-backed and the UI keeps the source status visible. When Geoapify is not configured, the application explains that the live search is unavailable instead of showing fabricated places.
+
+### 9. Profiles and preferences
+
+The profile area stores user preferences such as:
+
+- selected response language;
+- preferred role, including traveller, farmer, commuter, or general public;
+- saved location context;
+- saved places and routes;
+- notification and trip preferences.
+
+The default JSON store is suitable for local development. PostgreSQL/PostGIS should be used for a real multi-user deployment with authentication and data-retention controls.
+
+## 🏗️ System architecture
+
+~~~mermaid
+flowchart TB
+    User[User: web or Android shell]
+    UI[React + Vite + Tailwind + Leaflet]
+    API[FastAPI API]
+    Decision[Deterministic risk and decision engine]
+    AI[Gemini / Groq explanation layer]
+    Weather[Open-Meteo and optional IMD weather adapters]
+    Route[OSRM or configured routing provider]
+    Alerts[NDMA SACHET RSS/CAP and optional official alert adapters]
+    Places[Nominatim / Geoapify places]
+    Voice[Gemini voice + browser/device fallback]
+    Store[JSON or PostgreSQL/PostGIS]
+
+    User --> UI
+    UI <--> API
+    API --> Weather
+    API --> Route
+    API --> Alerts
+    API --> Places
+    API --> Voice
+    API --> Decision
+    Decision --> AI
+    API --> Store
+~~~
+
+| Layer | Responsibility |
+|---|---|
+| Provider services | Retrieve and normalize external data |
+| Decision engine | Calculate transparent risk and recommendation fields |
+| AI layer | Explain retrieved context, translate, and summarize |
+| UI | Show source, status, uncertainty, and practical actions |
+
+## 📂 Project structure
+
+~~~text
+WeatherGPT/
+├── README.md
+├── API.md
+├── ARCHITECTURE.md
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── LICENSE
+├── render.yaml
+├── wrangler.jsonc
+├── worker.js
+├── Dockerfile
+├── docker-compose.yml
+├── alembic/                    PostgreSQL/PostGIS migrations
+├── backend/
+│   ├── main.py                 FastAPI application entrypoint
+│   ├── config.py               Environment-based configuration
+│   ├── api/                    HTTP routers
+│   ├── services/               Provider adapters and decision logic
+│   ├── models/                 SQLAlchemy/Pydantic models
+│   ├── repositories/           Persistence access
+│   ├── database/               Database setup
+│   ├── tests/                  Backend tests
+│   ├── requirements.txt
+│   └── .env.example
+├── frontend/
+│   ├── src/                    React screens, services, map, and utilities
+│   ├── public/                 PWA icons and static assets
+│   ├── android/                Capacitor Android project
+│   ├── package.json
+│   └── .env.example
+└── mobile/                     Flutter client scaffold and native project
+~~~
+
+## ⚡ Quick start
+
+### Prerequisites
+
+- Python 3.10 or newer;
+- Node.js 18 or newer;
+- Git;
+- optional Docker Desktop for PostgreSQL/PostGIS;
+- optional Flutter SDK for the mobile client.
+
+### 1. Clone the repository
+
+~~~powershell
+git clone https://github.com/sk91-byte/weathergpt.git
+cd weathergpt
+~~~
+
+### 2. Start the FastAPI backend
+
+~~~powershell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install -r backend\requirements.txt
 Copy-Item backend\.env.example backend\.env
 python -m uvicorn backend.main:app --reload
-```
+~~~
 
-The API is available at `http://127.0.0.1:8000` and Swagger at `http://127.0.0.1:8000/docs`.
+Backend URLs:
 
-### Frontend
+- API: http://127.0.0.1:8000
+- Swagger: http://127.0.0.1:8000/docs
+- ReDoc: http://127.0.0.1:8000/redoc
+- Health: http://127.0.0.1:8000/health
 
-Node.js 18+ is recommended.
+### 3. Start the React frontend
 
-```powershell
+Open another terminal:
+
+~~~powershell
 cd frontend
 npm install
-npm run dev
-```
+~~~
 
-Create `frontend/.env.local` when using a local API:
+Create frontend/.env.local for the local API:
 
-```text
+~~~text
 VITE_BACKEND_BASE_URL=http://127.0.0.1:8000
-```
+~~~
 
-### Tests and production build
+Run the development server:
 
-```powershell
-python -m pytest backend\tests
-cd frontend
-npm run lint
-npm run build:web
-```
+~~~powershell
+npm run dev
+~~~
 
-## Configuration
+### 4. Run the full local stack with Docker
 
-Copy `backend/.env.example` to `backend/.env` locally. The most important production variables are:
+After creating backend/.env:
 
-```text
-GEMINI_API_KEY=                 # optional AI, STT and Gemini TTS
-GEMINI_MODEL=gemini-3.5-flash
-GROQ_API_KEY=                   # optional alternative/fallback LLM
-IMD_ENABLED=true
-IMD_API_KEY=                    # only when IMD access is approved
-SACHET_ALERTS_ENABLED=true
-SACHET_ALERTS_URL=https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml
-GEOAPIFY_API_KEY=               # optional nearby-place search
-DATABASE_URL=                   # optional PostgreSQL/PostGIS
-STORAGE_MODE=json               # json for local development, postgres in production
-CORS_ALLOWED_ORIGINS=https://weathergpt.sakshamgautam10230.workers.dev
-```
+~~~powershell
+docker compose up --build
+~~~
 
-Never commit `.env`, API keys, database passwords, raw audio, or user location history. Configure secrets in Render/Cloudflare rather than placing them in frontend source code.
+This starts the API and PostgreSQL/PostGIS services. Use docker compose down to stop them. The database volume is retained unless deliberately removed.
 
-## Useful API endpoints
+## 🔧 Environment configuration
 
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | Service and provider health |
-| `GET /weather/current` | Current weather at coordinates |
-| `GET /weather/forecast` | Forecast at coordinates |
-| `POST /chat` | Conversational weather answer |
-| `POST /route` | Resolve and calculate a route |
-| `POST /route/weather` | Weather and risk along a route |
-| `POST /route/best-time` | Departure-time comparison |
-| `GET /alerts` | Official alert feed items |
-| `GET /alerts/nearby` | Alerts near coordinates |
-| `GET /alerts/status` | Configured official providers |
-| `GET /voice/health` | Voice provider and language status |
-| `POST /voice/synthesize` | Generate speech audio |
-| `POST /get-weather-briefing` | IMD video/transcript briefing |
-| `GET /profile` / `PUT /profile` | User preferences |
+Copy backend/.env.example to backend/.env. Keep all secrets on the backend.
 
-See [API.md](API.md) for request and response details.
+| Variable | Required | Purpose |
+|---|---:|---|
+| GEMINI_API_KEY | Optional | Gemini chat, briefing, transcription, and TTS |
+| GEMINI_MODEL | Optional | Gemini text model selection |
+| GROQ_API_KEY | Optional | Groq LLM fallback/alternative |
+| GROQ_MODELS | Optional | Ordered Groq model fallback list |
+| IMD_ENABLED | Optional | Enable IMD adapter attempts |
+| IMD_API_KEY | Optional | IMD access where credentials are approved |
+| SACHET_ALERTS_ENABLED | Optional | Enable NDMA SACHET RSS/CAP ingestion |
+| SACHET_ALERTS_URL | Optional | SACHET feed URL |
+| YOUTUBE_API_KEY | Optional | IMD YouTube video discovery |
+| IMD_YOUTUBE_CHANNEL_ID | Optional | Explicit IMD channel ID |
+| IMD_YOUTUBE_HANDLE | No | Defaults to Indiametdept |
+| GEOAPIFY_API_KEY | Optional | Live nearby-place search |
+| ROUTING_PROVIDER | No | Defaults to osrm |
+| ROUTING_PROVIDER_URL | No | Routing service base URL |
+| DATABASE_URL | Optional | PostgreSQL/PostGIS connection |
+| STORAGE_MODE | No | json locally or postgres for database storage |
+| CORS_ALLOWED_ORIGINS | Recommended | Allowed frontend origins |
 
-## Deployment
+Example frontend configuration:
 
-### Render API
+~~~text
+VITE_BACKEND_BASE_URL=https://weathergpt-bjhy.onrender.com
+~~~
 
-The repository includes `render.yaml` for a Render Blueprint. The manual settings are:
+Never commit .env files, API keys, database passwords, raw audio, or private user data.
 
-```text
+## 📡 API overview
+
+### Weather and chat
+
+~~~text
+GET  /health
+GET  /weather/current
+GET  /weather/forecast
+POST /chat
+GET  /location/reverse
+GET  /languages
+~~~
+
+### Route intelligence
+
+~~~text
+POST /route
+POST /route/resolve
+POST /route/weather
+POST /route/best-time
+GET  /route/{route_id}/explanation
+~~~
+
+### Alerts and Disaster News
+
+~~~text
+GET  /alerts
+GET  /alerts/nearby
+GET  /alerts/status
+GET  /alerts/{alert_id}
+POST /alerts/test                  development-only, explicitly demo
+~~~
+
+### Voice and IMD briefing
+
+~~~text
+GET  /voice/health
+POST /voice/transcribe
+POST /voice/synthesize
+POST /voice/chat
+POST /get-weather-briefing
+~~~
+
+### Profile, climate, maps, and reports
+
+~~~text
+GET   /profile
+PUT   /profile
+PATCH /profile
+GET   /climate/summary
+GET   /climate/temperature-trend
+GET   /climate/rainfall-trend
+GET   /map/weather
+POST  /reports
+GET   /reports/nearby
+~~~
+
+Full request and response notes are available in [API.md](API.md), and interactive OpenAPI documentation is available at /docs when the API is running.
+
+## 🌐 Data sources and credibility policy
+
+| Capability | Source | Status and notes |
+|---|---|---|
+| Forecast weather | [Open-Meteo](https://open-meteo.com/) | Public provider used by default |
+| Routing | [OSRM](https://project-osrm.org/) | Public endpoint by default; replace/rate-limit for scale |
+| Geocoding | [Nominatim](https://nominatim.org/) | Public provider with rate limits |
+| Official alerts | [NDMA SACHET](https://sachet.ndma.gov.in/) | RSS/CAP feed integration |
+| Indian meteorology | [IMD](https://mausam.imd.gov.in/) | Optional adapters; credentials/IP approval may be required |
+| AI explanation | Google Gemini / Groq | Optional API credentials |
+| IMD video | [Official IMD YouTube](https://www.youtube.com/@Indiametdept) | Optional discovery/transcript pipeline |
+| Nearby places | Geoapify | Optional API credential |
+
+The backend preserves provider status. A timeout, missing key, or blocked provider is shown as unavailable. It is not converted into a false “all clear” result. Test alerts are marked with is_demo: true and are filtered from normal user-facing official-alert lists.
+
+## 🚢 Production deployment
+
+### Render backend
+
+The repository includes [render.yaml](render.yaml). Manual Render settings are:
+
+~~~text
 Build command: pip install -r backend/requirements.txt
 Start command: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
 Health check: /health
-```
+~~~
 
-Pushes to the connected branch redeploy the service when Render auto-deploy is enabled.
+Set production secrets in Render Environment Variables. Do not put them in the frontend.
 
 ### Cloudflare frontend
 
-From the repository root after configuring Wrangler authentication:
-
-```powershell
+~~~powershell
 cd frontend
 npm run build:web
 cd ..
 npx wrangler deploy --config wrangler.jsonc
-```
+~~~
 
-For a normal release, run tests and build first, then commit and push:
+### Release workflow
 
-```powershell
-git add .
-git commit -m "Describe the change"
+~~~powershell
+python -m pytest backend\tests
+cd frontend
+npm run lint
+npm run build:web
+cd ..
+
+git add README.md API.md ARCHITECTURE.md backend\README.md frontend\README.md .gitignore CONTRIBUTING.md LICENSE SECURITY.md render.yaml worker.js wrangler.jsonc
+git commit -m "Describe the release"
 git push origin main
-```
+npx wrangler deploy --config wrangler.jsonc
+~~~
 
-## Known limitations
+Render redeploys automatically after the push when the repository is connected with auto-deploy enabled. Cloudflare deployment remains an explicit Wrangler step.
 
-- IMD API access is not automatically granted; it may require credentials and IP allowlisting.
-- NDMA SACHET alerts are authoritative feed items, but geographic precision depends on the source alert’s affected-area metadata.
-- Gemini does not guarantee native TTS for every language in the app catalogue; the UI uses installed browser/device voices as fallback.
-- The default OSRM and Nominatim endpoints are public services and should be replaced or rate-limited for high-volume production traffic.
-- User authentication, account isolation, and a production multi-user data-retention policy still need to be added before handling sensitive user data at scale.
+## 🧪 Testing and quality checks
 
-## Contributing
+Backend tests:
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Security reports should follow [SECURITY.md](SECURITY.md).
+~~~powershell
+python -m pytest backend\tests
+~~~
 
-## License
+Frontend type checking and production build:
 
-This project is released under the [MIT License](LICENSE).
+~~~powershell
+cd frontend
+npm run lint
+npm run build:web
+~~~
+
+Important failure cases to verify before a release:
+
+- provider timeout or rate limit;
+- missing Gemini, Groq, IMD, YouTube, or Geoapify key;
+- location permission denial;
+- invalid coordinates and route endpoints;
+- no official alert versus unavailable alert feed;
+- no installed browser voice for the selected language;
+- mobile-width layout and long translated text;
+- route with no transit provider;
+- nearby search results outside the configured corridor.
+
+## 🔐 Security and privacy
+
+- API keys are read from backend environment variables.
+- Frontend builds must not contain Gemini, Groq, IMD, YouTube, or Geoapify secrets.
+- Voice audio is processed in memory by the voice endpoints and is not intentionally persisted.
+- Precise GPS data is used for the requested weather/route operation and should not be treated as a public identifier.
+- The current public deployment does not yet provide full authentication and account isolation.
+- Do not use the default JSON store for a sensitive multi-user production deployment.
+
+Read [SECURITY.md](SECURITY.md) before reporting a vulnerability.
+
+## ⚠️ Known limitations
+
+- IMD API access can require registration, credentials, or IP allowlisting.
+- SACHET geographic precision depends on the affected-area metadata supplied by each official alert.
+- Gemini TTS does not guarantee native audio for every language in the catalogue; device/browser voice packs are used as fallback.
+- OSRM and Nominatim public endpoints are not intended for unrestricted high-volume traffic.
+- Citizen reports are user-generated and unverified; they are not official warnings.
+- The IMD transcript briefing endpoint depends on captions being available for the selected official video.
+- AI explanations should not replace official emergency advisories or professional agricultural advice.
+
+## 🗺️ Roadmap
+
+- Add authenticated multi-user accounts and stronger data isolation.
+- Add a managed production cache and background alert refresh jobs.
+- Expand official IMD adapter coverage after access requirements are fulfilled.
+- Add richer alert geography and state/district boundary matching.
+- Improve route segmentation for long-distance journeys and corridor-based nearby search.
+- Add native voice-provider coverage for languages without an installed browser voice.
+- Add notification preferences and opt-in push alerts.
+- Add deployment health dashboards and provider freshness monitoring.
+
+## 🤝 Contributing
+
+Contributions are welcome. Before opening a pull request:
+
+1. Create a focused branch.
+2. Run backend tests and frontend lint/build checks.
+3. Update documentation for new providers, environment variables, or endpoints.
+4. Include screenshots for UI changes.
+5. Preserve source metadata and never fabricate provider data.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the project workflow.
+
+## 📄 License
+
+Distributed under the [MIT License](LICENSE).
+
+## 🌍 Project vision
+
+> **Make weather intelligence understandable, accessible, source-aware, and actionable for everyone.**
+
+WeatherGPT — ask the weather, understand the risk, and make better decisions.
