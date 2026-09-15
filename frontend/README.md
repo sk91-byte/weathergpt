@@ -4,12 +4,11 @@
 
 # WeatherGPT web frontend
 
-This is the polished React interface supplied by the team. It keeps the existing
-FastAPI backend and uses `VITE_BACKEND_BASE_URL` for live weather, GPS, and chat.
+This is the React/Vite/Tailwind web client for WeatherGPT. It connects to the
+FastAPI backend for live weather, route intelligence, official alerts, nearby
+places, profile preferences, chat, and voice.
 
 This contains everything you need to run your app locally.
-
-View your app in AI Studio: https://ai.studio/apps/69783ca9-7334-4083-a193-43423d815a57
 
 ## Run locally
 
@@ -19,12 +18,12 @@ View your app in AI Studio: https://ai.studio/apps/69783ca9-7334-4083-a193-43423
 1. Install dependencies: `npm install`
 2. Run the frontend: `npm run dev`
 
-For a static Cloudflare upload:
+For a static Cloudflare Workers upload:
 
 ```text
 npm run build:web
 ```
 
 Upload the contents of `dist/` (or a ZIP whose root contains `index.html`) to
-Cloudflare Pages. The live API defaults to:
+Cloudflare Workers. The live API defaults to:
 `https://weathergpt-bjhy.onrender.com`.

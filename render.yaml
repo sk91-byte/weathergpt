@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: weathergpt-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: IMD_API_KEY
+        sync: false
+      - key: GEOAPIFY_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: STORAGE_MODE
+        value: json
+      - key: SACHET_ALERTS_ENABLED
+        value: "true"
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://weathergpt.sakshamgautam10230.workers.dev

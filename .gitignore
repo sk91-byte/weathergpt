@@ -19,4 +19,25 @@ backend/data/*.json
 mobile/.dart_tool/
 mobile/build/
 mobile/.packages
+mobile/node_modules/
+mobile/.flutter-plugins-dependencies
+
+# Local deployment caches and generated bundles
+.wrangler/
+.wrangler-config/
+wrangler-deploy-temp.jsonc
+*.zip
+weathergpt-*-build/
+work/
+remix-import/
+
+# Local diagnostics and one-off migration/patch scripts
+gcm-diagnose.log
+fix_app.py
+patch_api.js
+restore_api.js
+temp.py
+update_*.py
+update_*.js
+write_risk.js
 

@@ -1,26 +1,80 @@
 # WeatherGPT
 
-WeatherGPT is a FastAPI backend foundation for an AI-powered conversational weather application. Task 2 connects it to real weather data from the public [Open-Meteo API](https://open-meteo.com/en/docs). AI/LLM features are intentionally not included yet.
+WeatherGPT is a conversational weather and route-safety assistant for India. It combines live forecast data, route geometry, deterministic risk scoring, official disaster feeds, nearby-place search, multilingual chat, and voice interaction in one mobile-first interface.
 
-## Project structure
+> WeatherGPT is decision support, not an emergency service. Always follow instructions from local authorities and emergency services.
+
+## Live project
+
+- **Web app:** [weathergpt.sakshamgautam10230.workers.dev](https://weathergpt.sakshamgautam10230.workers.dev/)
+- **API:** [weathergpt-bjhy.onrender.com](https://weathergpt-bjhy.onrender.com)
+- **Interactive API docs:** [Swagger UI](https://weathergpt-bjhy.onrender.com/docs)
+- **Repository:** [github.com/sk91-byte/weathergpt](https://github.com/sk91-byte/weathergpt)
+
+## What it does
+
+- **Live weather:** Current conditions, hourly forecasts, seven-day forecasts, rain probability, wind, humidity, visibility, and air-quality data.
+- **AI weather chat:** Gemini/Groq can interpret questions and explain results, while the backend keeps provider data as the source of truth.
+- **Route intelligence:** Origin-to-destination routing through OSRM, route geometry, weather sampling along the route, risk scoring, route alternatives, and departure-time suggestions.
+- **Live map:** Route display, weather/risk overlays, saved places, reverse-trip support, and nearby places around the complete route.
+- **Disaster News:** Official alert feed integration through NDMA SACHET RSS/CAP and optional IMD API adapters, with source links and location-aware filtering.
+- **IMD briefing pipeline:** Optional official IMD YouTube discovery, transcript extraction, timestamp matching, and Gemini-generated location summaries through `POST /get-weather-briefing`.
+- **Multilingual interaction:** Text responses support the app’s Indian-language catalogue. Gemini TTS is used where supported; installed device/browser voices provide the fallback for other languages.
+- **Profiles and preferences:** Saved location, response language, role, travel preferences, saved routes, and alert context.
+- **Nearby places:** Provider-backed restaurants, cafes, shops, petrol pumps, hospitals, and shelters when `GEOAPIFY_API_KEY` is configured.
+
+## Architecture
 
 ```text
-WeatherGPT/
-├── backend/
-│   ├── main.py
-│   ├── config.py
-│   ├── requirements.txt
-│   ├── .env.example
-│   ├── api/health.py
-│   ├── api/weather.py
-│   └── services/weather_service.py
-├── .gitignore
-└── README.md
+React + Vite + Tailwind + Leaflet
+          │
+          │ HTTPS JSON
+          ▼
+FastAPI backend
+  ├── chat / decision intelligence ── Gemini or Groq (optional)
+  ├── weather ────────────────────── Open-Meteo, optional IMD/WeatherAPI
+  ├── routes ──────────────────────── OSRM or configured routing provider
+  ├── alerts ──────────────────────── NDMA SACHET RSS/CAP + optional IMD API
+  ├── locations ───────────────────── Nominatim geocoding
+  ├── nearby places ───────────────── Geoapify (optional)
+  ├── voice ───────────────────────── Gemini STT/TTS + browser fallback
+  └── persistence ─────────────────── JSON for development or PostgreSQL/PostGIS
 ```
 
-## Windows setup
+The production web frontend is hosted on Cloudflare Workers. The FastAPI API is hosted on Render. The frontend defaults to the deployed Render API and can be pointed at another API with `VITE_BACKEND_BASE_URL`.
 
-From the project root:
+## Data sources and credibility
+
+| Capability | Source | Authentication | Behaviour when unavailable |
+|---|---|---|---|
+| Weather and forecast | [Open-Meteo](https://open-meteo.com/) | Public API | Returns a provider error; no fake values are generated |
+| Route geometry | [OSRM](https://project-osrm.org/) | Public demo endpoint by default | Route is reported unavailable |
+| Official disaster alerts | [NDMA SACHET](https://sachet.ndma.gov.in/) RSS/CAP | Public feed by default | The UI says the official feed is unavailable or no alert was found |
+| IMD alerts/weather | [IMD](https://mausam.imd.gov.in/) adapters | IMD credentials/IP approval may be required | SACHET/Open-Meteo sources remain separate and labelled |
+| AI explanation | Gemini and optional Groq | API key | Deterministic/local fallback is used where implemented |
+| IMD video briefing | Official [IMD YouTube](https://www.youtube.com/@Indiametdept) channel | YouTube key is optional depending on discovery mode | Briefing is reported unavailable rather than presented as current |
+| Nearby places | Geoapify | `GEOAPIFY_API_KEY` | Search remains unavailable and is labelled |
+
+The application marks provider-backed responses with source and live metadata. A test alert endpoint exists for development and is explicitly marked as demo data; it must not be treated as an official warning.
+
+## Repository layout
+
+```text
+backend/                  FastAPI application, providers, services, tests
+frontend/                 React/Vite web application and Capacitor Android shell
+alembic/                  PostgreSQL/PostGIS migrations
+API.md                    Endpoint and data-contract notes
+ARCHITECTURE.md           System design summary
+render.yaml               Optional Render Blueprint for the API
+Dockerfile                Container image for the FastAPI service
+docker-compose.yml        Local API + PostGIS stack
+```
+
+## Run locally
+
+### Backend
+
+Python 3.10+ is required.
 
 ```powershell
 python -m venv venv
@@ -30,185 +84,119 @@ Copy-Item backend\.env.example backend\.env
 python -m uvicorn backend.main:app --reload
 ```
 
-Open Swagger at `http://127.0.0.1:8000/docs`.
+The API is available at `http://127.0.0.1:8000` and Swagger at `http://127.0.0.1:8000/docs`.
 
-## Weather endpoints
+### Frontend
 
-Latitude and longitude are geographic coordinates. Latitude ranges from -90 to 90; longitude ranges from -180 to 180. The values below identify Delhi and Mumbai:
+Node.js 18+ is recommended.
 
-Delhi:
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Create `frontend/.env.local` when using a local API:
 
 ```text
-http://127.0.0.1:8000/weather/current?latitude=28.6139&longitude=77.2090
-http://127.0.0.1:8000/weather/forecast?latitude=28.6139&longitude=77.2090&days=7
+VITE_BACKEND_BASE_URL=http://127.0.0.1:8000
 ```
 
-Mumbai:
-
-```text
-http://127.0.0.1:8000/weather/current?latitude=19.0760&longitude=72.8777
-http://127.0.0.1:8000/weather/forecast?latitude=19.0760&longitude=72.8777&days=7
-```
-
-Responses contain actual values retrieved from Open-Meteo, not demo weather values. The current response includes temperature, apparent temperature, humidity, precipitation, rain, wind, weather code, and a readable condition. The forecast response includes daily values plus hourly temperature and precipitation probability.
-
-Invalid coordinates return HTTP 400. Forecast values for `days` outside 1–16 return HTTP 400. Provider or network failures return HTTP 503.
-
-## Chat endpoint
-
-Task 3 adds a rule-based natural-language endpoint. It understands basic current-weather and forecast questions for the supported Indian cities. It does not use an AI/LLM yet.
-
-Workflow:
-
-```text
-User message -> Query parser -> Location service -> Weather service -> Response
-```
-
-Send a `POST` request to `/chat` with JSON such as:
-
-```json
-{"message": "What is the weather in Delhi?"}
-```
-
-PowerShell example:
+### Tests and production build
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/chat -ContentType "application/json" -Body '{"message":"What is the weather in Delhi?"}'
-```
-
-Other examples:
-
-```json
-{"message": "Will it rain in Mumbai?"}
-{"message": "What is the forecast for Bangalore?"}
-{"message": "Tell me a joke"}
-```
-
-The city directory is intentionally limited to Indian cities until a geocoding service is added. Unsupported cities receive a helpful response rather than fake coordinates. Swagger at `/docs` can also be used to try `POST /chat`.
-
-## AI integration (Task 4)
-
-WeatherGPT now uses Google's official Gemini Python SDK for two stages: the LLM first produces a structured interpretation of the question, then it writes the final answer after the application retrieves real weather data. The LLM is not the source of truth for weather values.
-
-Configure the key locally:
-
-```powershell
-Copy-Item backend\.env.example backend\.env
-notepad backend\.env
-```
-
-Set `GEMINI_API_KEY` in `backend/.env` and optionally change `GEMINI_MODEL`. Never commit or share this file; `.env` is ignored by Git. Restart Uvicorn after changing it:
-
-```powershell
-python -m pip install -r backend\requirements.txt
-python -m uvicorn backend.main:app --reload
-```
-
-If the key is missing, `/` and `/health` continue to work, while `/chat` returns a clean service-unavailable response. The rule-based parser remains available for comparison, but `/chat` now uses the LLM as its primary interpreter.
-
-## Location and GPS support (Task 5)
-
-`POST /chat` accepts optional `latitude` and `longitude` values supplied by a future phone or frontend. Named cities continue to use the built-in city directory. Phrases such as “near me”, “here”, and “where I am” use device coordinates; without coordinates, the API asks the user to allow location access rather than guessing.
-
-Example GPS request:
-
-```json
-{"message": "What is the weather near me?", "latitude": 28.6139, "longitude": 77.2090}
-```
-
-PowerShell:
-
-```powershell
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/chat" -ContentType "application/json" -Body '{"message":"What is the weather near me?","latitude":28.6139,"longitude":77.2090}'
-```
-
-GPS forecast requests work the same way:
-
-```json
-{"message": "Will it rain here tomorrow?", "latitude": 28.6139, "longitude": 77.2090}
-```
-
-For testing reverse geocoding, open:
-
-```text
-http://127.0.0.1:8000/location/reverse?latitude=28.6139&longitude=77.2090
-```
-
-Reverse geocoding uses the public OpenStreetMap Nominatim service and has a timeout. If it fails, weather lookup still proceeds with the label “Current location”. Precise coordinates are used for the request only and are not permanently stored. See the [Nominatim reverse-geocoding documentation](https://nominatim.org/release-docs/develop/api/Reverse/) for the provider format and usage considerations.
-
-## Remaining platform modules
-
-Tasks 6–13 add modular platform foundations without pretending unavailable integrations are live. Alerts remain explicit mock data, climate uses Open-Meteo Archive data, map weather returns GeoJSON, GFS/WRF report unavailable until configured, and `mobile/` contains a Flutter GPS/chat scaffold. Voice now uses the existing Gemini key for audio understanding and Gemini TTS where configured; English and Hindi are the only verified voice languages.
-
-Install and run tests:
-
-```powershell
-python -m pip install -r backend\requirements.txt
 python -m pytest backend\tests
+cd frontend
+npm run lint
+npm run build:web
 ```
 
-Run with Docker after creating `backend/.env`:
+## Configuration
 
-```powershell
-docker compose up --build
-```
-
-See [ARCHITECTURE.md](ARCHITECTURE.md), [API.md](API.md), and [DEMO.md](DEMO.md) for the complete platform documentation.
-
-## Optional PostgreSQL + PostGIS persistence (Task 15)
-
-### One-click Windows start
-
-For normal development without Docker or PostgreSQL, double-click `Start-WeatherGPT.cmd` in the project folder. It starts the backend and Flutter web frontend in separate windows and opens the homepage. Keep those two windows open while using the app. This uses the local JSON store; no database setup is required.
-
-For a cleaner app-like launch, double-click `Open-WeatherGPT.vbs`. It starts both services hidden and opens the browser without showing terminal windows. Use `Start-WeatherGPT.cmd` instead when troubleshooting because it shows service logs.
-
-The default storage is now a local JSON file at `backend/data/weathergpt.json` (created after the first chat). It stores local development conversations, messages, language preferences, explicitly used locations, saved routes, alert metadata, and data-source metadata. It is git-ignored. Profile preferences can be read or updated through `GET /profile` and `PUT /profile`. Do not use this file as a production multi-user database; add authentication before deployment.
-
-The default `STORAGE_MODE=json` keeps the zero-database development experience while saving local data in `backend/data/weathergpt.json`. PostgreSQL is used only when `DATABASE_URL` is configured and `STORAGE_MODE=postgres`. It stores users, conversations, messages, preferences, geographic references, alert metadata, and data-source metadata; live weather remains sourced from Open-Meteo.
-
-### Windows with Docker Desktop
-
-From the project root:
-
-```powershell
-docker compose up --build
-```
-
-The compose file starts PostGIS, persists it in the `weathergpt_postgres_data` volume, runs `alembic upgrade head`, and starts FastAPI. Stop it with `docker compose down`; the volume is retained. To remove the database deliberately, use `docker compose down -v`.
-
-### Windows with a local PostgreSQL installation
-
-Create a database named `weathergpt`, enable the PostGIS extension, then set these values in `backend/.env`:
+Copy `backend/.env.example` to `backend/.env` locally. The most important production variables are:
 
 ```text
-DATABASE_URL=postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5432/weathergpt
-STORAGE_MODE=postgres
+GEMINI_API_KEY=                 # optional AI, STT and Gemini TTS
+GEMINI_MODEL=gemini-3.5-flash
+GROQ_API_KEY=                   # optional alternative/fallback LLM
+IMD_ENABLED=true
+IMD_API_KEY=                    # only when IMD access is approved
+SACHET_ALERTS_ENABLED=true
+SACHET_ALERTS_URL=https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml
+GEOAPIFY_API_KEY=               # optional nearby-place search
+DATABASE_URL=                   # optional PostgreSQL/PostGIS
+STORAGE_MODE=json               # json for local development, postgres in production
+CORS_ALLOWED_ORIGINS=https://weathergpt.sakshamgautam10230.workers.dev
 ```
 
-After installing the requirements, run the migration and API separately:
+Never commit `.env`, API keys, database passwords, raw audio, or user location history. Configure secrets in Render/Cloudflare rather than placing them in frontend source code.
+
+## Useful API endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | Service and provider health |
+| `GET /weather/current` | Current weather at coordinates |
+| `GET /weather/forecast` | Forecast at coordinates |
+| `POST /chat` | Conversational weather answer |
+| `POST /route` | Resolve and calculate a route |
+| `POST /route/weather` | Weather and risk along a route |
+| `POST /route/best-time` | Departure-time comparison |
+| `GET /alerts` | Official alert feed items |
+| `GET /alerts/nearby` | Alerts near coordinates |
+| `GET /alerts/status` | Configured official providers |
+| `GET /voice/health` | Voice provider and language status |
+| `POST /voice/synthesize` | Generate speech audio |
+| `POST /get-weather-briefing` | IMD video/transcript briefing |
+| `GET /profile` / `PUT /profile` | User preferences |
+
+See [API.md](API.md) for request and response details.
+
+## Deployment
+
+### Render API
+
+The repository includes `render.yaml` for a Render Blueprint. The manual settings are:
+
+```text
+Build command: pip install -r backend/requirements.txt
+Start command: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+Health check: /health
+```
+
+Pushes to the connected branch redeploy the service when Render auto-deploy is enabled.
+
+### Cloudflare frontend
+
+From the repository root after configuring Wrangler authentication:
 
 ```powershell
-python -m pip install -r backend\requirements.txt
-alembic upgrade head
-python -m uvicorn backend.main:app --reload
+cd frontend
+npm run build:web
+cd ..
+npx wrangler deploy --config wrangler.jsonc
 ```
 
-Check `http://127.0.0.1:8000/health`. It reports `database: not_configured`, `connected`, or `unavailable` without exposing credentials. Conversation endpoints are available at `/conversations`; until authentication is implemented, possession of the opaque conversation ID is only a temporary development access mechanism.
-## AI Weather Decision Intelligence
+For a normal release, run tests and build first, then commit and push:
 
-WeatherGPT now supports a deterministic decision-support layer: forecast data is converted into transparent 0–100 risk scores, time windows, impacts, recommended actions, decision confidence, evidence, and data provenance. Gemini may explain or translate these results, but it never invents quantitative risk values.
-
-Try the API with `POST /decision/advice`:
-
-```json
-{"latitude":28.6139,"longitude":77.2090,"profile":"traveller","question":"Should I travel tomorrow?"}
+```powershell
+git add .
+git commit -m "Describe the change"
+git push origin main
 ```
 
-Use `GET /decision/{decision_id}/explanation` for the WHY evidence. Available profiles include `general_public`, `traveller`, `farmer`, `student`, `outdoor_worker`, `commuter`, and related worker/event profiles. Current consensus reports one configured source (`Open-Meteo`); IMD/GFS/WRF/satellite data are not claimed until configured.
+## Known limitations
 
-Additional decision endpoints include `GET /decision/risk`, `GET /decision/timeline`, and `POST /decision/changes`. Citizen-report foundations are available through `POST /reports` and `GET /reports/nearby`; reports are explicitly unverified and are not official warnings.
+- IMD API access is not automatically granted; it may require credentials and IP allowlisting.
+- NDMA SACHET alerts are authoritative feed items, but geographic precision depends on the source alert’s affected-area metadata.
+- Gemini does not guarantee native TTS for every language in the app catalogue; the UI uses installed browser/device voices as fallback.
+- The default OSRM and Nominatim endpoints are public services and should be replaced or rate-limited for high-volume production traffic.
+- User authentication, account isolation, and a production multi-user data-retention policy still need to be added before handling sensitive user data at scale.
 
-## First-launch location and language
+## Contributing
 
-On first launch, Flutter asks for location permission, then presents a searchable selector for English plus the 22 Scheduled Languages in the Eighth Schedule. Choosing “Not Now” keeps the app usable with manual locations. The chosen response-language code is stored locally in browser storage and sent to `POST /chat`; it is also saved through `PUT /profile` when the backend is reachable. GPS is never used to silently choose a language. The settings gear opens the same selector, and changing it affects only future answers—not existing messages. Unsupported language codes are rejected by chat, profile, and voice synthesis validation.
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Security reports should follow [SECURITY.md](SECURITY.md).
+
+## License
+
+This project is released under the [MIT License](LICENSE).
